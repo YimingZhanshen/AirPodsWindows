@@ -556,13 +556,49 @@ void Controller::SetVolume(int percent)
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
     
-    // Save current volume before reducing (if reducing)
-    if (percent < 100 && _savedVolume == 100) {
-        _savedVolume = GetVolume();
+    // Track if we're in "reduced volume" state
+    static bool volumeReduced = false;
+    
+    // Save current volume before reducing (if this is the first reduction)
+    if (percent < 100 && !volumeReduced) {
+        // Get actual current volume, not our cached value
+        int currentVolume = 100;
+        try {
+            OS::Windows::Com::UniquePtr<IMMDeviceEnumerator> deviceEnumerator;
+            HRESULT result = CoCreateInstance(
+                __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, deviceEnumerator.GetIID(),
+                (void **)deviceEnumerator.ReleaseAndAddressOf());
+            if (SUCCEEDED(result)) {
+                OS::Windows::Com::UniquePtr<IMMDevice> audioEndpoint;
+                result = deviceEnumerator->GetDefaultAudioEndpoint(
+                    eRender, eMultimedia, audioEndpoint.ReleaseAndAddressOf());
+                if (SUCCEEDED(result)) {
+                    OS::Windows::Com::UniquePtr<IAudioEndpointVolume> endpointVolume;
+                    result = audioEndpoint->Activate(
+                        endpointVolume.GetIID(), CLSCTX_ALL, nullptr, (void **)endpointVolume.ReleaseAndAddressOf());
+                    if (SUCCEEDED(result)) {
+                        float volumeLevel = 0.0f;
+                        if (SUCCEEDED(endpointVolume->GetMasterVolumeLevelScalar(&volumeLevel))) {
+                            currentVolume = static_cast<int>(volumeLevel * 100.0f);
+                        }
+                    }
+                }
+            }
+        } catch (...) {}
+        _savedVolume = currentVolume;
+        volumeReduced = true;
     }
     
-    // If restoring to 100%, restore to saved volume instead
-    int targetPercent = (percent == 100) ? _savedVolume : (percent * _savedVolume / 100);
+    // Calculate target volume
+    int targetPercent;
+    if (percent == 100) {
+        // Restoring - use saved volume
+        targetPercent = _savedVolume;
+        volumeReduced = false;
+    } else {
+        // Reducing - calculate relative to saved volume
+        targetPercent = (percent * _savedVolume) / 100;
+    }
     
     try {
         OS::Windows::Com::UniquePtr<IMMDeviceEnumerator> deviceEnumerator;

@@ -24,6 +24,7 @@
 
 #include <Config.h>
 #include "../Application.h"
+#include "../Logger.h"
 #include "MainWindow.h"
 
 namespace Gui {
@@ -100,9 +101,20 @@ void TrayIcon::SetupNoiseControlMenu()
 void TrayIcon::OnNoiseControlModeSelected(Core::AAP::NoiseControlMode mode)
 {
     auto &apdMgr = ApdApp->GetMainWindow()->GetApdMgr();
+    
+    // Save the previous mode to revert on failure
+    auto previousMode = _currentNoiseMode;
+    
     if (apdMgr.SetNoiseControlMode(mode)) {
         _currentNoiseMode = mode;
         UpdateNoiseControlMenuState();
+    } else {
+        // Revert the menu to the previous state on failure
+        if (previousMode.has_value()) {
+            _currentNoiseMode = previousMode;
+            UpdateNoiseControlMenuState();
+        }
+        LOG(Warn, "Failed to set noise control mode");
     }
 }
 

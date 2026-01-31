@@ -510,12 +510,18 @@ void Manager::ConnectAAP()
         return;
     }
     
+    // Check if already connected or connecting
+    if (_aapMgr.IsConnected()) {
+        return;
+    }
+    
     auto state = _stateMgr.GetCurrentState();
     if (state.has_value() && SupportsANC(state->model)) {
         uint64_t address = _boundDevice->GetAddress();
         LOG(Info, "Attempting AAP connection for ANC-capable device");
         
-        // Connect in a separate thread to avoid blocking
+        // Connect in a separate thread to avoid blocking the main thread
+        // Note: AAPManager::Connect() is thread-safe and handles its own locking
         std::thread([this, address]() {
             if (_aapMgr.Connect(address)) {
                 LOG(Info, "AAP connection established successfully");

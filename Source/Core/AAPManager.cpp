@@ -48,12 +48,13 @@ Manager::~Manager()
 
 bool Manager::Connect(uint64_t deviceAddress)
 {
-    std::lock_guard<std::mutex> lock{_mutex};
-
+    // First disconnect if already connected (without holding lock to avoid deadlock)
     if (_connected) {
         LOG(Warn, "AAP: Already connected, disconnecting first");
         Disconnect();
     }
+
+    std::lock_guard<std::mutex> lock{_mutex};
 
     // Create Bluetooth socket
     SOCKET sock = socket(AF_BTH, SOCK_STREAM, BTHPROTO_L2CAP);
@@ -86,7 +87,10 @@ bool Manager::Connect(uint64_t deviceAddress)
     // Initialize the connection (send handshake, enable features, request notifications)
     if (!InitializeConnection()) {
         LOG(Error, "AAP: Failed to initialize connection");
-        Disconnect();
+        // Clean up without calling Disconnect to avoid lock issues
+        _connected = false;
+        closesocket(sock);
+        _socket = nullptr;
         return false;
     }
 
@@ -388,12 +392,18 @@ void Manager::ReaderLoop()
 
     if (!_stopReader) {
         // Connection was lost unexpectedly
+        std::lock_guard<std::mutex> lock{_mutex};
         _connected = false;
-        if (_callbacks.onDisconnected) {
-            _callbacks.onDisconnected();
+        auto callback = _callbacks.onDisconnected;
+        // Release lock before calling callback to avoid potential deadlocks
+        if (callback) {
+            callback();
         }
     }
 }
+
+// Protocol timing constants
+constexpr auto kPacketProcessingDelay = std::chrono::milliseconds(100);
 
 bool Manager::InitializeConnection()
 {
@@ -405,7 +415,7 @@ bool Manager::InitializeConnection()
     LOG(Info, "AAP: Sent handshake");
 
     // Small delay to allow handshake to be processed
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(kPacketProcessingDelay);
 
     // Enable features (Conversational Awareness, Adaptive Transparency)
     if (!SendPacket(Packets::EnableFeatures)) {
@@ -414,7 +424,7 @@ bool Manager::InitializeConnection()
     }
     LOG(Info, "AAP: Sent enable features");
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(kPacketProcessingDelay);
 
     // Request notifications (battery, ear detection, noise control, etc.)
     if (!SendPacket(Packets::RequestNotifications)) {
