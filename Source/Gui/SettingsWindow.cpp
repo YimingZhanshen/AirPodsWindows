@@ -105,6 +105,18 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QDialog{parent}
     _ui.hlTipConversationalAwareness->addWidget(
         new TipLabel{constMetaFields.conversational_awareness.Description(), this});
 
+    _ui.hlTipPersonalizedVolume->addWidget(
+        new TipLabel{constMetaFields.personalized_volume.Description(), this});
+
+    _ui.hlTipLoudSoundReduction->addWidget(
+        new TipLabel{constMetaFields.loud_sound_reduction.Description(), this});
+
+    // Setup noise control mode combo box
+    _ui.cbNoiseControlMode->addItem(tr("Off"));
+    _ui.cbNoiseControlMode->addItem(tr("Noise Cancellation"));
+    _ui.cbNoiseControlMode->addItem(tr("Transparency"));
+    _ui.cbNoiseControlMode->addItem(tr("Adaptive"));
+
     _ui.hsMaxReceivingRange->setMinimum(50);
     _ui.hsMaxReceivingRange->setMaximum(100);
 
@@ -147,6 +159,30 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QDialog{parent}
     connect(_ui.cbConversationalAwareness, &QCheckBox::toggled, this, [this](bool checked) {
         if (_trigger) {
             On_cbConversationalAwareness_toggled(checked);
+        }
+    });
+
+    connect(_ui.cbPersonalizedVolume, &QCheckBox::toggled, this, [this](bool checked) {
+        if (_trigger) {
+            On_cbPersonalizedVolume_toggled(checked);
+        }
+    });
+
+    connect(_ui.cbLoudSoundReduction, &QCheckBox::toggled, this, [this](bool checked) {
+        if (_trigger) {
+            On_cbLoudSoundReduction_toggled(checked);
+        }
+    });
+
+    connect(_ui.cbNoiseControlMode, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
+        if (_trigger) {
+            On_cbNoiseControlMode_currentIndexChanged(index);
+        }
+    });
+
+    connect(_ui.hsAdaptiveTransparencyLevel, &QSlider::valueChanged, this, [this](int value) {
+        if (_trigger) {
+            On_hsAdaptiveTransparencyLevel_valueChanged(value);
         }
     });
 
@@ -277,9 +313,33 @@ void SettingsWindow::InitCreditsText()
         }
         return result;
     }();
-    auto libsStr = tr("Third-Party Libraries:") + libs;
 
-    _ui.tbCredits->setHtml(l10nContributorsStr + libsStr);
+    static QString references = [] {
+        struct RefInfo {
+            const char *name, *url, *description;
+        };
+        static std::vector<RefInfo> refs{
+            // clang-format off
+            { "librepods", "https://github.com/kavishdevar/librepods", "AAP protocol & MagicAAP driver" },
+            { "OpenPods", "https://github.com/adolfintel/OpenPods", "AirPods BLE protocol" },
+            { "AirPodsDesktop", "https://github.com/SpriteOvO/AirPodsDesktop", "Original project" }
+            // clang-format on
+        };
+
+        QString result;
+        for (const auto &ref : refs) {
+            result += QString{"<br> - <a href=\"%2\">%1</a> (%3)"}
+                          .arg(ref.name)
+                          .arg(ref.url)
+                          .arg(ref.description);
+        }
+        return result;
+    }();
+
+    auto libsStr = tr("Third-Party Libraries:") + libs;
+    auto refsStr = "<br><br>References:" + references;
+
+    _ui.tbCredits->setHtml(l10nContributorsStr + libsStr + refsStr);
 }
 
 void SettingsWindow::RestoreDefaults()
@@ -303,6 +363,18 @@ void SettingsWindow::Update(const Fields &fields, bool trigger)
     _ui.cbAutoEarDetection->setChecked(fields.automatic_ear_detection);
 
     _ui.cbConversationalAwareness->setChecked(fields.conversational_awareness);
+
+    _ui.cbPersonalizedVolume->setChecked(fields.personalized_volume);
+
+    _ui.cbLoudSoundReduction->setChecked(fields.loud_sound_reduction);
+
+    // noise_control_mode values 1-4 map to UI index 0-3
+    int noiseControlIndex = static_cast<int>(fields.noise_control_mode) - 1;
+    if (noiseControlIndex >= 0 && noiseControlIndex < _ui.cbNoiseControlMode->count()) {
+        _ui.cbNoiseControlMode->setCurrentIndex(noiseControlIndex);
+    }
+
+    _ui.hsAdaptiveTransparencyLevel->setValue(fields.adaptive_transparency_level);
 
     _ui.hsMaxReceivingRange->setValue(-fields.rssi_min);
 
@@ -415,6 +487,27 @@ void SettingsWindow::On_cbAutoEarDetection_toggled(bool checked)
 void SettingsWindow::On_cbConversationalAwareness_toggled(bool checked)
 {
     ModifiableAccess()->conversational_awareness = checked;
+}
+
+void SettingsWindow::On_cbPersonalizedVolume_toggled(bool checked)
+{
+    ModifiableAccess()->personalized_volume = checked;
+}
+
+void SettingsWindow::On_cbLoudSoundReduction_toggled(bool checked)
+{
+    ModifiableAccess()->loud_sound_reduction = checked;
+}
+
+void SettingsWindow::On_cbNoiseControlMode_currentIndexChanged(int index)
+{
+    // UI index 0-3 maps to NoiseControlMode values 1-4 (Off=1, ANC=2, Transparency=3, Adaptive=4)
+    ModifiableAccess()->noise_control_mode = static_cast<uint32_t>(index + 1);
+}
+
+void SettingsWindow::On_hsAdaptiveTransparencyLevel_valueChanged(int value)
+{
+    ModifiableAccess()->adaptive_transparency_level = value;
 }
 
 void SettingsWindow::On_hsMaxReceivingRange_valueChanged(int value)

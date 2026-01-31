@@ -417,16 +417,23 @@ void MainWindow::SetAnimation(std::optional<Core::AirPods::Model> model)
             media = "qrc:/Resource/Video/AirPods_3.avi";
             videoSize = QSize{900, 450};
             break;
+        case Core::AirPods::Model::AirPods_4:
+        case Core::AirPods::Model::AirPods_4_ANC:
+            media = "qrc:/Resource/Video/AirPods_3.avi";
+            videoSize = QSize{900, 450};
+            break;
         case Core::AirPods::Model::AirPods_Pro:
             media = "qrc:/Resource/Video/AirPods_Pro.avi";
             videoSize = QSize{900, 450};
             break;
         case Core::AirPods::Model::AirPods_Pro_2:
         case Core::AirPods::Model::AirPods_Pro_2_USB_C:
+        case Core::AirPods::Model::AirPods_Pro_3:
             media = "qrc:/Resource/Video/AirPods_Pro_2.avi";
             videoSize = QSize{900, 450};
             break;
         case Core::AirPods::Model::AirPods_Max:
+        case Core::AirPods::Model::AirPods_Max_USB_C:
             media = "qrc:/Resource/Video/AirPods_Max.avi";
             videoSize = QSize{600, 650};
             break;

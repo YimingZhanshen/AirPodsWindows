@@ -18,9 +18,14 @@
 
 #include "AirPods.h"
 
-#include <mutex>
+#include <algorithm>
+#include <cctype>
 #include <chrono>
+#include <mutex>
+#include <string>
+#include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <QVector>
 #include <QMetaObject>
 
@@ -36,6 +41,65 @@ using namespace Core;
 using namespace std::chrono_literals;
 
 namespace Core::AirPods {
+namespace {
+
+std::string NormalizeModelNumber(std::string_view value)
+{
+    std::string result;
+    result.reserve(value.size());
+    for (const auto ch : value) {
+        if (!std::isspace(static_cast<unsigned char>(ch))) {
+            result.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(ch))));
+        }
+    }
+    return result;
+}
+
+std::optional<Model> ModelFromModelNumber(std::string_view modelNumber)
+{
+    static const std::unordered_map<std::string, Model> kModelMap{
+        {"A1523", Model::AirPods_1},
+        {"A1722", Model::AirPods_1},
+        {"A2032", Model::AirPods_2},
+        {"A2031", Model::AirPods_2},
+        {"A2565", Model::AirPods_3},
+        {"A2564", Model::AirPods_3},
+        {"A3053", Model::AirPods_4},
+        {"A3050", Model::AirPods_4},
+        {"A3054", Model::AirPods_4},
+        {"A3056", Model::AirPods_4_ANC},
+        {"A3055", Model::AirPods_4_ANC},
+        {"A3057", Model::AirPods_4_ANC},
+        {"A2084", Model::AirPods_Pro},
+        {"A2083", Model::AirPods_Pro},
+        {"A2931", Model::AirPods_Pro_2},
+        {"A2699", Model::AirPods_Pro_2},
+        {"A2698", Model::AirPods_Pro_2},
+        {"A3047", Model::AirPods_Pro_2_USB_C},
+        {"A3048", Model::AirPods_Pro_2_USB_C},
+        {"A3049", Model::AirPods_Pro_2_USB_C},
+        {"A3063", Model::AirPods_Pro_3},
+        {"A3064", Model::AirPods_Pro_3},
+        {"A3065", Model::AirPods_Pro_3},
+        {"A2096", Model::AirPods_Max},
+        {"A3184", Model::AirPods_Max_USB_C},
+    };
+
+    if (modelNumber.empty()) {
+        return std::nullopt;
+    }
+
+    const auto normalized = NormalizeModelNumber(modelNumber);
+    const auto iter = kModelMap.find(normalized);
+    if (iter == kModelMap.end()) {
+        return std::nullopt;
+    }
+
+    return iter->second;
+}
+
+} // namespace
+
 namespace Details {
 
 //
@@ -385,15 +449,35 @@ void Manager::SetupAAPCallbacks()
     AAP::Callbacks callbacks;
     
     callbacks.onNoiseControlChanged = [this](AAP::NoiseControlMode mode) {
-        OnNoiseControlModeChanged(mode);
+        OnNoiseControlModeNotification(mode);
     };
     
     callbacks.onConversationalAwarenessChanged = [this](AAP::ConversationalAwarenessState state) {
         OnConversationalAwarenessStateChanged(state);
     };
     
+    callbacks.onPersonalizedVolumeChanged = [this](AAP::PersonalizedVolumeState state) {
+        OnPersonalizedVolumeStateChanged(state);
+    };
+    
+    callbacks.onLoudSoundReductionChanged = [this](AAP::LoudSoundReductionState state) {
+        OnLoudSoundReductionStateChanged(state);
+    };
+    
+    callbacks.onAdaptiveTransparencyLevelChanged = [this](uint8_t level) {
+        OnAdaptiveTransparencyLevelNotification(level);
+    };
+    
     callbacks.onSpeakingLevelChanged = [this](AAP::SpeakingLevel level) {
         OnSpeakingLevelChanged(level);
+    };
+    
+    callbacks.onEarDetectionChanged = [this](AAP::EarStatus primary, AAP::EarStatus secondary) {
+        OnEarDetectionChanged(primary, secondary);
+    };
+    
+    callbacks.onHeadTrackingData = [this](AAP::HeadTrackingData data) {
+        OnHeadTrackingData(data);
     };
     
     callbacks.onConnected = [this]() {
@@ -444,6 +528,7 @@ void Manager::OnBoundDeviceAddressChanged(uint64_t address)
     std::unique_lock<std::mutex> lock{_mutex};
 
     _boundDevice.reset();
+    _modelOverride.reset();
     _deviceConnected = false;
     _stateMgr.Disconnect();
     
@@ -469,6 +554,14 @@ void Manager::OnBoundDeviceAddressChanged(uint64_t address)
 
     _boundDevice = std::move(optDevice);
 
+    if (auto modelNumber = _boundDevice->GetModelNumber(); modelNumber.has_value()) {
+        _modelOverride = ModelFromModelNumber(modelNumber.value());
+        if (_modelOverride.has_value()) {
+            LOG(Info, "Detected model number '{}', override model: {}", modelNumber.value(),
+                Helper::ToString(_modelOverride.value()));
+        }
+    }
+
     _deviceName = QString::fromStdString([&] {
         auto name = _boundDevice->GetName();
         // See https://github.com/SpriteOvO/AirPodsDesktop/issues/15
@@ -488,6 +581,10 @@ void Manager::OnBoundDeviceConnectionStateChanged(Bluetooth::DeviceState state)
     bool newDeviceConnected = state == Bluetooth::DeviceState::Connected;
     bool doDisconnect = _deviceConnected && !newDeviceConnected;
     bool doConnect = !_deviceConnected && newDeviceConnected;
+    
+    LOG(Info, "OnBoundDeviceConnectionStateChanged: state={}, _deviceConnected={}, newDeviceConnected={}, doConnect={}",
+        static_cast<int>(state), _deviceConnected, newDeviceConnected, doConnect);
+    
     _deviceConnected = newDeviceConnected;
 
     if (doDisconnect) {
@@ -506,19 +603,36 @@ void Manager::OnBoundDeviceConnectionStateChanged(Bluetooth::DeviceState state)
 
 void Manager::ConnectAAP()
 {
+    LOG(Info, "ConnectAAP called");
+    
     if (!_boundDevice.has_value()) {
+        LOG(Warn, "ConnectAAP: No bound device");
         return;
     }
     
     // Check if already connected or connecting
     if (_aapMgr.IsConnected()) {
+        LOG(Info, "ConnectAAP: Already connected");
         return;
     }
     
     auto state = _stateMgr.GetCurrentState();
-    if (state.has_value() && SupportsANC(state->model)) {
+    auto modelToCheck = state.has_value() ? state->model : Model::Unknown;
+    LOG(Info, "ConnectAAP: state.has_value={}, state.model={}, _modelOverride.has_value={}",
+        state.has_value(), 
+        state.has_value() ? static_cast<int>(state->model) : -1,
+        _modelOverride.has_value());
+    
+    if (modelToCheck == Model::Unknown && _modelOverride.has_value()) {
+        modelToCheck = _modelOverride.value();
+    }
+    
+    LOG(Info, "ConnectAAP: modelToCheck={}, SupportsANC={}", 
+        static_cast<int>(modelToCheck), SupportsANC(modelToCheck));
+
+    if (SupportsANC(modelToCheck)) {
         uint64_t address = _boundDevice->GetAddress();
-        LOG(Info, "Attempting AAP connection for ANC-capable device");
+        LOG(Info, "Attempting AAP connection for ANC-capable device, address={:016X}", address);
         
         // Connect in a separate thread to avoid blocking the main thread
         // Note: AAPManager::Connect() is thread-safe and handles its own locking
@@ -529,6 +643,8 @@ void Manager::ConnectAAP()
                 LOG(Warn, "AAP connection failed - ANC features will not be available");
             }
         }).detach();
+    } else {
+        LOG(Info, "ConnectAAP: Device does not support ANC");
     }
 }
 
@@ -538,7 +654,10 @@ bool Manager::SupportsANC(Model model)
         case Model::AirPods_Pro:
         case Model::AirPods_Pro_2:
         case Model::AirPods_Pro_2_USB_C:
+        case Model::AirPods_Pro_3:
+        case Model::AirPods_4_ANC:
         case Model::AirPods_Max:
+        case Model::AirPods_Max_USB_C:
             return true;
         default:
             return false;
@@ -550,10 +669,20 @@ void Manager::OnStateChanged(Details::StateManager::UpdateEvent updateEvent)
     const auto &oldState = updateEvent.oldState;
     auto &newState = updateEvent.newState;
 
+    if (newState.model == Model::Unknown && _modelOverride.has_value()) {
+        newState.model = _modelOverride.value();
+    }
+
     newState.displayName =
         _deviceName.isEmpty() ? Helper::ToString(newState.model) : _deviceName.remove(" - Find My");
 
     ApdApp->GetMainWindow()->UpdateStateSafely(newState);
+
+    // Try to connect AAP if we have a valid model now and device is connected
+    if (_deviceConnected && !_aapMgr.IsConnected() && SupportsANC(newState.model)) {
+        LOG(Info, "OnStateChanged: Device supports ANC and AAP not connected, attempting connection");
+        ConnectAAP();
+    }
 
     // Lid opened
     //
@@ -671,6 +800,36 @@ std::optional<AAP::ConversationalAwarenessState> Manager::GetConversationalAware
     return _aapMgr.GetConversationalAwarenessState();
 }
 
+bool Manager::SetPersonalizedVolume(bool enable)
+{
+    return _aapMgr.SetPersonalizedVolume(enable);
+}
+
+std::optional<AAP::PersonalizedVolumeState> Manager::GetPersonalizedVolumeState() const
+{
+    return _aapMgr.GetPersonalizedVolumeState();
+}
+
+bool Manager::SetLoudSoundReduction(bool enable)
+{
+    return _aapMgr.SetLoudSoundReduction(enable);
+}
+
+std::optional<AAP::LoudSoundReductionState> Manager::GetLoudSoundReductionState() const
+{
+    return _aapMgr.GetLoudSoundReductionState();
+}
+
+bool Manager::SetAdaptiveTransparencyLevel(uint8_t level)
+{
+    return _aapMgr.SetAdaptiveTransparencyLevel(level);
+}
+
+std::optional<uint8_t> Manager::GetAdaptiveTransparencyLevel() const
+{
+    return _aapMgr.GetAdaptiveTransparencyLevel();
+}
+
 bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
 {
     return _aapMgr.SetAdaptiveNoiseLevel(level);
@@ -679,6 +838,21 @@ bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
 bool Manager::IsAAPConnected() const
 {
     return _aapMgr.IsConnected();
+}
+
+bool Manager::StartHeadTracking()
+{
+    return _aapMgr.StartHeadTracking();
+}
+
+bool Manager::StopHeadTracking()
+{
+    return _aapMgr.StopHeadTracking();
+}
+
+bool Manager::IsHeadTrackingActive() const
+{
+    return _aapMgr.IsHeadTrackingActive();
 }
 
 void Manager::OnConversationalAwarenessChanged(bool enable)
@@ -691,9 +865,48 @@ void Manager::OnConversationalAwarenessChanged(bool enable)
     }
 }
 
-// AAP callbacks
+void Manager::OnPersonalizedVolumeChanged(bool enable)
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    _personalizedVolumeEnabled = enable;
+    
+    if (_aapMgr.IsConnected()) {
+        _aapMgr.SetPersonalizedVolume(enable);
+    }
+}
+
+void Manager::OnLoudSoundReductionChanged(bool enable)
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    _loudSoundReductionEnabled = enable;
+    
+    if (_aapMgr.IsConnected()) {
+        _aapMgr.SetLoudSoundReduction(enable);
+    }
+}
+
+void Manager::OnAdaptiveTransparencyLevelChanged(uint8_t level)
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    _adaptiveTransparencyLevel = level;
+    
+    if (_aapMgr.IsConnected()) {
+        _aapMgr.SetAdaptiveTransparencyLevel(level);
+    }
+}
 
 void Manager::OnNoiseControlModeChanged(AAP::NoiseControlMode mode)
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    
+    if (_aapMgr.IsConnected()) {
+        _aapMgr.SetNoiseControlMode(mode);
+    }
+}
+
+// AAP callbacks
+
+void Manager::OnNoiseControlModeNotification(AAP::NoiseControlMode mode)
 {
     LOG(Info, "Noise control mode changed to: {}", Helper::ToString(mode).toStdString());
     
@@ -708,6 +921,50 @@ void Manager::OnNoiseControlModeChanged(AAP::NoiseControlMode mode)
 void Manager::OnConversationalAwarenessStateChanged(AAP::ConversationalAwarenessState state)
 {
     LOG(Info, "Conversational awareness state changed to: {}", Helper::ToString(state).toStdString());
+}
+
+void Manager::OnPersonalizedVolumeStateChanged(AAP::PersonalizedVolumeState state)
+{
+    LOG(Info, "Personalized volume state changed to: {}", static_cast<int>(state));
+}
+
+void Manager::OnLoudSoundReductionStateChanged(AAP::LoudSoundReductionState state)
+{
+    LOG(Info, "Loud sound reduction state changed to: {}", static_cast<int>(state));
+}
+
+void Manager::OnAdaptiveTransparencyLevelNotification(uint8_t level)
+{
+    LOG(Info, "Adaptive transparency level changed to: {}", level);
+}
+
+void Manager::OnEarDetectionChanged(AAP::EarStatus primary, AAP::EarStatus secondary)
+{
+    LOG(Info, "Ear detection changed - Primary: {}, Secondary: {}", 
+        static_cast<int>(primary), static_cast<int>(secondary));
+    
+    // Handle automatic pause/resume based on ear detection
+    if (!_automaticEarDetection) {
+        return;
+    }
+    
+    bool bothInEar = (primary == AAP::EarStatus::InEar && secondary == AAP::EarStatus::InEar);
+    bool bothOutOfEar = (primary != AAP::EarStatus::InEar && secondary != AAP::EarStatus::InEar);
+    
+    if (bothOutOfEar) {
+        LOG(Info, "Both AirPods out of ear - pausing media");
+        Core::GlobalMedia::Pause();
+    }
+    // Note: We don't auto-resume when put back in ear to avoid unexpected playback
+}
+
+void Manager::OnHeadTrackingData(AAP::HeadTrackingData data)
+{
+    // This callback receives real-time head tracking sensor data
+    // Can be used for spatial audio or other applications
+    LOG(Trace, "Head tracking: o1={}, o2={}, o3={}, hAccel={}, vAccel={}", 
+        data.orientation1, data.orientation2, data.orientation3,
+        data.horizontalAcceleration, data.verticalAcceleration);
 }
 
 // Volume levels for conversational awareness
@@ -768,13 +1025,20 @@ std::vector<Bluetooth::Device> GetDevices()
             [](const auto &device) {
                 const auto vendorId = device.GetVendorId();
                 const auto productId = device.GetProductId();
+                const auto modelFromProductId = AppleCP::AirPods::GetModel(productId);
+                const auto modelNumber = device.GetModelNumber();
+                const auto modelFromNumber = modelNumber.has_value()
+                    ? ModelFromModelNumber(modelNumber.value())
+                    : std::nullopt;
 
                 const auto doErase =
                     vendorId != AppleCP::VendorId ||
-                    AppleCP::AirPods::GetModel(productId) == AirPods::Model::Unknown;
+                    (modelFromProductId == AirPods::Model::Unknown && !modelFromNumber.has_value());
 
-                LOG(Trace, "Device VendorId: '{}', ProductId: '{}', doErase: {}", vendorId,
-                    productId, doErase);
+                LOG(Trace,
+                    "Device VendorId: '{}', ProductId: '{}', modelId: '{}', modelNumber: '{}', doErase: {}",
+                    vendorId, productId, Helper::ToString(modelFromProductId),
+                    modelNumber.value_or(""), doErase);
 
                 return doErase;
             }),

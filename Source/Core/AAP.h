@@ -70,6 +70,44 @@ enum class ConversationalAwarenessState : uint8_t {
 };
 
 //////////////////////////////////////////////////
+// Personalized Volume State
+//
+
+enum class PersonalizedVolumeState : uint8_t {
+    Enabled = 0x01,
+    Disabled = 0x02,
+    Unknown = 0xFF
+};
+
+//////////////////////////////////////////////////
+// Loud Sound Reduction (Headphone Safety)
+//
+
+enum class LoudSoundReductionState : uint8_t {
+    Enabled = 0x01,
+    Disabled = 0x00,
+    Unknown = 0xFF
+};
+
+//////////////////////////////////////////////////
+// Adaptive Transparency Level (only in Adaptive mode)
+//
+
+struct AdaptiveTransparencyLevel {
+    uint8_t level; // 0-100
+};
+
+//////////////////////////////////////////////////
+// Low Latency Audio State
+//
+
+enum class LowLatencyAudioState : uint8_t {
+    Enabled = 0x01,
+    Disabled = 0x02,
+    Unknown = 0xFF
+};
+
+//////////////////////////////////////////////////
 // Speaking Level (for Conversational Awareness)
 //
 
@@ -165,6 +203,48 @@ inline const std::vector<uint8_t> StopHeadTracking = {
     0x10, 0x00, 0x11, 0x00, 0x08, 0x7E, 0x10, 0x02,
     0x42, 0x0B, 0x08, 0x4E, 0x10, 0x02, 0x1A, 0x05,
     0x01, 0x00, 0x00, 0x00, 0x00
+};
+
+// Personalized Volume toggle packet builder
+inline std::vector<uint8_t> BuildPersonalizedVolumePacket(bool enable) {
+    return {
+        0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x26,
+        enable ? static_cast<uint8_t>(0x01) : static_cast<uint8_t>(0x02),
+        0x00, 0x00, 0x00
+    };
+}
+
+// Loud Sound Reduction toggle packet builder (Headphone Safety)
+inline std::vector<uint8_t> BuildLoudSoundReductionPacket(bool enable) {
+    return {
+        0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x25,
+        enable ? static_cast<uint8_t>(0x01) : static_cast<uint8_t>(0x00),
+        0x00, 0x00, 0x00
+    };
+}
+
+// Off-Ear Auto Pause toggle packet builder (Automatic Ear Detection)
+inline std::vector<uint8_t> BuildAutomaticEarDetectionPacket(bool enable) {
+    return {
+        0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x1B,
+        enable ? static_cast<uint8_t>(0x01) : static_cast<uint8_t>(0x02),
+        0x00, 0x00, 0x00
+    };
+}
+
+// Adaptive Transparency level packet builder (0x00-0x32 = 0-50)
+inline std::vector<uint8_t> BuildAdaptiveTransparencyLevelPacket(uint8_t level) {
+    // Clamp level to 0-50
+    if (level > 50) level = 50;
+    return {
+        0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38,
+        level, 0x00, 0x00, 0x00
+    };
+}
+
+// Request current settings packet
+inline const std::vector<uint8_t> RequestSettings = {
+    0x04, 0x00, 0x04, 0x00, 0x0D, 0x00, 0xFF, 0xFF, 0xFF, 0xFF
 };
 
 } // namespace Packets
@@ -263,6 +343,75 @@ inline std::optional<std::pair<EarStatus, EarStatus>> ParseEarDetection(const st
     return std::make_pair(toEarStatus(data[6]), toEarStatus(data[7]));
 }
 
+// Parse personalized volume state from notification
+// Packet format: 04 00 04 00 09 00 26 [status] 00 00 00
+inline std::optional<PersonalizedVolumeState> ParsePersonalizedVolumeState(const std::vector<uint8_t>& data) {
+    if (data.size() < 8) {
+        return std::nullopt;
+    }
+    
+    if (data[0] != 0x04 || data[1] != 0x00 || data[2] != 0x04 || data[3] != 0x00 ||
+        data[4] != 0x09 || data[5] != 0x00 || data[6] != 0x26) {
+        return std::nullopt;
+    }
+    
+    switch (data[7]) {
+        case 0x01: return PersonalizedVolumeState::Enabled;
+        case 0x02: return PersonalizedVolumeState::Disabled;
+        default: return PersonalizedVolumeState::Unknown;
+    }
+}
+
+// Parse automatic ear detection (off-ear pause) state from notification
+// Packet format: 04 00 04 00 09 00 1B [status] 00 00 00
+inline std::optional<bool> ParseAutomaticEarDetectionState(const std::vector<uint8_t>& data) {
+    if (data.size() < 8) {
+        return std::nullopt;
+    }
+    
+    if (data[0] != 0x04 || data[1] != 0x00 || data[2] != 0x04 || data[3] != 0x00 ||
+        data[4] != 0x09 || data[5] != 0x00 || data[6] != 0x1B) {
+        return std::nullopt;
+    }
+    
+    // 0x01 = Enabled (pause on ear removal), 0x02 = Disabled
+    return data[7] == 0x01;
+}
+
+// Parse loud sound reduction (headphone safety) state
+// Packet format: 04 00 04 00 09 00 25 [status] 00 00 00
+inline std::optional<LoudSoundReductionState> ParseLoudSoundReductionState(const std::vector<uint8_t>& data) {
+    if (data.size() < 8) {
+        return std::nullopt;
+    }
+    
+    if (data[0] != 0x04 || data[1] != 0x00 || data[2] != 0x04 || data[3] != 0x00 ||
+        data[4] != 0x09 || data[5] != 0x00 || data[6] != 0x25) {
+        return std::nullopt;
+    }
+    
+    switch (data[7]) {
+        case 0x01: return LoudSoundReductionState::Enabled;
+        case 0x00: return LoudSoundReductionState::Disabled;
+        default: return LoudSoundReductionState::Unknown;
+    }
+}
+
+// Parse adaptive transparency level
+// Packet format: 04 00 04 00 09 00 38 [level] 00 00 00
+inline std::optional<uint8_t> ParseAdaptiveTransparencyLevel(const std::vector<uint8_t>& data) {
+    if (data.size() < 8) {
+        return std::nullopt;
+    }
+    
+    if (data[0] != 0x04 || data[1] != 0x00 || data[2] != 0x04 || data[3] != 0x00 ||
+        data[4] != 0x09 || data[5] != 0x00 || data[6] != 0x38) {
+        return std::nullopt;
+    }
+    
+    return data[7];
+}
+
 // Structure to hold head tracking data
 struct HeadTrackingData {
     int16_t orientation1;
@@ -327,6 +476,45 @@ inline bool IsBatteryNotification(const std::vector<uint8_t>& data) {
     return data.size() >= 7 &&
            data[0] == 0x04 && data[1] == 0x00 && data[2] == 0x04 && data[3] == 0x00 &&
            data[4] == 0x04 && data[5] == 0x00;
+}
+
+inline bool IsPersonalizedVolumeNotification(const std::vector<uint8_t>& data) {
+    return data.size() >= 7 &&
+           data[0] == 0x04 && data[1] == 0x00 && data[2] == 0x04 && data[3] == 0x00 &&
+           data[4] == 0x09 && data[5] == 0x00 && data[6] == 0x26;
+}
+
+inline bool IsAutomaticEarDetectionNotification(const std::vector<uint8_t>& data) {
+    return data.size() >= 7 &&
+           data[0] == 0x04 && data[1] == 0x00 && data[2] == 0x04 && data[3] == 0x00 &&
+           data[4] == 0x09 && data[5] == 0x00 && data[6] == 0x1B;
+}
+
+inline bool IsLoudSoundReductionNotification(const std::vector<uint8_t>& data) {
+    return data.size() >= 7 &&
+           data[0] == 0x04 && data[1] == 0x00 && data[2] == 0x04 && data[3] == 0x00 &&
+           data[4] == 0x09 && data[5] == 0x00 && data[6] == 0x25;
+}
+
+inline bool IsAdaptiveTransparencyLevelNotification(const std::vector<uint8_t>& data) {
+    return data.size() >= 7 &&
+           data[0] == 0x04 && data[1] == 0x00 && data[2] == 0x04 && data[3] == 0x00 &&
+           data[4] == 0x09 && data[5] == 0x00 && data[6] == 0x38;
+}
+
+// Check if packet is a settings notification (type 0x09)
+inline bool IsSettingsNotification(const std::vector<uint8_t>& data) {
+    return data.size() >= 6 &&
+           data[0] == 0x04 && data[1] == 0x00 && data[2] == 0x04 && data[3] == 0x00 &&
+           data[4] == 0x09 && data[5] == 0x00;
+}
+
+// Get the setting type from a settings notification
+inline std::optional<uint8_t> GetSettingType(const std::vector<uint8_t>& data) {
+    if (!IsSettingsNotification(data) || data.size() < 7) {
+        return std::nullopt;
+    }
+    return data[6];
 }
 
 } // namespace Core::AAP

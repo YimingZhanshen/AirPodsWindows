@@ -295,6 +295,7 @@ if (WIN32)
         "Source/Core/Bluetooth_win.cpp"
         "Source/Core/GlobalMedia_win.cpp"
         "Source/Core/AAPManager.cpp"
+        "Source/Core/MagicAAPWinRT.cpp"
 
         "Source/Resource/Resource.rc"
     )

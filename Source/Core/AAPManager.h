@@ -23,10 +23,16 @@
 #include <thread>
 #include <functional>
 #include <optional>
+#include <memory>
 
 #include "AAP.h"
 #include "Base.h"
 #include "../Helper.h"
+
+// Forward declaration for MagicAAP WinRT client
+namespace Core::MagicAAPWinRT {
+    class MagicAAPWinRTClient;
+}
 
 namespace Core::AAP {
 
@@ -40,6 +46,10 @@ struct Callbacks {
     using FnOnSpeakingLevelChangedT = std::function<void(SpeakingLevel)>;
     using FnOnEarDetectionChangedT = std::function<void(EarStatus, EarStatus)>;
     using FnOnHeadTrackingDataT = std::function<void(HeadTrackingData)>;
+    using FnOnPersonalizedVolumeChangedT = std::function<void(PersonalizedVolumeState)>;
+    using FnOnLoudSoundReductionChangedT = std::function<void(LoudSoundReductionState)>;
+    using FnOnAutomaticEarDetectionChangedT = std::function<void(bool)>;
+    using FnOnAdaptiveTransparencyLevelChangedT = std::function<void(uint8_t)>;
     using FnOnConnectedT = std::function<void()>;
     using FnOnDisconnectedT = std::function<void()>;
     
@@ -48,6 +58,10 @@ struct Callbacks {
     FnOnSpeakingLevelChangedT onSpeakingLevelChanged;
     FnOnEarDetectionChangedT onEarDetectionChanged;
     FnOnHeadTrackingDataT onHeadTrackingData;
+    FnOnPersonalizedVolumeChangedT onPersonalizedVolumeChanged;
+    FnOnLoudSoundReductionChangedT onLoudSoundReductionChanged;
+    FnOnAutomaticEarDetectionChangedT onAutomaticEarDetectionChanged;
+    FnOnAdaptiveTransparencyLevelChangedT onAdaptiveTransparencyLevelChanged;
     FnOnConnectedT onConnected;
     FnOnDisconnectedT onDisconnected;
 };
@@ -74,6 +88,22 @@ public:
     bool SetConversationalAwareness(bool enable);
     std::optional<ConversationalAwarenessState> GetConversationalAwarenessState() const;
 
+    // Personalized volume
+    bool SetPersonalizedVolume(bool enable);
+    std::optional<PersonalizedVolumeState> GetPersonalizedVolumeState() const;
+
+    // Automatic ear detection (off-ear auto pause)
+    bool SetAutomaticEarDetection(bool enable);
+    std::optional<bool> GetAutomaticEarDetectionState() const;
+
+    // Loud sound reduction (headphone safety)
+    bool SetLoudSoundReduction(bool enable);
+    std::optional<LoudSoundReductionState> GetLoudSoundReductionState() const;
+
+    // Adaptive transparency level (0-50, only effective when noise control is Adaptive)
+    bool SetAdaptiveTransparencyLevel(uint8_t level);
+    std::optional<uint8_t> GetAdaptiveTransparencyLevel() const;
+
     // Adaptive noise level (0-100, only effective when noise control is Adaptive)
     bool SetAdaptiveNoiseLevel(uint8_t level);
 
@@ -85,20 +115,34 @@ public:
     // Callbacks
     void SetCallbacks(Callbacks callbacks);
 
+    // Check if connected via MagicAAP driver
+    bool IsConnectedViaMagicAAP() const { return _usingMagicAAP.load(); }
+    
+    // Static method to check if MagicAAP driver is available
+    static bool IsMagicAAPDriverAvailable();
+
 private:
     mutable std::mutex _mutex;
     std::atomic<bool> _connected{false};
     std::atomic<bool> _headTrackingActive{false};
+    std::atomic<bool> _usingMagicAAP{false};
     
     // Cached states
     std::optional<NoiseControlMode> _noiseControlMode;
     std::optional<ConversationalAwarenessState> _conversationalAwarenessState;
+    std::optional<PersonalizedVolumeState> _personalizedVolumeState;
+    std::optional<bool> _automaticEarDetectionState;
+    std::optional<LoudSoundReductionState> _loudSoundReductionState;
+    std::optional<uint8_t> _adaptiveTransparencyLevel;
     
     // Callbacks
     Callbacks _callbacks;
     
     // Platform-specific socket handle (implemented in platform-specific file)
     void* _socket{nullptr};
+    
+    // MagicAAP WinRT client (used when driver is available)
+    std::unique_ptr<MagicAAPWinRT::MagicAAPWinRTClient> _magicAAPClient;
     
     // Reader thread
     std::thread _readerThread;
@@ -109,6 +153,9 @@ private:
     void ProcessPacket(const std::vector<uint8_t>& packet);
     void ReaderLoop();
     bool InitializeConnection();
+    
+    // MagicAAP connection method
+    bool ConnectViaMagicAAP(uint64_t deviceAddress);
 };
 
 } // namespace Core::AAP

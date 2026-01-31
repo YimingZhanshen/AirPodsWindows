@@ -56,12 +56,16 @@ public:
     std::string GetName() const override;
     uint16_t GetVendorId() const override;
     uint16_t GetProductId() const override;
+    std::optional<std::string> GetModelNumber() const override;
     DeviceState GetConnectionState() const override;
 
 private:
     constexpr static auto kPropertyBluetoothVendorId = L"System.DeviceInterface.Bluetooth.VendorId";
     constexpr static auto kPropertyBluetoothProductId =
         L"System.DeviceInterface.Bluetooth.ProductId";
+    constexpr static auto kPropertyModelNumber = L"System.Devices.ModelNumber";
+    constexpr static auto kPropertyBluetoothModelNumber =
+        L"System.DeviceInterface.Bluetooth.ModelNumber";
     constexpr static auto kPropertyAepContainerId = L"System.Devices.Aep.ContainerId";
 
     std::optional<WinrtBluetooth::BluetoothDevice> _device;

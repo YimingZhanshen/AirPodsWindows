@@ -19,11 +19,12 @@
 #include "Opts.h"
 
 #include <format>
+#include <iostream>
 #include <numeric>
 
 #include <QLocale>
 
-#include <magic_enum.hpp>
+#include <magic_enum/magic_enum.hpp>
 
 #include <Config.h>
 #include "Error.h"
@@ -77,7 +78,7 @@ const LaunchOpts &LaunchOptsManager::Parse(int argc, char *argv[])
 
         return _opts;
     }
-    catch (cxxopts::OptionException &exception) {
+    catch (cxxopts::exceptions::exception &exception) {
         FatalError(std::format("Parse options failed.\n\n{}", exception.what()), false);
         std::exit(1);
     }

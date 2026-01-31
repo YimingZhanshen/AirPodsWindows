@@ -113,6 +113,22 @@ Latest version: %2%3</source>
         <source>Third-Party Libraries:</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Off</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Noise Cancellation</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Transparency</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Adaptive</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -147,6 +163,26 @@ Latest version: %2%3</source>
     <message>
         <source>Quit</source>
         <translation>종료</translation>
+    </message>
+    <message>
+        <source>Noise Control</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Noise Cancellation</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Transparency</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Adaptive</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -202,6 +238,54 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     <message>
         <source>Waiting for Binding</source>
         <translation>연결중</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Noise Cancellation</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Transparency</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Adaptive</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Unknown</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Enabled</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Disabled</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Automatically lowers media volume when you start speaking (AirPods Pro/Max only).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Adjusts media volume based on your environment and listening habits.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Protects your hearing by reducing loud sounds.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Controls the amount of environmental sound in Adaptive mode (0-50).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -295,6 +379,26 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>As icon</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Conversational awareness</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Personalized volume</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Reduce loud sounds</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Noise control mode</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Adaptive transparency level</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

@@ -21,13 +21,14 @@
 #include <mutex>
 #include <QDir>
 #include <boost/pfr.hpp>
-#include <magic_enum.hpp>
+#include <magic_enum/magic_enum.hpp>
 
 #include <Config.h>
 #include "../Logger.h"
 #include "../Application.h"
 #include "GlobalMedia.h"
 #include "LowAudioLatency.h"
+#include "AAP.h"
 
 using namespace boost;
 
@@ -89,6 +90,38 @@ void OnApply_conversational_awareness(const Fields &newFields)
 
     ApdApp->GetMainWindow()->GetApdMgr().OnConversationalAwarenessChanged(
         newFields.conversational_awareness);
+}
+
+void OnApply_personalized_volume(const Fields &newFields)
+{
+    LOG(Info, "OnApply_personalized_volume: {}", newFields.personalized_volume);
+
+    ApdApp->GetMainWindow()->GetApdMgr().OnPersonalizedVolumeChanged(
+        newFields.personalized_volume);
+}
+
+void OnApply_loud_sound_reduction(const Fields &newFields)
+{
+    LOG(Info, "OnApply_loud_sound_reduction: {}", newFields.loud_sound_reduction);
+
+    ApdApp->GetMainWindow()->GetApdMgr().OnLoudSoundReductionChanged(
+        newFields.loud_sound_reduction);
+}
+
+void OnApply_adaptive_transparency_level(const Fields &newFields)
+{
+    LOG(Info, "OnApply_adaptive_transparency_level: {}", newFields.adaptive_transparency_level);
+
+    ApdApp->GetMainWindow()->GetApdMgr().OnAdaptiveTransparencyLevelChanged(
+        newFields.adaptive_transparency_level);
+}
+
+void OnApply_noise_control_mode(const Fields &newFields)
+{
+    LOG(Info, "OnApply_noise_control_mode: {}", newFields.noise_control_mode);
+
+    ApdApp->GetMainWindow()->GetApdMgr().OnNoiseControlModeChanged(
+        static_cast<Core::AAP::NoiseControlMode>(newFields.noise_control_mode));
 }
 
 void OnApply_rssi_min(const Fields &newFields)

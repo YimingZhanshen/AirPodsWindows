@@ -46,6 +46,18 @@ enum class LoadResult : uint32_t { AbiIncompatible, NoAbiField, Successful };
     callback(bool, conversational_awareness, {false},                                              \
         Impl::OnApply(&OnApply_conversational_awareness),                                          \
         Impl::Desc{QObject::tr("Automatically lowers media volume when you start speaking (AirPods Pro/Max only).")}) \
+    callback(bool, personalized_volume, {false},                                                   \
+        Impl::OnApply(&OnApply_personalized_volume),                                               \
+        Impl::Desc{QObject::tr("Adjusts media volume based on your environment and listening habits.")}) \
+    callback(bool, loud_sound_reduction, {false},                                                  \
+        Impl::OnApply(&OnApply_loud_sound_reduction),                                              \
+        Impl::Desc{QObject::tr("Protects your hearing by reducing loud sounds.")})                 \
+    callback(uint8_t, adaptive_transparency_level, {25},                                           \
+        Impl::OnApply(&OnApply_adaptive_transparency_level),                                       \
+        Impl::Desc{QObject::tr("Controls the amount of environmental sound in Adaptive mode (0-50).")}) \
+    callback(uint32_t, noise_control_mode, {1},                                                    \
+        Impl::OnApply(&OnApply_noise_control_mode),                                                \
+        Impl::Desc{QObject::tr("Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).")}) \
     callback(QString, skipped_version, {})                                                         \
     callback(int16_t, rssi_min, {-80}, Impl::OnApply(&OnApply_rssi_min))                           \
     callback(bool, reduce_loud_sounds, {false}, Impl::Deprecated())                                \
@@ -215,6 +227,10 @@ void OnApply_auto_run(const Fields &newFields);
 void OnApply_low_audio_latency(const Fields &newFields);
 void OnApply_automatic_ear_detection(const Fields &newFields);
 void OnApply_conversational_awareness(const Fields &newFields);
+void OnApply_personalized_volume(const Fields &newFields);
+void OnApply_loud_sound_reduction(const Fields &newFields);
+void OnApply_adaptive_transparency_level(const Fields &newFields);
+void OnApply_noise_control_mode(const Fields &newFields);
 void OnApply_rssi_min(const Fields &newFields);
 void OnApply_device_address(const Fields &newFields);
 void OnApply_tray_icon_battery(const Fields &newFields);

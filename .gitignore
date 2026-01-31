@@ -16,3 +16,22 @@ CMakeSettings.json
 
 # Build
 Build/
+
+# Test files
+TestBuild/
+CMakeLists_Test.txt
+Source/Core/MagicAAPTest.cpp
+
+# IDA/Reverse engineering files
+ida/
+ida.txt
+
+# Downloaded dependencies
+librepods-main/
+librepods-main.zip
+vcpkg_installed/
+
+# Analysis documentation (temporary)
+Docs/MagicAAP_Analysis.md
+Docs/MagicAAP_Problem_Summary.md
+Docs/MagicAAP_Research.md

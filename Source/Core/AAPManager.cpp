@@ -24,9 +24,16 @@
 #include <WinSock2.h>
 #include <ws2bth.h>
 #include <BluetoothAPIs.h>
+#include <initguid.h>
+#include "MagicAAPWinRT.h"
 
 #pragma comment(lib, "Ws2_32.lib")
 #pragma comment(lib, "Bthprops.lib")
+
+// AAP Service UUID: 74ec2172-0bad-4d01-8f77-997b2be0722a
+// {74EC2172-0BAD-4D01-8F77-997B2BE0722A}
+DEFINE_GUID(AAP_SERVICE_UUID, 
+    0x74ec2172, 0x0bad, 0x4d01, 0x8f, 0x77, 0x99, 0x7b, 0x2b, 0xe0, 0x72, 0x2a);
 
 namespace Core::AAP {
 
@@ -56,26 +63,86 @@ bool Manager::Connect(uint64_t deviceAddress)
 
     std::lock_guard<std::mutex> lock{_mutex};
 
-    // Create Bluetooth socket
-    SOCKET sock = socket(AF_BTH, SOCK_STREAM, BTHPROTO_L2CAP);
-    if (sock == INVALID_SOCKET) {
-        LOG(Error, "AAP: Failed to create Bluetooth socket: {}", WSAGetLastError());
-        return false;
+    SOCKET sock = INVALID_SOCKET;
+    bool connected = false;
+
+    // Method 1: Try L2CAP with SOCK_SEQPACKET (datagram-oriented, more native for L2CAP)
+    LOG(Info, "AAP: Attempting L2CAP SEQPACKET connection to {:016X} on PSM {}", deviceAddress, kPSM);
+    sock = socket(AF_BTH, SOCK_SEQPACKET, BTHPROTO_L2CAP);
+    if (sock != INVALID_SOCKET) {
+        SOCKADDR_BTH addr{};
+        addr.addressFamily = AF_BTH;
+        addr.btAddr = deviceAddress;
+        addr.port = kPSM;
+
+        if (connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != SOCKET_ERROR) {
+            connected = true;
+            LOG(Info, "AAP: L2CAP SEQPACKET connection successful");
+        } else {
+            int error = WSAGetLastError();
+            LOG(Warn, "AAP: L2CAP SEQPACKET failed: {}", error);
+            closesocket(sock);
+            sock = INVALID_SOCKET;
+        }
+    } else {
+        LOG(Warn, "AAP: Failed to create L2CAP SEQPACKET socket: {}", WSAGetLastError());
     }
 
-    // Set up the address structure
-    SOCKADDR_BTH addr{};
-    addr.addressFamily = AF_BTH;
-    addr.btAddr = deviceAddress;
-    addr.port = kPSM;
+    // Method 2: Try L2CAP with SOCK_STREAM
+    if (!connected) {
+        LOG(Info, "AAP: Attempting L2CAP STREAM connection");
+        sock = socket(AF_BTH, SOCK_STREAM, BTHPROTO_L2CAP);
+        if (sock != INVALID_SOCKET) {
+            SOCKADDR_BTH addr{};
+            addr.addressFamily = AF_BTH;
+            addr.btAddr = deviceAddress;
+            addr.port = kPSM;
 
-    LOG(Info, "AAP: Connecting to device {:016X} on PSM {}", deviceAddress, kPSM);
+            if (connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != SOCKET_ERROR) {
+                connected = true;
+                LOG(Info, "AAP: L2CAP STREAM connection successful");
+            } else {
+                int error = WSAGetLastError();
+                LOG(Warn, "AAP: L2CAP STREAM failed: {}", error);
+                closesocket(sock);
+                sock = INVALID_SOCKET;
+            }
+        }
+    }
 
-    // Connect to the device
-    if (connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
-        int error = WSAGetLastError();
-        LOG(Error, "AAP: Failed to connect: {}", error);
-        closesocket(sock);
+    // Method 3: Try RFCOMM with service UUID
+    if (!connected) {
+        LOG(Info, "AAP: Attempting RFCOMM with AAP UUID");
+        sock = socket(AF_BTH, SOCK_STREAM, BTHPROTO_RFCOMM);
+        if (sock != INVALID_SOCKET) {
+            SOCKADDR_BTH addr{};
+            addr.addressFamily = AF_BTH;
+            addr.btAddr = deviceAddress;
+            addr.serviceClassId = AAP_SERVICE_UUID;
+            addr.port = BT_PORT_ANY;
+
+            if (connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != SOCKET_ERROR) {
+                connected = true;
+                LOG(Info, "AAP: RFCOMM connection successful");
+            } else {
+                int error = WSAGetLastError();
+                LOG(Warn, "AAP: RFCOMM failed: {}", error);
+                closesocket(sock);
+                sock = INVALID_SOCKET;
+            }
+        }
+    }
+
+    if (!connected || sock == INVALID_SOCKET) {
+        LOG(Info, "AAP: Traditional socket methods failed, trying MagicAAP WinRT...");
+        
+        // Method 4: Try MagicAAP WinRT (requires MagicAAP driver)
+        if (ConnectViaMagicAAP(deviceAddress)) {
+            // MagicAAP connection successful - don't need socket-based logic
+            return true;
+        }
+        
+        LOG(Error, "AAP: All connection methods failed");
         return false;
     }
 
@@ -117,6 +184,14 @@ void Manager::Disconnect()
     _connected = false;
     _headTrackingActive = false;
 
+    // Disconnect MagicAAP client if used
+    if (_usingMagicAAP && _magicAAPClient) {
+        _magicAAPClient->Disconnect();
+        _magicAAPClient.reset();
+        _usingMagicAAP = false;
+    }
+
+    // Close traditional socket if used
     if (_socket != nullptr) {
         SOCKET sock = reinterpret_cast<SOCKET>(_socket);
         closesocket(sock);
@@ -184,6 +259,98 @@ std::optional<ConversationalAwarenessState> Manager::GetConversationalAwarenessS
 {
     std::lock_guard<std::mutex> lock{_mutex};
     return _conversationalAwarenessState;
+}
+
+bool Manager::SetPersonalizedVolume(bool enable)
+{
+    if (!_connected) {
+        LOG(Warn, "AAP: Cannot set personalized volume - not connected");
+        return false;
+    }
+
+    auto packet = Packets::BuildPersonalizedVolumePacket(enable);
+    if (!SendPacket(packet)) {
+        return false;
+    }
+
+    LOG(Info, "AAP: Set personalized volume to {}", enable ? "enabled" : "disabled");
+    return true;
+}
+
+std::optional<PersonalizedVolumeState> Manager::GetPersonalizedVolumeState() const
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    return _personalizedVolumeState;
+}
+
+bool Manager::SetAutomaticEarDetection(bool enable)
+{
+    if (!_connected) {
+        LOG(Warn, "AAP: Cannot set automatic ear detection - not connected");
+        return false;
+    }
+
+    auto packet = Packets::BuildAutomaticEarDetectionPacket(enable);
+    if (!SendPacket(packet)) {
+        return false;
+    }
+
+    LOG(Info, "AAP: Set automatic ear detection to {}", enable ? "enabled" : "disabled");
+    return true;
+}
+
+std::optional<bool> Manager::GetAutomaticEarDetectionState() const
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    return _automaticEarDetectionState;
+}
+
+bool Manager::SetLoudSoundReduction(bool enable)
+{
+    if (!_connected) {
+        LOG(Warn, "AAP: Cannot set loud sound reduction - not connected");
+        return false;
+    }
+
+    auto packet = Packets::BuildLoudSoundReductionPacket(enable);
+    if (!SendPacket(packet)) {
+        return false;
+    }
+
+    LOG(Info, "AAP: Set loud sound reduction to {}", enable ? "enabled" : "disabled");
+    return true;
+}
+
+std::optional<LoudSoundReductionState> Manager::GetLoudSoundReductionState() const
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    return _loudSoundReductionState;
+}
+
+bool Manager::SetAdaptiveTransparencyLevel(uint8_t level)
+{
+    if (!_connected) {
+        LOG(Warn, "AAP: Cannot set adaptive transparency level - not connected");
+        return false;
+    }
+
+    if (level > 50) {
+        level = 50;
+    }
+
+    auto packet = Packets::BuildAdaptiveTransparencyLevelPacket(level);
+    if (!SendPacket(packet)) {
+        return false;
+    }
+
+    LOG(Info, "AAP: Set adaptive transparency level to {}", level);
+    return true;
+}
+
+std::optional<uint8_t> Manager::GetAdaptiveTransparencyLevel() const
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    return _adaptiveTransparencyLevel;
 }
 
 bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
@@ -259,7 +426,21 @@ void Manager::SetCallbacks(Callbacks callbacks)
 
 bool Manager::SendPacket(const std::vector<uint8_t>& packet)
 {
-    if (_socket == nullptr || !_connected) {
+    if (!_connected) {
+        return false;
+    }
+    
+    // Use MagicAAP client if available
+    if (_usingMagicAAP && _magicAAPClient) {
+        bool success = _magicAAPClient->SendData(packet);
+        if (success) {
+            LOG(Trace, "AAP: Sent {} bytes via MagicAAP", packet.size());
+        }
+        return success;
+    }
+
+    // Use traditional socket
+    if (_socket == nullptr) {
         return false;
     }
 
@@ -305,6 +486,70 @@ void Manager::ProcessPacket(const std::vector<uint8_t>& packet)
             LOG(Info, "AAP: Conversational awareness state: {}", Helper::ToString(state.value()).toStdString());
             if (_callbacks.onConversationalAwarenessChanged) {
                 _callbacks.onConversationalAwarenessChanged(state.value());
+            }
+        }
+        return;
+    }
+
+    // Personalized volume notification
+    if (IsPersonalizedVolumeNotification(packet)) {
+        auto state = ParsePersonalizedVolumeState(packet);
+        if (state.has_value()) {
+            {
+                std::lock_guard<std::mutex> lock{_mutex};
+                _personalizedVolumeState = state;
+            }
+            LOG(Info, "AAP: Personalized volume state: {}", static_cast<int>(state.value()));
+            if (_callbacks.onPersonalizedVolumeChanged) {
+                _callbacks.onPersonalizedVolumeChanged(state.value());
+            }
+        }
+        return;
+    }
+
+    // Automatic ear detection notification
+    if (IsAutomaticEarDetectionNotification(packet)) {
+        auto state = ParseAutomaticEarDetectionState(packet);
+        if (state.has_value()) {
+            {
+                std::lock_guard<std::mutex> lock{_mutex};
+                _automaticEarDetectionState = state;
+            }
+            LOG(Info, "AAP: Automatic ear detection: {}", state.value() ? "enabled" : "disabled");
+            if (_callbacks.onAutomaticEarDetectionChanged) {
+                _callbacks.onAutomaticEarDetectionChanged(state.value());
+            }
+        }
+        return;
+    }
+
+    // Loud sound reduction notification
+    if (IsLoudSoundReductionNotification(packet)) {
+        auto state = ParseLoudSoundReductionState(packet);
+        if (state.has_value()) {
+            {
+                std::lock_guard<std::mutex> lock{_mutex};
+                _loudSoundReductionState = state;
+            }
+            LOG(Info, "AAP: Loud sound reduction: {}", static_cast<int>(state.value()));
+            if (_callbacks.onLoudSoundReductionChanged) {
+                _callbacks.onLoudSoundReductionChanged(state.value());
+            }
+        }
+        return;
+    }
+
+    // Adaptive transparency level notification
+    if (IsAdaptiveTransparencyLevelNotification(packet)) {
+        auto level = ParseAdaptiveTransparencyLevel(packet);
+        if (level.has_value()) {
+            {
+                std::lock_guard<std::mutex> lock{_mutex};
+                _adaptiveTransparencyLevel = level;
+            }
+            LOG(Info, "AAP: Adaptive transparency level: {}", level.value());
+            if (_callbacks.onAdaptiveTransparencyLevelChanged) {
+                _callbacks.onAdaptiveTransparencyLevelChanged(level.value());
             }
         }
         return;
@@ -439,6 +684,106 @@ bool Manager::InitializeConnection()
     return true;
 }
 
+bool Manager::IsMagicAAPDriverAvailable()
+{
+    return MagicAAPWinRT::MagicAAPWinRTClient::IsDriverInstalled() &&
+           MagicAAPWinRT::MagicAAPWinRTClient::IsDriverRunning();
+}
+
+bool Manager::ConnectViaMagicAAP(uint64_t deviceAddress)
+{
+    // Check if MagicAAP driver is available
+    if (!MagicAAPWinRT::MagicAAPWinRTClient::IsDriverInstalled()) {
+        LOG(Info, "AAP: MagicAAP driver not installed");
+        return false;
+    }
+    
+    if (!MagicAAPWinRT::MagicAAPWinRTClient::IsDriverRunning()) {
+        LOG(Warn, "AAP: MagicAAP driver installed but not running");
+        return false;
+    }
+    
+    LOG(Info, "AAP: MagicAAP driver is available, attempting connection...");
+    
+    // Create MagicAAP client
+    _magicAAPClient = std::make_unique<MagicAAPWinRT::MagicAAPWinRTClient>();
+    
+    // Set callbacks
+    _magicAAPClient->SetOnDataReceived([this](const std::vector<uint8_t>& data) {
+        ProcessPacket(data);
+    });
+    
+    _magicAAPClient->SetOnDisconnected([this]() {
+        LOG(Info, "AAP: MagicAAP connection lost");
+        AAP::Callbacks::FnOnDisconnectedT callback;
+        {
+            std::lock_guard<std::mutex> lock{_mutex};
+            _connected = false;
+            _usingMagicAAP = false;
+            callback = _callbacks.onDisconnected;
+        }
+        if (callback) {
+            callback();
+        }
+    });
+    
+    // First, try device interface connection (direct file I/O)
+    LOG(Info, "AAP: Trying device interface connection...");
+    if (_magicAAPClient->ConnectViaDeviceInterface(deviceAddress)) {
+        LOG(Info, "AAP: Connected via MagicAAP device interface!");
+        
+        _connected = true;
+        _usingMagicAAP = true;
+        
+        // Initialize the AAP protocol
+        if (!InitializeConnection()) {
+            LOG(Error, "AAP: Failed to initialize MagicAAP connection");
+            _magicAAPClient->Disconnect();
+            _magicAAPClient.reset();
+            _connected = false;
+            _usingMagicAAP = false;
+            return false;
+        }
+        
+        if (_callbacks.onConnected) {
+            _callbacks.onConnected();
+        }
+        
+        return true;
+    }
+    
+    // Fallback: try WinRT RFCOMM connection
+    LOG(Info, "AAP: Device interface failed, trying WinRT RFCOMM...");
+    if (!_magicAAPClient->Connect(deviceAddress)) {
+        std::wstring errorW = _magicAAPClient->GetLastError();
+        std::string error(errorW.begin(), errorW.end());
+        LOG(Warn, "AAP: MagicAAP WinRT connection failed: {}", error);
+        _magicAAPClient.reset();
+        return false;
+    }
+    
+    LOG(Info, "AAP: Connected via MagicAAP WinRT!");
+    
+    _connected = true;
+    _usingMagicAAP = true;
+    
+    // Initialize the AAP protocol
+    if (!InitializeConnection()) {
+        LOG(Error, "AAP: Failed to initialize MagicAAP connection");
+        _magicAAPClient->Disconnect();
+        _magicAAPClient.reset();
+        _connected = false;
+        _usingMagicAAP = false;
+        return false;
+    }
+    
+    if (_callbacks.onConnected) {
+        _callbacks.onConnected();
+    }
+    
+    return true;
+}
+
 } // namespace Core::AAP
 
 #else
@@ -459,10 +804,12 @@ bool Manager::StartHeadTracking() { return false; }
 bool Manager::StopHeadTracking() { return false; }
 bool Manager::IsHeadTrackingActive() const { return false; }
 void Manager::SetCallbacks(Callbacks) {}
+bool Manager::IsMagicAAPDriverAvailable() { return false; }
 bool Manager::SendPacket(const std::vector<uint8_t>&) { return false; }
 void Manager::ProcessPacket(const std::vector<uint8_t>&) {}
 void Manager::ReaderLoop() {}
 bool Manager::InitializeConnection() { return false; }
+bool Manager::ConnectViaMagicAAP(uint64_t) { return false; }
 
 } // namespace Core::AAP
 

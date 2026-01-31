@@ -89,6 +89,20 @@ uint16_t Device::GetProductId() const
     return GetProperty<uint16_t>(kPropertyBluetoothProductId, 0);
 }
 
+std::optional<std::string> Device::GetModelNumber() const
+{
+    auto modelNumber = GetProperty<winrt::hstring>(kPropertyModelNumber, {});
+    if (modelNumber.empty()) {
+        modelNumber = GetProperty<winrt::hstring>(kPropertyBluetoothModelNumber, {});
+    }
+
+    if (modelNumber.empty()) {
+        return std::nullopt;
+    }
+
+    return winrt::to_string(modelNumber);
+}
+
 DeviceState Device::GetConnectionState() const
 {
     return _device->ConnectionStatus() == BluetoothConnectionStatus::Connected
@@ -154,6 +168,8 @@ const std::optional<DeviceInformation> &Device::GetInfo() const
                 {
                     kPropertyBluetoothProductId, // uint16
                     kPropertyBluetoothVendorId,  // uint16
+                    kPropertyModelNumber,         // hstring
+                    kPropertyBluetoothModelNumber, // hstring
                     kPropertyAepContainerId,     // hstring
                 }
             ).get();
