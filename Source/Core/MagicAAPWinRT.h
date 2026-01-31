@@ -88,6 +88,8 @@ public:
 private:
     std::atomic<bool> _connected{false};
     std::atomic<bool> _stopReceiver{false};
+    // Receiver stopped indicator to avoid indefinite join
+    std::atomic<bool> _receiverStopped{false};
     std::thread _receiverThread;
     mutable std::mutex _mutex;
     std::wstring _lastError;

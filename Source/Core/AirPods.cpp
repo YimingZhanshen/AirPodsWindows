@@ -501,6 +501,36 @@ void Manager::StartScanner()
     }
 }
 
+void Manager::Shutdown()
+{
+    LOG(Info, "AirPods::Manager::Shutdown() called. Stopping watcher and disconnecting AAP.");
+
+    // Stop advertisement watcher first
+    try {
+        if (!_adWatcher.Stop()) {
+            LOG(Warn, "Shutdown: AdvWatcher stop failed.");
+        }
+    } catch (...) {
+        LOG(Warn, "Shutdown: Exception while stopping adv watcher.");
+    }
+
+    // Ensure state manager is disconnected
+    try {
+        _stateMgr.Disconnect();
+    } catch (...) {
+        LOG(Warn, "Shutdown: Exception while disconnecting state manager.");
+    }
+
+    // Disconnect AAP manager - this will stop reader/receiver threads
+    try {
+        _aapMgr.Disconnect();
+    } catch (...) {
+        LOG(Warn, "Shutdown: Exception while disconnecting AAP manager.");
+    }
+
+    LOG(Info, "AirPods::Manager::Shutdown() completed.");
+}
+
 void Manager::StopScanner()
 {
     if (!_adWatcher.Stop()) {

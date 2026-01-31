@@ -256,7 +256,8 @@ bool MagicAAPWinRTClient::Connect(uint64_t bluetoothAddress) {
         
         _connected.store(true);
         _stopReceiver.store(false);
-        
+        _receiverStopped.store(false);
+
         // Start receiver thread
         _receiverThread = std::thread(&MagicAAPWinRTClient::ReceiverLoop, this);
         
@@ -345,16 +346,35 @@ bool MagicAAPWinRTClient::ConnectById(const std::wstring& deviceId) {
 
 void MagicAAPWinRTClient::Disconnect() {
     _stopReceiver.store(true);
-    
-    if (_receiverThread.joinable()) {
-        _receiverThread.join();
+
+    // Wait for receiver thread to exit gracefully
+    const auto start = std::chrono::steady_clock::now();
+    while (_receiverThread.joinable()) {
+        if (_receiverStopped.load()) {
+            try {
+                _receiverThread.join();
+            } catch (...) {
+                spdlog::warn("[MagicAAPWinRT] Exception joining receiver thread");
+            }
+            break;
+        }
+        if (std::chrono::steady_clock::now() - start > std::chrono::seconds(5)) {
+            spdlog::warn("[MagicAAPWinRT] Receiver thread did not stop within timeout, detaching");
+            try {
+                _receiverThread.detach();
+            } catch (...) {
+                spdlog::warn("[MagicAAPWinRT] Exception detaching receiver thread");
+            }
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
-    
+
     std::lock_guard<std::mutex> lock(_mutex);
     CleanupWinRTObjects();
     CleanupDeviceHandle();
     _connected.store(false);
-    
+
     spdlog::info("[MagicAAPWinRT] Disconnected");
 }
 
@@ -498,6 +518,7 @@ void MagicAAPWinRTClient::ReceiverLoop() {
         }
         
         spdlog::info("[MagicAAPWinRT] Receiver thread stopped (device interface)");
+        _receiverStopped.store(true);
         if (_onDisconnected && _connected.load()) {
             _onDisconnected();
         }
@@ -555,7 +576,8 @@ void MagicAAPWinRTClient::ReceiverLoop() {
 #endif
     
     spdlog::info("[MagicAAPWinRT] Receiver thread stopped");
-    
+    _receiverStopped.store(true);
+
     // Notify disconnection
     if (_onDisconnected && _connected.load()) {
         _onDisconnected();
