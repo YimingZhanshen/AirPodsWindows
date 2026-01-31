@@ -68,6 +68,7 @@ private:
     // Features
     void On_cbLowAudioLatency_toggled(bool checked);
     void On_cbAutoEarDetection_toggled(bool checked);
+    void On_cbConversationalAwareness_toggled(bool checked);
     void On_hsMaxReceivingRange_valueChanged(int value);
 
     // About

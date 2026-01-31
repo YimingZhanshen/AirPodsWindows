@@ -43,6 +43,9 @@ enum class LoadResult : uint32_t { AbiIncompatible, NoAbiField, Successful };
     callback(bool, automatic_ear_detection, {true},                                                \
         Impl::OnApply(&OnApply_automatic_ear_detection),                                           \
         Impl::Desc{QObject::tr("It automatically pauses or resumes media when your AirPods are taken out or put in your ears.")}) \
+    callback(bool, conversational_awareness, {false},                                              \
+        Impl::OnApply(&OnApply_conversational_awareness),                                          \
+        Impl::Desc{QObject::tr("Automatically lowers media volume when you start speaking (AirPods Pro/Max only).")}) \
     callback(QString, skipped_version, {})                                                         \
     callback(int16_t, rssi_min, {-80}, Impl::OnApply(&OnApply_rssi_min))                           \
     callback(bool, reduce_loud_sounds, {false}, Impl::Deprecated())                                \
@@ -211,6 +214,7 @@ void OnApply_language_locale(const Fields &newFields);
 void OnApply_auto_run(const Fields &newFields);
 void OnApply_low_audio_latency(const Fields &newFields);
 void OnApply_automatic_ear_detection(const Fields &newFields);
+void OnApply_conversational_awareness(const Fields &newFields);
 void OnApply_rssi_min(const Fields &newFields);
 void OnApply_device_address(const Fields &newFields);
 void OnApply_tray_icon_battery(const Fields &newFields);

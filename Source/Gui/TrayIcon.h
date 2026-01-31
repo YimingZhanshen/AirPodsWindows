@@ -21,8 +21,10 @@
 #include <QSystemTrayIcon>
 #include <QMenu>
 #include <QAction>
+#include <QActionGroup>
 
 #include "../Core/AirPods.h"
+#include "../Core/AAP.h"
 #include "../Core/Update.h"
 #include "Base.h"
 #include "SettingsWindow.h"
@@ -57,6 +59,7 @@ public:
     void Disconnect();
     void Unbind();
     void VersionUpdateAvailable(const Core::Update::ReleaseInfo &releaseInfo);
+    void UpdateNoiseControlMode(Core::AAP::NoiseControlMode mode);
 
 Q_SIGNALS:
     void OnTrayIconBatteryChangedSafely(Core::Settings::TrayIconBatteryBehavior value);
@@ -65,6 +68,15 @@ private:
     QSystemTrayIcon *_tray = new QSystemTrayIcon{this};
     QMenu *_menu = new QMenu{this};
     QAction *_actionNewVersion = new QAction{tr("New version available!"), this};
+    
+    // Noise Control Menu
+    QMenu *_noiseControlMenu = new QMenu{tr("Noise Control"), this};
+    QActionGroup *_noiseControlGroup = new QActionGroup{this};
+    QAction *_actionNoiseOff = new QAction{tr("Off"), this};
+    QAction *_actionNoiseCancellation = new QAction{tr("Noise Cancellation"), this};
+    QAction *_actionTransparency = new QAction{tr("Transparency"), this};
+    QAction *_actionAdaptive = new QAction{tr("Adaptive"), this};
+    
     QAction *_actionSettings = new QAction{tr("Settings"), this};
     QAction *_actionAbout = new QAction{tr("About"), this};
     QAction *_actionQuit = new QAction{tr("Quit"), this};
@@ -74,9 +86,12 @@ private:
     std::optional<Core::AirPods::State> _airPodsState;
     std::optional<QString> _displayName;
     std::optional<Core::Update::ReleaseInfo> _updateReleaseInfo;
+    std::optional<Core::AAP::NoiseControlMode> _currentNoiseMode;
 
     void ShowMainWindow();
     void Repaint();
+    void SetupNoiseControlMenu();
+    void UpdateNoiseControlMenuState();
 
     static std::optional<QImage>
     GenerateIcon(int size, const std::optional<QString> &optText, const std::optional<QColor> &dot);
@@ -86,6 +101,7 @@ private:
     void OnAboutClicked();
     void OnIconClicked(QSystemTrayIcon::ActivationReason reason);
     void OnTrayIconBatteryChanged(Core::Settings::TrayIconBatteryBehavior value);
+    void OnNoiseControlModeSelected(Core::AAP::NoiseControlMode mode);
 
 protected:
     SettingsWindow _settingsWindow;

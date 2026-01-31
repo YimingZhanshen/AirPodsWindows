@@ -83,6 +83,14 @@ void OnApply_automatic_ear_detection(const Fields &newFields)
         newFields.automatic_ear_detection);
 }
 
+void OnApply_conversational_awareness(const Fields &newFields)
+{
+    LOG(Info, "OnApply_conversational_awareness: {}", newFields.conversational_awareness);
+
+    ApdApp->GetMainWindow()->GetApdMgr().OnConversationalAwarenessChanged(
+        newFields.conversational_awareness);
+}
+
 void OnApply_rssi_min(const Fields &newFields)
 {
     LOG(Info, "OnApply_rssi_min: {}", newFields.rssi_min);

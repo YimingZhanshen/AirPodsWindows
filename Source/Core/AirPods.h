@@ -22,6 +22,8 @@
 
 #include "Bluetooth.h"
 #include "AppleCP.h"
+#include "AAP.h"
+#include "AAPManager.h"
 
 namespace Core::AirPods {
 
@@ -63,6 +65,10 @@ struct State {
     PodsState pods;
     CaseState caseBox;
     QString displayName;
+    
+    // AAP Protocol states (for AirPods Pro and Max with ANC support)
+    std::optional<AAP::NoiseControlMode> noiseControlMode;
+    std::optional<AAP::ConversationalAwarenessState> conversationalAwareness;
 
     bool operator==(const State &rhs) const = default;
 };
@@ -154,6 +160,18 @@ public:
     void OnRssiMinChanged(int16_t rssiMin);
     void OnAutomaticEarDetectionChanged(bool enable);
     void OnBoundDeviceAddressChanged(uint64_t address);
+    void OnConversationalAwarenessChanged(bool enable);
+
+    // AAP Protocol features
+    bool SetNoiseControlMode(AAP::NoiseControlMode mode);
+    std::optional<AAP::NoiseControlMode> GetNoiseControlMode() const;
+    bool SetConversationalAwareness(bool enable);
+    std::optional<AAP::ConversationalAwarenessState> GetConversationalAwarenessState() const;
+    bool SetAdaptiveNoiseLevel(uint8_t level);
+    bool IsAAPConnected() const;
+
+    // Check if the model supports ANC features
+    static bool SupportsANC(Model model);
 
 private:
     std::mutex _mutex;
@@ -163,6 +181,10 @@ private:
     QString _deviceName;
     bool _deviceConnected{false};
     bool _automaticEarDetection{false};
+    bool _conversationalAwarenessEnabled{false};
+    
+    // AAP Manager for L2CAP protocol communication
+    AAP::Manager _aapMgr;
 
     void OnBoundDeviceConnectionStateChanged(Bluetooth::DeviceState state);
     void OnStateChanged(Details::StateManager::UpdateEvent updateEvent);
@@ -171,6 +193,15 @@ private:
     bool OnAdvertisementReceived(const Bluetooth::AdvertisementWatcher::ReceivedData &data);
     void OnAdvWatcherStateChanged(
         Bluetooth::AdvertisementWatcher::State state, const std::optional<std::string> &optError);
+    
+    // AAP callbacks
+    void OnNoiseControlModeChanged(AAP::NoiseControlMode mode);
+    void OnConversationalAwarenessStateChanged(AAP::ConversationalAwarenessState state);
+    void OnSpeakingLevelChanged(AAP::SpeakingLevel level);
+    void OnAAPConnected();
+    void OnAAPDisconnected();
+    void SetupAAPCallbacks();
+    void ConnectAAP();
 };
 
 std::vector<Core::Bluetooth::Device> GetDevices();

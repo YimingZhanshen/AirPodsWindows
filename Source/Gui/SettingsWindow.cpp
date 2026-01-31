@@ -102,6 +102,9 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QDialog{parent}
     _ui.hlTipAutoEarDetection->addWidget(
         new TipLabel{constMetaFields.automatic_ear_detection.Description(), this});
 
+    _ui.hlTipConversationalAwareness->addWidget(
+        new TipLabel{constMetaFields.conversational_awareness.Description(), this});
+
     _ui.hsMaxReceivingRange->setMinimum(50);
     _ui.hsMaxReceivingRange->setMaximum(100);
 
@@ -138,6 +141,12 @@ SettingsWindow::SettingsWindow(QWidget *parent) : QDialog{parent}
     connect(_ui.cbAutoEarDetection, &QCheckBox::toggled, this, [this](bool checked) {
         if (_trigger) {
             On_cbAutoEarDetection_toggled(checked);
+        }
+    });
+
+    connect(_ui.cbConversationalAwareness, &QCheckBox::toggled, this, [this](bool checked) {
+        if (_trigger) {
+            On_cbConversationalAwareness_toggled(checked);
         }
     });
 
@@ -293,6 +302,8 @@ void SettingsWindow::Update(const Fields &fields, bool trigger)
 
     _ui.cbAutoEarDetection->setChecked(fields.automatic_ear_detection);
 
+    _ui.cbConversationalAwareness->setChecked(fields.conversational_awareness);
+
     _ui.hsMaxReceivingRange->setValue(-fields.rssi_min);
 
     auto [batteryOnTrayIconDisable, batteryOnTrayIconWhenLowBattery, batteryOnTrayIconAlways] =
@@ -399,6 +410,11 @@ void SettingsWindow::On_cbLowAudioLatency_toggled(bool checked)
 void SettingsWindow::On_cbAutoEarDetection_toggled(bool checked)
 {
     ModifiableAccess()->automatic_ear_detection = checked;
+}
+
+void SettingsWindow::On_cbConversationalAwareness_toggled(bool checked)
+{
+    ModifiableAccess()->conversational_awareness = checked;
 }
 
 void SettingsWindow::On_hsMaxReceivingRange_valueChanged(int value)

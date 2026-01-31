@@ -42,22 +42,115 @@ TrayIcon::TrayIcon()
 
     _actionNewVersion->setVisible(false);
 
+    // Setup noise control menu
+    SetupNoiseControlMenu();
+
     _menu->addAction(_actionNewVersion);
+    _menu->addSeparator();
+    _menu->addMenu(_noiseControlMenu);
     _menu->addSeparator();
     _menu->addAction(_actionSettings);
     _menu->addSeparator();
     _menu->addAction(_actionAbout);
     _menu->addAction(_actionQuit);
 
+    // Initially hide noise control menu until we have a connected ANC device
+    _noiseControlMenu->menuAction()->setVisible(false);
+
     _tray->setContextMenu(_menu);
     _tray->setIcon(ApdApplication::windowIcon());
     _tray->show();
+}
+
+void TrayIcon::SetupNoiseControlMenu()
+{
+    // Make actions checkable
+    _actionNoiseOff->setCheckable(true);
+    _actionNoiseCancellation->setCheckable(true);
+    _actionTransparency->setCheckable(true);
+    _actionAdaptive->setCheckable(true);
+
+    // Add to action group for mutual exclusivity
+    _noiseControlGroup->addAction(_actionNoiseOff);
+    _noiseControlGroup->addAction(_actionNoiseCancellation);
+    _noiseControlGroup->addAction(_actionTransparency);
+    _noiseControlGroup->addAction(_actionAdaptive);
+
+    // Add to menu
+    _noiseControlMenu->addAction(_actionNoiseOff);
+    _noiseControlMenu->addAction(_actionNoiseCancellation);
+    _noiseControlMenu->addAction(_actionTransparency);
+    _noiseControlMenu->addAction(_actionAdaptive);
+
+    // Connect signals
+    connect(_actionNoiseOff, &QAction::triggered, this, [this]() {
+        OnNoiseControlModeSelected(Core::AAP::NoiseControlMode::Off);
+    });
+    connect(_actionNoiseCancellation, &QAction::triggered, this, [this]() {
+        OnNoiseControlModeSelected(Core::AAP::NoiseControlMode::NoiseCancellation);
+    });
+    connect(_actionTransparency, &QAction::triggered, this, [this]() {
+        OnNoiseControlModeSelected(Core::AAP::NoiseControlMode::Transparency);
+    });
+    connect(_actionAdaptive, &QAction::triggered, this, [this]() {
+        OnNoiseControlModeSelected(Core::AAP::NoiseControlMode::Adaptive);
+    });
+}
+
+void TrayIcon::OnNoiseControlModeSelected(Core::AAP::NoiseControlMode mode)
+{
+    auto &apdMgr = ApdApp->GetMainWindow()->GetApdMgr();
+    if (apdMgr.SetNoiseControlMode(mode)) {
+        _currentNoiseMode = mode;
+        UpdateNoiseControlMenuState();
+    }
+}
+
+void TrayIcon::UpdateNoiseControlMenuState()
+{
+    if (!_currentNoiseMode.has_value()) {
+        return;
+    }
+
+    switch (_currentNoiseMode.value()) {
+        case Core::AAP::NoiseControlMode::Off:
+            _actionNoiseOff->setChecked(true);
+            break;
+        case Core::AAP::NoiseControlMode::NoiseCancellation:
+            _actionNoiseCancellation->setChecked(true);
+            break;
+        case Core::AAP::NoiseControlMode::Transparency:
+            _actionTransparency->setChecked(true);
+            break;
+        case Core::AAP::NoiseControlMode::Adaptive:
+            _actionAdaptive->setChecked(true);
+            break;
+        default:
+            break;
+    }
+}
+
+void TrayIcon::UpdateNoiseControlMode(Core::AAP::NoiseControlMode mode)
+{
+    _currentNoiseMode = mode;
+    UpdateNoiseControlMenuState();
 }
 
 void TrayIcon::UpdateState(const Core::AirPods::State &state)
 {
     _status = Status::Updating;
     _airPodsState = state;
+    
+    // Show noise control menu for ANC-capable devices
+    bool supportsANC = Core::AirPods::Manager::SupportsANC(state.model);
+    _noiseControlMenu->menuAction()->setVisible(supportsANC);
+    
+    // Update noise control mode if available from state
+    if (state.noiseControlMode.has_value()) {
+        _currentNoiseMode = state.noiseControlMode;
+        UpdateNoiseControlMenuState();
+    }
+    
     Repaint();
 }
 
@@ -72,6 +165,8 @@ void TrayIcon::Disconnect()
 {
     _status = Status::Disconnected;
     _airPodsState.reset();
+    _currentNoiseMode.reset();
+    _noiseControlMenu->menuAction()->setVisible(false);
     Repaint();
 }
 
@@ -79,6 +174,8 @@ void TrayIcon::Unbind()
 {
     _status = Status::Unbind;
     _airPodsState.reset();
+    _currentNoiseMode.reset();
+    _noiseControlMenu->menuAction()->setVisible(false);
     Repaint();
 }
 

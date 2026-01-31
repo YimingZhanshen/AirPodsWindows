@@ -548,4 +548,107 @@ void Controller::Pause()
         }
     }
 }
+
+void Controller::SetVolume(int percent)
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    
+    // Save current volume before reducing (if reducing)
+    if (percent < 100 && _savedVolume == 100) {
+        _savedVolume = GetVolume();
+    }
+    
+    // If restoring to 100%, restore to saved volume instead
+    int targetPercent = (percent == 100) ? _savedVolume : (percent * _savedVolume / 100);
+    
+    try {
+        OS::Windows::Com::UniquePtr<IMMDeviceEnumerator> deviceEnumerator;
+        HRESULT result = CoCreateInstance(
+            __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, deviceEnumerator.GetIID(),
+            (void **)deviceEnumerator.ReleaseAndAddressOf());
+        if (FAILED(result)) {
+            LOG(Warn, "SetVolume: Create IMMDeviceEnumerator failed. HRESULT: {:#x}", result);
+            return;
+        }
+
+        OS::Windows::Com::UniquePtr<IMMDevice> audioEndpoint;
+        result = deviceEnumerator->GetDefaultAudioEndpoint(
+            eRender, eMultimedia, audioEndpoint.ReleaseAndAddressOf());
+        if (FAILED(result)) {
+            LOG(Warn, "SetVolume: GetDefaultAudioEndpoint failed. HRESULT: {:#x}", result);
+            return;
+        }
+
+        OS::Windows::Com::UniquePtr<IAudioEndpointVolume> endpointVolume;
+        result = audioEndpoint->Activate(
+            endpointVolume.GetIID(), CLSCTX_ALL, nullptr, (void **)endpointVolume.ReleaseAndAddressOf());
+        if (FAILED(result)) {
+            LOG(Warn, "SetVolume: Activate IAudioEndpointVolume failed. HRESULT: {:#x}", result);
+            return;
+        }
+
+        float volumeLevel = static_cast<float>(targetPercent) / 100.0f;
+        result = endpointVolume->SetMasterVolumeLevelScalar(volumeLevel, nullptr);
+        if (FAILED(result)) {
+            LOG(Warn, "SetVolume: SetMasterVolumeLevelScalar failed. HRESULT: {:#x}", result);
+            return;
+        }
+        
+        LOG(Trace, "SetVolume: Volume set to {}%", targetPercent);
+        
+        // Reset saved volume if restoring
+        if (percent == 100) {
+            _savedVolume = 100;
+        }
+    }
+    catch (const std::exception &ex) {
+        LOG(Warn, "SetVolume: Exception: {}", ex.what());
+    }
+}
+
+int Controller::GetVolume() const
+{
+    try {
+        OS::Windows::Com::UniquePtr<IMMDeviceEnumerator> deviceEnumerator;
+        HRESULT result = CoCreateInstance(
+            __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, deviceEnumerator.GetIID(),
+            (void **)deviceEnumerator.ReleaseAndAddressOf());
+        if (FAILED(result)) {
+            LOG(Warn, "GetVolume: Create IMMDeviceEnumerator failed. HRESULT: {:#x}", result);
+            return 100;
+        }
+
+        OS::Windows::Com::UniquePtr<IMMDevice> audioEndpoint;
+        result = deviceEnumerator->GetDefaultAudioEndpoint(
+            eRender, eMultimedia, audioEndpoint.ReleaseAndAddressOf());
+        if (FAILED(result)) {
+            LOG(Warn, "GetVolume: GetDefaultAudioEndpoint failed. HRESULT: {:#x}", result);
+            return 100;
+        }
+
+        OS::Windows::Com::UniquePtr<IAudioEndpointVolume> endpointVolume;
+        result = audioEndpoint->Activate(
+            endpointVolume.GetIID(), CLSCTX_ALL, nullptr, (void **)endpointVolume.ReleaseAndAddressOf());
+        if (FAILED(result)) {
+            LOG(Warn, "GetVolume: Activate IAudioEndpointVolume failed. HRESULT: {:#x}", result);
+            return 100;
+        }
+
+        float volumeLevel = 0.0f;
+        result = endpointVolume->GetMasterVolumeLevelScalar(&volumeLevel);
+        if (FAILED(result)) {
+            LOG(Warn, "GetVolume: GetMasterVolumeLevelScalar failed. HRESULT: {:#x}", result);
+            return 100;
+        }
+        
+        return static_cast<int>(volumeLevel * 100.0f);
+    }
+    catch (const std::exception &ex) {
+        LOG(Warn, "GetVolume: Exception: {}", ex.what());
+        return 100;
+    }
+}
 } // namespace Core::GlobalMedia

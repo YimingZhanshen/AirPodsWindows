@@ -33,4 +33,14 @@ inline void Pause()
 {
     Controller::GetInstance().Pause();
 }
+
+inline void SetVolume(int percent)
+{
+    Controller::GetInstance().SetVolume(percent);
+}
+
+inline int GetVolume()
+{
+    return Controller::GetInstance().GetVolume();
+}
 } // namespace Core::GlobalMedia

@@ -76,9 +76,12 @@ protected:
 public:
     void Play() override;
     void Pause() override;
+    void SetVolume(int percent);
+    int GetVolume() const;
 
 private:
     std::mutex _mutex;
     std::vector<std::unique_ptr<Details::MediaProgramAbstract>> _pausedPrograms;
+    int _savedVolume{100};  // Save volume before reducing for conversational awareness
 };
 } // namespace Core::GlobalMedia

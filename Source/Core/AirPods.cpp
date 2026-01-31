@@ -376,6 +376,35 @@ Manager::Manager()
         std::lock_guard<std::mutex> lock{_mutex};
         OnAdvWatcherStateChanged(std::forward<decltype(args)>(args)...);
     };
+
+    SetupAAPCallbacks();
+}
+
+void Manager::SetupAAPCallbacks()
+{
+    AAP::Callbacks callbacks;
+    
+    callbacks.onNoiseControlChanged = [this](AAP::NoiseControlMode mode) {
+        OnNoiseControlModeChanged(mode);
+    };
+    
+    callbacks.onConversationalAwarenessChanged = [this](AAP::ConversationalAwarenessState state) {
+        OnConversationalAwarenessStateChanged(state);
+    };
+    
+    callbacks.onSpeakingLevelChanged = [this](AAP::SpeakingLevel level) {
+        OnSpeakingLevelChanged(level);
+    };
+    
+    callbacks.onConnected = [this]() {
+        OnAAPConnected();
+    };
+    
+    callbacks.onDisconnected = [this]() {
+        OnAAPDisconnected();
+    };
+    
+    _aapMgr.SetCallbacks(std::move(callbacks));
 }
 
 void Manager::StartScanner()
@@ -417,6 +446,9 @@ void Manager::OnBoundDeviceAddressChanged(uint64_t address)
     _boundDevice.reset();
     _deviceConnected = false;
     _stateMgr.Disconnect();
+    
+    // Disconnect AAP if connected
+    _aapMgr.Disconnect();
 
     // Unbind device
     //
@@ -455,14 +487,56 @@ void Manager::OnBoundDeviceConnectionStateChanged(Bluetooth::DeviceState state)
 {
     bool newDeviceConnected = state == Bluetooth::DeviceState::Connected;
     bool doDisconnect = _deviceConnected && !newDeviceConnected;
+    bool doConnect = !_deviceConnected && newDeviceConnected;
     _deviceConnected = newDeviceConnected;
 
     if (doDisconnect) {
         _stateMgr.Disconnect();
+        _aapMgr.Disconnect();
+    }
+    
+    if (doConnect && _boundDevice.has_value()) {
+        // Try to connect AAP for devices that support it
+        ConnectAAP();
     }
 
     LOG(Info, "The device we bound is updated. current: {}, new: {}", _deviceConnected,
         newDeviceConnected);
+}
+
+void Manager::ConnectAAP()
+{
+    if (!_boundDevice.has_value()) {
+        return;
+    }
+    
+    auto state = _stateMgr.GetCurrentState();
+    if (state.has_value() && SupportsANC(state->model)) {
+        uint64_t address = _boundDevice->GetAddress();
+        LOG(Info, "Attempting AAP connection for ANC-capable device");
+        
+        // Connect in a separate thread to avoid blocking
+        std::thread([this, address]() {
+            if (_aapMgr.Connect(address)) {
+                LOG(Info, "AAP connection established successfully");
+            } else {
+                LOG(Warn, "AAP connection failed - ANC features will not be available");
+            }
+        }).detach();
+    }
+}
+
+bool Manager::SupportsANC(Model model)
+{
+    switch (model) {
+        case Model::AirPods_Pro:
+        case Model::AirPods_Pro_2:
+        case Model::AirPods_Pro_2_USB_C:
+        case Model::AirPods_Max:
+            return true;
+        default:
+            return false;
+    }
 }
 
 void Manager::OnStateChanged(Details::StateManager::UpdateEvent updateEvent)
@@ -567,6 +641,108 @@ void Manager::OnAdvWatcherStateChanged(
     default:
         FatalError("Unhandled adv watcher state: '{}'", Helper::ToUnderlying(state));
     }
+}
+
+// AAP Protocol public methods
+
+bool Manager::SetNoiseControlMode(AAP::NoiseControlMode mode)
+{
+    return _aapMgr.SetNoiseControlMode(mode);
+}
+
+std::optional<AAP::NoiseControlMode> Manager::GetNoiseControlMode() const
+{
+    return _aapMgr.GetNoiseControlMode();
+}
+
+bool Manager::SetConversationalAwareness(bool enable)
+{
+    return _aapMgr.SetConversationalAwareness(enable);
+}
+
+std::optional<AAP::ConversationalAwarenessState> Manager::GetConversationalAwarenessState() const
+{
+    return _aapMgr.GetConversationalAwarenessState();
+}
+
+bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
+{
+    return _aapMgr.SetAdaptiveNoiseLevel(level);
+}
+
+bool Manager::IsAAPConnected() const
+{
+    return _aapMgr.IsConnected();
+}
+
+void Manager::OnConversationalAwarenessChanged(bool enable)
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    _conversationalAwarenessEnabled = enable;
+    
+    if (_aapMgr.IsConnected()) {
+        _aapMgr.SetConversationalAwareness(enable);
+    }
+}
+
+// AAP callbacks
+
+void Manager::OnNoiseControlModeChanged(AAP::NoiseControlMode mode)
+{
+    LOG(Info, "Noise control mode changed to: {}", Helper::ToString(mode).toStdString());
+    
+    // Update the cached state in the state manager if we have a current state
+    auto state = _stateMgr.GetCurrentState();
+    if (state.has_value()) {
+        // Notify UI about noise control change
+        // The state will be updated when we next receive an advertisement
+    }
+}
+
+void Manager::OnConversationalAwarenessStateChanged(AAP::ConversationalAwarenessState state)
+{
+    LOG(Info, "Conversational awareness state changed to: {}", Helper::ToString(state).toStdString());
+}
+
+void Manager::OnSpeakingLevelChanged(AAP::SpeakingLevel level)
+{
+    if (!_conversationalAwarenessEnabled) {
+        return;
+    }
+    
+    switch (level) {
+        case AAP::SpeakingLevel::StartedSpeaking_GreatlyReduce:
+        case AAP::SpeakingLevel::StartedSpeaking_GreatlyReduce2:
+            LOG(Info, "User started speaking - reducing media volume");
+            Core::GlobalMedia::SetVolume(40); // Reduce to 40%
+            break;
+            
+        case AAP::SpeakingLevel::StoppedSpeaking:
+        case AAP::SpeakingLevel::NormalVolume:
+        case AAP::SpeakingLevel::NormalVolume2:
+            LOG(Info, "User stopped speaking - restoring media volume");
+            Core::GlobalMedia::SetVolume(100); // Restore to 100%
+            break;
+            
+        default:
+            // Intermediate levels - could implement gradual volume adjustment
+            break;
+    }
+}
+
+void Manager::OnAAPConnected()
+{
+    LOG(Info, "AAP connection established - ANC features available");
+    
+    // Apply user's conversational awareness preference
+    if (_conversationalAwarenessEnabled) {
+        _aapMgr.SetConversationalAwareness(true);
+    }
+}
+
+void Manager::OnAAPDisconnected()
+{
+    LOG(Info, "AAP connection lost - ANC features unavailable");
 }
 
 std::vector<Bluetooth::Device> GetDevices()
