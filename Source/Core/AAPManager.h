@@ -147,6 +147,8 @@ private:
     // Reader thread
     std::thread _readerThread;
     std::atomic<bool> _stopReader{false};
+    // Reader stopped indicator to avoid indefinite join
+    std::atomic<bool> _readerStopped{false};
     
     // Internal methods
     bool SendPacket(const std::vector<uint8_t>& packet);

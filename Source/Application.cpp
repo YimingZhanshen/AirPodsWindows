@@ -157,6 +157,18 @@ bool ApdApplication::Prepare(int argc, char *argv[])
     _mainWindow = std::make_unique<Gui::MainWindow>();
     _lowAudioLatencyController = std::make_unique<Core::LowAudioLatency::Controller>();
 
+    // Ensure we quit gracefully: stop scanners and disconnect background AAP threads
+    connect(this, &QCoreApplication::aboutToQuit, []() {
+        LOG(Info, "Application aboutToQuit: performing graceful shutdown.");
+        try {
+            if (ApdApp) {
+                ApdApp->GetMainWindow()->GetApdMgr().Shutdown();
+            }
+        } catch (...) {
+            LOG(Warn, "Exception during graceful shutdown.");
+        }
+    });
+
     InitSettings(settingsLoadResult);
 
     return true;

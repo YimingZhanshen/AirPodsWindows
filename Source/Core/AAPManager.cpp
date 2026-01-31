@@ -163,6 +163,7 @@ bool Manager::Connect(uint64_t deviceAddress)
 
     // Start reader thread
     _stopReader = false;
+    _readerStopped = false;
     _readerThread = std::thread(&Manager::ReaderLoop, this);
 
     if (_callbacks.onConnected) {
@@ -174,41 +175,83 @@ bool Manager::Connect(uint64_t deviceAddress)
 
 void Manager::Disconnect()
 {
-    std::lock_guard<std::mutex> lock{_mutex};
+    // Prepare local copies and flip flags under lock, then perform blocking operations
+    std::unique_ptr<MagicAAPWinRT::MagicAAPWinRTClient> localMagicClient;
+    void *localSocket = nullptr;
+    Callbacks localCallbacks;
 
-    if (!_connected) {
-        return;
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+
+        if (!_connected) {
+            return;
+        }
+
+        _stopReader = true;
+        _connected = false;
+        _headTrackingActive = false;
+
+        // Move out magic client so we can call Disconnect() without holding the lock
+        if (_usingMagicAAP && _magicAAPClient) {
+            localMagicClient = std::move(_magicAAPClient);
+            _usingMagicAAP = false;
+        }
+
+        // Move out socket handle to close it outside lock
+        localSocket = _socket;
+        _socket = nullptr;
+
+        // Copy callbacks to invoke after releasing lock
+        localCallbacks = _callbacks;
     }
 
-    _stopReader = true;
-    _connected = false;
-    _headTrackingActive = false;
-
-    // Disconnect MagicAAP client if used
-    if (_usingMagicAAP && _magicAAPClient) {
-        _magicAAPClient->Disconnect();
-        _magicAAPClient.reset();
-        _usingMagicAAP = false;
+    // Disconnect MagicAAP client if used (may block while receiver thread exits)
+    if (localMagicClient) {
+        localMagicClient->Disconnect();
+        localMagicClient.reset();
     }
 
     // Close traditional socket if used
-    if (_socket != nullptr) {
-        SOCKET sock = reinterpret_cast<SOCKET>(_socket);
+    if (localSocket != nullptr) {
+        SOCKET sock = reinterpret_cast<SOCKET>(localSocket);
         closesocket(sock);
-        _socket = nullptr;
+        localSocket = nullptr;
     }
 
-    if (_readerThread.joinable()) {
-        _readerThread.join();
+    // Wait for reader thread to exit, but don't block forever
+    const auto start = std::chrono::steady_clock::now();
+    while (_readerThread.joinable()) {
+        if (_readerStopped.load()) {
+            try {
+                _readerThread.join();
+            } catch (...) {
+                LOG(Warn, "AAP: Exception joining reader thread.");
+            }
+            break;
+        }
+        if (std::chrono::steady_clock::now() - start > std::chrono::seconds(5)) {
+            LOG(Warn, "AAP: Reader thread did not stop within timeout, detaching.");
+            try {
+                _readerThread.detach();
+            } catch (...) {
+                LOG(Warn, "AAP: Exception detaching reader thread.");
+            }
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
-    _noiseControlMode.reset();
-    _conversationalAwarenessState.reset();
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        _noiseControlMode.reset();
+        _conversationalAwarenessState.reset();
+    }
 
     LOG(Info, "AAP: Disconnected");
 
-    if (_callbacks.onDisconnected) {
-        _callbacks.onDisconnected();
+    // Invoke onDisconnected callback outside lock
+    if (localCallbacks.onDisconnected) {
+        localCallbacks.onDisconnected();
     }
 }
 
@@ -634,6 +677,8 @@ void Manager::ReaderLoop()
         std::vector<uint8_t> packet(buffer.begin(), buffer.begin() + received);
         ProcessPacket(packet);
     }
+
+    _readerStopped = true;
 
     if (!_stopReader) {
         // Connection was lost unexpectedly

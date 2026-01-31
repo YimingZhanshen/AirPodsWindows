@@ -161,6 +161,8 @@ public:
 
     void StartScanner();
     void StopScanner();
+    // Graceful shutdown to stop scanner and disconnect AAP immediately
+    void Shutdown();
 
     void OnRssiMinChanged(int16_t rssiMin);
     void OnAutomaticEarDetectionChanged(bool enable);
