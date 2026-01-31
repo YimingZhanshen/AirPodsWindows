@@ -82,6 +82,6 @@ public:
 private:
     std::mutex _mutex;
     std::vector<std::unique_ptr<Details::MediaProgramAbstract>> _pausedPrograms;
-    int _savedVolume{100};  // Save volume before reducing for conversational awareness
+    int _savedVolume{0};  // Saved volume before reduction; 0 means no active reduction
 };
 } // namespace Core::GlobalMedia

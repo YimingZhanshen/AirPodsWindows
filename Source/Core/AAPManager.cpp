@@ -392,10 +392,13 @@ void Manager::ReaderLoop()
 
     if (!_stopReader) {
         // Connection was lost unexpectedly
-        std::lock_guard<std::mutex> lock{_mutex};
-        _connected = false;
-        auto callback = _callbacks.onDisconnected;
-        // Release lock before calling callback to avoid potential deadlocks
+        AAP::Callbacks::FnOnDisconnectedT callback;
+        {
+            std::lock_guard<std::mutex> lock{_mutex};
+            _connected = false;
+            callback = _callbacks.onDisconnected;
+        }
+        // Invoke callback outside the lock to avoid potential deadlocks
         if (callback) {
             callback();
         }

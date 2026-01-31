@@ -710,6 +710,10 @@ void Manager::OnConversationalAwarenessStateChanged(AAP::ConversationalAwareness
     LOG(Info, "Conversational awareness state changed to: {}", Helper::ToString(state).toStdString());
 }
 
+// Volume levels for conversational awareness
+constexpr int kConversationalAwarenessVolumePercent = 40;  // Volume when user is speaking
+constexpr int kFullVolumePercent = 100;  // Normal volume when not speaking
+
 void Manager::OnSpeakingLevelChanged(AAP::SpeakingLevel level)
 {
     if (!_conversationalAwarenessEnabled) {
@@ -719,15 +723,15 @@ void Manager::OnSpeakingLevelChanged(AAP::SpeakingLevel level)
     switch (level) {
         case AAP::SpeakingLevel::StartedSpeaking_GreatlyReduce:
         case AAP::SpeakingLevel::StartedSpeaking_GreatlyReduce2:
-            LOG(Info, "User started speaking - reducing media volume");
-            Core::GlobalMedia::SetVolume(40); // Reduce to 40%
+            LOG(Info, "User started speaking - reducing media volume to {}%", kConversationalAwarenessVolumePercent);
+            Core::GlobalMedia::SetVolume(kConversationalAwarenessVolumePercent);
             break;
             
         case AAP::SpeakingLevel::StoppedSpeaking:
         case AAP::SpeakingLevel::NormalVolume:
         case AAP::SpeakingLevel::NormalVolume2:
             LOG(Info, "User stopped speaking - restoring media volume");
-            Core::GlobalMedia::SetVolume(100); // Restore to 100%
+            Core::GlobalMedia::SetVolume(kFullVolumePercent);
             break;
             
         default:

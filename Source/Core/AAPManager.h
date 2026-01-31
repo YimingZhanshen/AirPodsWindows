@@ -35,13 +35,21 @@ namespace Core::AAP {
 //
 
 struct Callbacks {
-    std::function<void(NoiseControlMode)> onNoiseControlChanged;
-    std::function<void(ConversationalAwarenessState)> onConversationalAwarenessChanged;
-    std::function<void(SpeakingLevel)> onSpeakingLevelChanged;
-    std::function<void(EarStatus, EarStatus)> onEarDetectionChanged;
-    std::function<void(HeadTrackingData)> onHeadTrackingData;
-    std::function<void()> onConnected;
-    std::function<void()> onDisconnected;
+    using FnOnNoiseControlChangedT = std::function<void(NoiseControlMode)>;
+    using FnOnConversationalAwarenessChangedT = std::function<void(ConversationalAwarenessState)>;
+    using FnOnSpeakingLevelChangedT = std::function<void(SpeakingLevel)>;
+    using FnOnEarDetectionChangedT = std::function<void(EarStatus, EarStatus)>;
+    using FnOnHeadTrackingDataT = std::function<void(HeadTrackingData)>;
+    using FnOnConnectedT = std::function<void()>;
+    using FnOnDisconnectedT = std::function<void()>;
+    
+    FnOnNoiseControlChangedT onNoiseControlChanged;
+    FnOnConversationalAwarenessChangedT onConversationalAwarenessChanged;
+    FnOnSpeakingLevelChangedT onSpeakingLevelChanged;
+    FnOnEarDetectionChangedT onEarDetectionChanged;
+    FnOnHeadTrackingDataT onHeadTrackingData;
+    FnOnConnectedT onConnected;
+    FnOnDisconnectedT onDisconnected;
 };
 
 //////////////////////////////////////////////////

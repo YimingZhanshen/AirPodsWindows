@@ -556,12 +556,14 @@ void Controller::SetVolume(int percent)
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
     
-    // Track if we're in "reduced volume" state
-    static bool volumeReduced = false;
+    // Track if we're in "reduced volume" state using _savedVolume as indicator
+    // _savedVolume > 0 means we have a saved volume to restore to
+    bool isReducing = percent < 100;
+    bool hasVolumeReduction = _savedVolume > 0;
     
     // Save current volume before reducing (if this is the first reduction)
-    if (percent < 100 && !volumeReduced) {
-        // Get actual current volume, not our cached value
+    if (isReducing && !hasVolumeReduction) {
+        // Get actual current volume
         int currentVolume = 100;
         try {
             OS::Windows::Com::UniquePtr<IMMDeviceEnumerator> deviceEnumerator;
@@ -586,18 +588,21 @@ void Controller::SetVolume(int percent)
             }
         } catch (...) {}
         _savedVolume = currentVolume;
-        volumeReduced = true;
     }
     
     // Calculate target volume
     int targetPercent;
-    if (percent == 100) {
+    if (percent == 100 && hasVolumeReduction) {
         // Restoring - use saved volume
         targetPercent = _savedVolume;
-        volumeReduced = false;
-    } else {
+        // Clear saved volume after restoring
+        _savedVolume = 0;
+    } else if (isReducing && _savedVolume > 0) {
         // Reducing - calculate relative to saved volume
         targetPercent = (percent * _savedVolume) / 100;
+    } else {
+        // No reduction state - just set the percent
+        targetPercent = percent;
     }
     
     try {
@@ -634,11 +639,6 @@ void Controller::SetVolume(int percent)
         }
         
         LOG(Trace, "SetVolume: Volume set to {}%", targetPercent);
-        
-        // Reset saved volume if restoring
-        if (percent == 100) {
-            _savedVolume = 100;
-        }
     }
     catch (const std::exception &ex) {
         LOG(Warn, "SetVolume: Exception: {}", ex.what());
