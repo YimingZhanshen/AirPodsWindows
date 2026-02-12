@@ -332,7 +332,7 @@ qt5_add_resources(APD_CODE_FILES "Source/Resource/Resource.qrc")
 #           https://stackoverflow.com/a/60848939
 #
 
-set(APD_TRANSLATION_LOCALES de_DE fr_FR ja_JP ko_KR ru_RU zh_CN zh_TW)
+set(APD_TRANSLATION_LOCALES de_DE fr_FR he_IL ja_JP ko_KR ru_RU zh_CN zh_TW)
 set(APD_TS_DIR "${CMAKE_SOURCE_DIR}/Source/Resource/Translation/")
 set(APD_QM_DIR "${APD_BINARY_OUT_DIR}/translations/")
 
@@ -480,6 +480,8 @@ target_link_libraries(
     magic_enum::magic_enum
     Boost::pfr
     Boost::stacktrace_windbg
+    windowsapp.lib
+    runtimeobject.lib
 )
 
 ##################################################

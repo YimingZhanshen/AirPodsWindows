@@ -64,7 +64,8 @@ Core::AirPods::Model AirPods::GetModel(uint16_t modelId)
         return Core::AirPods::Model::AirPods_Max;
     case 0x201F:
         return Core::AirPods::Model::AirPods_Max_USB_C;
-        // case 0x2003:
+    case 0x201D:
+        return Core::AirPods::Model::Powerbeats_Pro_2;        // case 0x2003:
         //    return Core::AirPods::Model::Powerbeats_3;
         // case 0x2005:
         //    return Core::AirPods::Model::Beats_X;
