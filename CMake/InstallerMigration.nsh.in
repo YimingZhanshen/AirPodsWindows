@@ -1,3 +1,13 @@
+; AirPodsWindows installer migration hook.
+;
+; Injected into the NSIS "-Core installation" section via CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS,
+; so it runs after .onInit and before any file is copied. It refuses unsupported systems, then
+; removes every existing AirPodsWindows installation this machine still has registered — in both
+; the 32-bit and the 64-bit registry views — so the 64-bit install starts from a clean state.
+;
+; Failure handling: a stale entry (uninstaller missing) is dropped and skipped, leftover files are
+; removed with `RMDir /r`, and only a directory that survives that cleanup aborts the install.
+
 SetRegView 64
 ReadRegStr $R0 HKLM \
   "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "PROCESSOR_ARCHITECTURE"
@@ -9,7 +19,7 @@ Abort
 
 apd_check_windows_version:
 ReadRegStr $R1 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion" "CurrentBuildNumber"
-IntCmp $R1 17763 apd_scan32_start apd_windows_too_old apd_scan32_start
+IntCmp $R1 17763 apd_stop_running apd_windows_too_old apd_stop_running
 
 apd_windows_too_old:
 MessageBox MB_OK|MB_ICONSTOP \
@@ -17,59 +27,88 @@ MessageBox MB_OK|MB_ICONSTOP \
   /SD IDOK
 Abort
 
-apd_scan32_start:
+apd_stop_running:
+; A running instance keeps its files locked, which makes both the old uninstaller and the new
+; copy step fail. Close every possible legacy instance first; taskkill is a no-op when absent.
+nsExec::ExecToStack 'taskkill /F /IM AirPodsWindows.exe'
+Pop $R0
+Pop $R0
+nsExec::ExecToStack 'taskkill /F /IM AirPodsDesktop.exe'
+Pop $R0
+Pop $R0
+Sleep 750
+
 SetRegView 32
+StrCpy $R8 0
+
+apd_scan_view:
 StrCpy $R0 0
 
-apd_scan32:
+apd_scan:
 EnumRegKey $R1 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall" $R0
-StrCmp $R1 "" apd_migration_done
+StrCmp $R1 "" apd_next_view
 IntOp $R0 $R0 + 1
 ReadRegStr $R2 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\$R1" "DisplayName"
 StrCpy $R3 $R2 14
-StrCmp $R3 "AirPodsWindows" 0 apd_scan32
+StrCmp $R3 "AirPodsWindows" 0 apd_scan
 ReadRegStr $R3 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\$R1" "UninstallString"
-StrCmp $R3 "" apd_scan32
-MessageBox MB_YESNO|MB_ICONEXCLAMATION \
-  "$R2 must be removed before installing the 64-bit version. Continue?" \
-  /SD IDYES IDYES apd_uninstall32 IDNO apd_migration_abort
+StrCmp $R3 "" apd_drop_stale_entry
 
-apd_uninstall32:
-ClearErrors
+; Strip the quotes CPack wraps around the uninstaller path.
 StrCpy $R5 $R3 1 0
 StrCmp $R5 "$\"" 0 +2
 StrCpy $R3 $R3 "" 1
 StrCpy $R5 $R3 1 -1
 StrCmp $R5 "$\"" 0 +2
 StrCpy $R3 $R3 -1
+IfFileExists "$R3" apd_ask_remove 0
+
+apd_drop_stale_entry:
+; The entry points at a uninstaller that no longer exists (a previous partial removal). Drop the
+; key instead of failing the whole install, then keep looking for further installations.
+DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\$R1"
+Goto apd_scan
+
+apd_ask_remove:
+MessageBox MB_YESNO|MB_ICONEXCLAMATION \
+  "$R2 must be removed before installing the 64-bit version. Continue?" \
+  /SD IDYES IDYES apd_run_uninstaller IDNO apd_migration_abort
+
+apd_run_uninstaller:
+ClearErrors
 StrLen $R5 "\Uninstall.exe"
 StrCpy $R6 $R3 -$R5
 ExecWait '"$R3" /S _?=$R6' $R4
-IfErrors apd_uninstall_failed
-IntCmp $R4 0 apd_cleanup32_prepare apd_uninstall_failed apd_uninstall_failed
-
-apd_cleanup32_prepare:
-StrCpy $R7 0
-
-apd_cleanup32:
 ClearErrors
+
+; The old uninstaller removes what it installed but never empties the directory: logs, settings
+; and the uninstaller itself can survive, and some builds exited non-zero after a partial removal.
+; Delete the uninstaller and force-remove the old install directory, then verify.
 Delete "$R3"
-RMDir "$R6"
-IfFileExists "$R3" apd_cleanup32_retry
-IfFileExists "$R6\*.*" apd_uninstall_failed
-Goto apd_migration_done
+RMDir /r "$R6"
+IfFileExists "$R6\*.*" 0 apd_rescan
+Sleep 500
+RMDir /r "$R6"
+IfFileExists "$R6\*.*" apd_uninstall_failed 0
 
-apd_cleanup32_retry:
-IntOp $R7 $R7 + 1
-IntCmp $R7 20 apd_uninstall_failed apd_cleanup32_wait apd_uninstall_failed
+apd_rescan:
+; Restart the enumeration: removing a key shifts the remaining indexes.
+StrCpy $R0 0
+Goto apd_scan
 
-apd_cleanup32_wait:
-Sleep 250
-Goto apd_cleanup32
+apd_next_view:
+IntOp $R8 $R8 + 1
+StrCmp $R8 1 apd_scan_64bit apd_migration_done
+
+apd_scan_64bit:
+; Some installations register in the 64-bit view (for example a manually installed portable copy
+; that ran its uninstaller from an elevated 64-bit context). Look there too.
+SetRegView 64
+Goto apd_scan_view
 
 apd_uninstall_failed:
 MessageBox MB_OK|MB_ICONSTOP \
-  "The existing AirPodsWindows installation could not be removed. Remove it manually and try again." \
+  "The existing AirPodsWindows installation could not be removed. Close every AirPodsWindows window, remove it from Settings > Apps, then run this installer again." \
   /SD IDOK
 Abort
 
