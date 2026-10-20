@@ -520,10 +520,6 @@ target_link_libraries(
     apd_presentation
     Qt6::Widgets
     Qt6::Svg
-
-    # `Gui::TrayIcon` reaches the application object (ApdApp) for the AirPods manager, so it
-    # compiles `Application.h`, which includes <SingleApplication>.
-    SingleApplication::SingleApplication
 )
 
 if (WIN32)

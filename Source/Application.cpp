@@ -206,7 +206,8 @@ bool ApdApplication::Prepare(int argc, char *argv[])
     _quickConnect = std::make_unique<Core::QuickConnect::Controller>(_quickConnectBackend);
 
     _trayIcon = std::make_unique<Gui::TrayIcon>(
-        [this] { return GetCurrentLoadedLocaleIndex(); }, *_quickConnect);
+        [this] { return GetCurrentLoadedLocaleIndex(); }, *_quickConnect,
+        [this]() -> Core::AirPods::Manager & { return GetAirPodsManager(); });
     _taskbarStatus = std::make_unique<Gui::TaskbarStatus>();
     _mainWindow = std::make_unique<Gui::MainWindow>();
     _mainWindow->StartUpdateChecks();

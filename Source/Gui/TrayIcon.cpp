@@ -25,16 +25,17 @@
 #include <QSvgRenderer>
 
 #include <Config.h>
-#include "../Application.h"
 #include "../Logger.h"
 #include "MainWindow.h"
 
 namespace Gui {
 
 TrayIcon::TrayIcon(
-    std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect)
+    std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect,
+    std::function<Core::AirPods::Manager &()> getAirPodsManager)
     : _quickConnect{quickConnect}, _settingsWindow{std::move(getCurrentLocaleIndex), quickConnect}
 {
+    _getAirPodsManager = std::move(getAirPodsManager);
     Theme::ConfigurePopupSurface(_menu);
     _singleClickTimer.setSingleShot(true);
     connect(&_singleClickTimer, &QTimer::timeout, this, [this] {
@@ -120,7 +121,11 @@ void TrayIcon::SetupNoiseControlMenu()
 
 void TrayIcon::OnNoiseControlModeSelected(Core::AAP::NoiseControlMode mode)
 {
-    auto &apdMgr = ApdApp->GetAirPodsManager();
+    if (!_getAirPodsManager) {
+        LOG(Warn, "Noise control mode selected without an AirPods manager; ignoring.");
+        return;
+    }
+    auto &apdMgr = _getAirPodsManager();
     
     // Save the previous mode to revert on failure
     auto previousMode = _currentNoiseMode;

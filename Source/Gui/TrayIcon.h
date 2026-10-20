@@ -42,7 +42,8 @@ class TrayIcon : public QWidget
 
 public:
     explicit TrayIcon(
-        std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect);
+        std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect,
+        std::function<Core::AirPods::Manager &()> getAirPodsManager = {});
 
     template <class... ArgsT>
     inline void ShowMessage(ArgsT &&...args)
@@ -95,6 +96,9 @@ private:
     std::optional<QString> _displayName;
     std::optional<Core::Update::ReleaseInfo> _updateReleaseInfo;
     std::optional<Core::AAP::NoiseControlMode> _currentNoiseMode;
+    // Resolves the application's AirPods manager lazily so `apd_gui` stays free of a hard
+    // dependency on the application object (the unit tests link apd_gui without it).
+    std::function<Core::AirPods::Manager &()> _getAirPodsManager;
     std::optional<IconRenderState> _lastIconRenderState;
     Core::QuickConnect::Controller &_quickConnect;
     TrayActivationState _trayActivationState;
