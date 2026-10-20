@@ -23,6 +23,31 @@
 </p>
 <p align="center">🌎 English | 🌏 <a href="/README-CN.md">简体中文</a> | 🌏 <a href="/README-TW.md">繁體中文</a></p>
 
+> [!IMPORTANT]
+> **This is a fork — it is not AirPodsDesktop.**
+> AirPodsWindows keeps everything the upstream project offers and adds the part upstream does not have:
+> **full ANC control on Windows** through the [MagicAAP driver](https://magicpods.app/magicaap/) —
+> noise-control modes, conversational awareness with a speaking-volume slider, personalized volume,
+> loud-sound reduction, adaptive transparency, and a tray noise-control menu.
+> Looking for the original project? → [SpriteOvO/AirPodsDesktop](https://github.com/SpriteOvO/AirPodsDesktop)
+
+## 🆚 AirPodsWindows vs AirPodsDesktop
+
+| | [SpriteOvO/AirPodsDesktop](https://github.com/SpriteOvO/AirPodsDesktop) (upstream) | **AirPodsWindows (this repository)** |
+| --- | --- | --- |
+| Battery, ear detection, popup animations, light/dark themes | ✅ | ✅ |
+| **Windows ANC control** — Off / Noise Cancellation / Transparency / Adaptive | ❌ | ✅ (MagicAAP driver) |
+| Conversational awareness **+ speaking-volume reduction slider** | ❌ | ✅ |
+| Personalized volume · loud-sound reduction · adaptive transparency level | ❌ | ✅ |
+| Tray noise-control menu | ❌ | ✅ |
+| Releases & in-app updater point to | `SpriteOvO/AirPodsDesktop` | **`YimingZhanshen/AirPodsWindows`** |
+| Issue tracker for this build | upstream issues | this repository |
+| Base line | Qt 6.8.3, x64 only (since 0.6.1) | kept in sync with upstream |
+
+* Only the ANC features need the [MagicAAP driver](https://magicpods.app/magicaap/); everything else works without it.
+* Problems that reproduce on the original project belong upstream — this repository tracks the Windows ANC
+  work and everything else that differs in the fork.
+
 ## 🔍 Preview
 
 | Light theme | Dark theme |

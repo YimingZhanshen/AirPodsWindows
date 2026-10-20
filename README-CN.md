@@ -23,6 +23,29 @@
 </p>
 <p align="center">🌎 <a href="/README.md">English</a> | 🌏 简体中文 | 🌏 <a href="/README-TW.md">繁體中文</a></p>
 
+> [!IMPORTANT]
+> **这是 Fork，不是原项目 AirPodsDesktop。**
+> AirPodsWindows 完整继承上游功能，并加上原项目没有的部分：通过 [MagicAAP 驱动](https://magicpods.app/magicaap/)
+> 实现的 **Windows 平台完整 ANC 控制** —— 降噪模式切换、对话感知（含说话音量降低滑条）、个性化音量、
+> 响亮声音降低、自适应通透级别，以及托盘降噪菜单。
+> 想要原版？→ [SpriteOvO/AirPodsDesktop](https://github.com/SpriteOvO/AirPodsDesktop)
+
+## 🆚 AirPodsWindows 与 AirPodsDesktop 的区别
+
+| | [SpriteOvO/AirPodsDesktop](https://github.com/SpriteOvO/AirPodsDesktop)（上游） | **AirPodsWindows（本仓库）** |
+| --- | --- | --- |
+| 电池 / 入耳检测 / 弹窗动画 / 浅色深色主题 | ✅ | ✅ |
+| **Windows 降噪控制** —— 关闭 / 降噪 / 通透 / 自适应 | ❌ | ✅（需 MagicAAP 驱动） |
+| 对话感知 **+ 说话音量降低滑条** | ❌ | ✅ |
+| 个性化音量 · 响亮声音降低 · 自适应通透级别 | ❌ | ✅ |
+| 托盘降噪菜单 | ❌ | ✅ |
+| 发布与程序内更新指向 | `SpriteOvO/AirPodsDesktop` | **`YimingZhanshen/AirPodsWindows`** |
+| 本构建的 Issue 跟踪 | 上游仓库 | 本仓库 |
+| 技术基线 | 0.6.1 起 Qt 6.8.3、仅 x64 | 与上游保持同步 |
+
+* 仅 ANC 相关功能需要 [MagicAAP 驱动](https://magicpods.app/magicaap/)，其余功能无需驱动即可使用。
+* 在原项目上也能复现的问题更适合提到上游仓库；本仓库跟踪 Windows ANC 功能与本项目的其它差异。
+
 ## 🔍 预览
 
 | 浅色主题 | 深色主题 |
