@@ -20,7 +20,7 @@
 
 #include <mutex>
 #include <boost/pfr.hpp>
-#include <magic_enum/magic_enum.hpp>
+#include <magic_enum.hpp>
 
 #include "../Logger.h"
 #include "SettingsRepository.h"
