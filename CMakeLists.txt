@@ -42,7 +42,7 @@ set(
 
 project(
     AirPodsWindows
-    VERSION 1.2.0 # Don't forget to bump the version in `vcpkg.json` as well
+    VERSION 1.3.0 # Don't forget to bump the version in `vcpkg.json` as well
     LANGUAGES C CXX
     DESCRIPTION "AirPods desktop user experience enhancement program"
     HOMEPAGE_URL "https://github.com/${APD_GITHUB_OWNER}/${APD_GITHUB_REPOSITORY}"
