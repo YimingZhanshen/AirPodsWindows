@@ -441,6 +441,7 @@ void MainWindow::SetAnimation(std::optional<Core::AirPods::Model> model)
             videoSize = QSize{600, 650};
             break;
         case Core::AirPods::Model::Beats_Fit_Pro:
+        case Core::AirPods::Model::Powerbeats_Pro_2:
             media = "qrc:/Resource/Video/Beats_Fit_Pro.avi";
             videoSize = QSize{900, 450};
             break;
