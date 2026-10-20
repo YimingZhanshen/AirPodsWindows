@@ -5,31 +5,31 @@
     <name>ApdApplication</name>
     <message>
         <source>Settings format has changed a bit and needs to be reconfigured.</source>
-        <translation>설정이 변경되어 다시 구성해야 합니다.</translation>
+        <translation>설정 형식이 변경되어 재구성이 필요합니다.</translation>
     </message>
     <message>
         <source>Hello, welcome to %1!
 
 This seems to be your first time using this program.
 Let&apos;s configure something together.</source>
-        <translation>안녕하세요, %1!
+        <translation>%1에 오신 것을 환영합니다!
 
-이 프로그램을 처음 사용하시는군요!
-함께 설정해 봅시다.</translation>
+이 프로그램을 처음 사용하시는 것 같습니다.
+함께 설정을 진행해 보겠습니다.</translation>
     </message>
     <message>
         <source>Do you want this program to launch when the system starts?
 
 If you frequently use AirPods with this computer, it is recommended that you click &quot;Yes&quot;.</source>
-        <translation>시작 시 이 프로그램을 실행 하시겠습니까?
+        <translation>시스템 시작 시 이 프로그램을 실행하시겠습니까?
 
-이 컴퓨터에서 AirPods을 자주 사용하는 경우 &quot;예&quot;를 클릭해주세요.</translation>
+이 컴퓨터에서 AirPods을 자주 사용한다면 &quot;예&quot;를 클릭하는 것이 좋습니다.</translation>
     </message>
     <message>
         <source>Do you want to enable the &quot;low audio latency&quot; feature?
 
 %1</source>
-        <translation>&quot;낮은 오디오 지연 시간&quot; 기능을 사용 하시겠습니까?
+        <translation>&quot;오디오 지연 최소화&quot;를 활성화하시겠습니까?
 
 %1</translation>
     </message>
@@ -37,98 +37,86 @@ If you frequently use AirPods with this computer, it is recommended that you cli
         <source>Great! Everything is ready!
 
 Enjoy it all.</source>
-        <translation>좋아요! 모든 준비가 되었습니다.
+        <translation>모든 준비가 완료되었습니다!
 
-모두 즐기세요.</translation>
+이제 마음껏 즐겨보세요.</translation>
     </message>
     <message>
         <source>You can find me in the system tray</source>
-        <translation>시스템 트레이에서 찾을 수 있습니다</translation>
+        <translation>시스템 트레이에서 확인하실 수 있습니다.</translation>
     </message>
     <message>
         <source>Click the icon to view battery information, right-click to customize settings or quit.</source>
-        <translation>배터리 정보를 확인하려면, 아이콘을 클릭하고 &quot;사용자 지정&quot;으로 하거나 &quot;종료&quot;하려면 마우스 우클릭해주세요.</translation>
-    </message>
-</context>
-<context>
-    <name>DownloadWindow</name>
-    <message>
-        <source>Download new version</source>
-        <translation>새로운 버전 다운로드</translation>
-    </message>
-    <message>
-        <source>Download Manually</source>
-        <translation>수동 다운로드</translation>
-    </message>
-    <message>
-        <source>If the download is slow or fails, you can:</source>
-        <translation>다운로드 속도가 지연되거나, 실패하면 경우 다음과 같이 할 수 있습니다:</translation>
-    </message>
-</context>
-<context>
-    <name>Gui::DownloadWindow</name>
-    <message>
-        <source>Oops, an error occurred during the automatic update.
-Please download and install the new version manually.</source>
-        <translation>앗, 자동 업데이트 중에 오류가 발생했습니다.
-새 버전을 수동으로 내려받아 설치해주세요.</translation>
+        <translation>아이콘을 클릭해 배터리 정보를 확인해 보세요. 설정을 변경하거나 종료하려면 우클릭합니다.</translation>
     </message>
 </context>
 <context>
     <name>Gui::MainWindow</name>
     <message>
-        <source>Change log:</source>
-        <translation>변경 로그:</translation>
-    </message>
-    <message>
-        <source>Hey! I found a new version available!
-
-Current version: %1
-Latest version: %2%3</source>
-        <translation>새로운 버전을 찾았습니다!
-현재버전 : %1
-최종버전 : %2%3</translation>
-    </message>
-    <message>
         <source>Bind to AirPods</source>
-        <translation>AirPods 연결</translation>
+        <translation>AirPods에 연결하기</translation>
     </message>
     <message>
         <source>Please select your AirPods device below.</source>
-        <translation>아래에서 AirPod 장치를 선택해주세요.</translation>
+        <translation>아래에서 AirPods를 선택합니다.</translation>
     </message>
+    <message>
+            <source>Change log:</source>
+            <translation>변경 로그:</translation>
+        </message>
+    <message>
+            <source>Hey! I found a new version available!
+
+    Current version: %1
+    Latest version: %2%3</source>
+            <translation>새로운 버전을 찾았습니다!
+    현재버전 : %1
+    최종버전 : %2%3</translation>
+        </message>
 </context>
 <context>
     <name>Gui::SettingsWindow</name>
     <message>
         <source>|</source>
         <extracomment>To credit translators, you can leave your name here if you wish. (Sorted by time added, separated by &quot;|&quot; character, only single &quot;|&quot; for empty)</extracomment>
-        <translation type="unfinished"></translation>
+        <translation>Resi-le</translation>
     </message>
     <message>
         <source>Translation Contributors:</source>
-        <translation type="unfinished"></translation>
+        <translation>번역 기여</translation>
     </message>
     <message>
         <source>Third-Party Libraries:</source>
-        <translation type="unfinished"></translation>
+        <translation>오픈 소스 및 타사 라이브러리 정보</translation>
     </message>
     <message>
-        <source>Off</source>
-        <translation type="unfinished"></translation>
+        <source>Saved device (not available)</source>
+        <translation>저장된 기기(사용 불가)</translation>
     </message>
     <message>
-        <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <source>Restore Defaults</source>
+        <translation>기본값 복원</translation>
     </message>
     <message>
-        <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <source>Close</source>
+        <translation>닫기</translation>
     </message>
     <message>
-        <source>Adaptive</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Off</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Adaptive</source>
+            <translation type="unfinished"></translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -142,7 +130,7 @@ Latest version: %2%3</source>
     </message>
     <message>
         <source>Case</source>
-        <translation>케이스</translation>
+        <translation>충전 케이스</translation>
     </message>
     <message>
         <source>charging</source>
@@ -150,7 +138,7 @@ Latest version: %2%3</source>
     </message>
     <message>
         <source>New version available!</source>
-        <translation>새 버전을 사용할 수 있습니다!</translation>
+        <translation>새로운 버전을 사용할 수 있습니다.</translation>
     </message>
     <message>
         <source>Settings</source>
@@ -165,128 +153,243 @@ Latest version: %2%3</source>
         <translation>종료</translation>
     </message>
     <message>
-        <source>Noise Control</source>
+        <source>Quick connection is disabled.</source>
+        <translation>빠른 연결이 비활성화되어 있습니다.</translation>
+    </message>
+    <message>
+        <source>Choose a Bluetooth audio device in Settings first.</source>
+        <translation>먼저 설정에서 Bluetooth 오디오 기기를 선택하세요.</translation>
+    </message>
+    <message>
+        <source>The selected device is not available. Turn it on or bring it into range.</source>
+        <translation>선택한 기기를 사용할 수 없습니다. 기기를 켜거나 가까이 가져오세요.</translation>
+    </message>
+    <message>
+        <source>%1 is already connected.</source>
+        <translation>%1은(는) 이미 연결되어 있습니다.</translation>
+    </message>
+    <message>
+        <source>Connecting to %1...</source>
+        <translation>%1에 연결하는 중...</translation>
+    </message>
+    <message>
+        <source>%1 connected.</source>
+        <translation>%1 연결됨.</translation>
+    </message>
+    <message>
+        <source>Connection to %1 timed out.</source>
+        <translation>%1 연결 시간이 초과되었습니다.</translation>
+    </message>
+    <message>
+        <source>Windows could not connect to %1.</source>
+        <translation>Windows에서 %1에 연결하지 못했습니다.</translation>
+    </message>
+    <message>
+        <source>Quick connect</source>
+        <translation>빠른 연결</translation>
+    </message>
+    <message>
+        <source>Low audio latency (may cause hiss)</source>
+        <translation>오디오 지연 최소화(잡음이 발생할 수 있음)</translation>
+    </message>
+    <message>
+            <source>Noise Control</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Adaptive</source>
+            <translation type="unfinished"></translation>
+        </message>
+</context>
+<context>
+    <name>Gui::UpdateWindow</name>
+    <message>
+        <source>Ready to install. You are using %1.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Off</source>
+        <source>Downloading update</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Noise Cancellation</source>
+        <source>Unable to update</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Transparency</source>
+        <source>The automatic update was stopped</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Adaptive</source>
+        <source>Release type</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>New version</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Preview release</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stable release</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No release notes for this version</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The automatic update could not be completed. Please download and install the new version manually, or close this window to continue using AirPodsDesktop.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Waiting for download size...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1 downloaded</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Preparing to install...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Downloading...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1% - %2 of %3</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>MainWindow</name>
     <message>
-        <source>AirPodsWindows information</source>
-        <translation>AirPodsWindows 정보</translation>
+        <source>AirPodsDesktop information</source>
+        <translation>AirPodsDesktop 정보</translation>
     </message>
+    <message>
+            <source>AirPodsWindows information</source>
+            <translation>AirPodsWindows 정보</translation>
+        </message>
 </context>
 <context>
     <name>QMessageBox</name>
     <message>
-        <source>Update now</source>
-        <translation>지금 업데이트</translation>
-    </message>
-    <message>
-        <source>Skip this version</source>
-        <translation>업데이트 무시</translation>
-    </message>
-    <message>
-        <source>View release</source>
-        <translation>버전 보기</translation>
-    </message>
-    <message>
-        <source>Remind me later</source>
-        <translation>나중에 알림</translation>
-    </message>
-    <message>
         <source>No paired device found.
 You need to pair your AirPods in Windows Bluetooth Settings first.</source>
-        <translation>페어링된 장치를 찾을 수 없습니다.
-윈도우 블루투스 설정에서 AirPods를 페어링 해야합니다.</translation>
+        <translation>페어링된 AirPods이 없습니다.
+Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</translation>
     </message>
+    <message>
+            <source>Update now</source>
+            <translation>지금 업데이트</translation>
+        </message>
+    <message>
+            <source>Skip this version</source>
+            <translation>업데이트 무시</translation>
+        </message>
+    <message>
+            <source>View release</source>
+            <translation>버전 보기</translation>
+        </message>
+    <message>
+            <source>Remind me later</source>
+            <translation>나중에 알림</translation>
+        </message>
 </context>
 <context>
     <name>QObject</name>
     <message>
-        <source>It fixes short audio playback problems, but may increase battery consumption.</source>
-        <translation>짧은 오디오 재생 문제를 해결하지만 배터리 소모를 증가시킬 수 있습니다.</translation>
-    </message>
-    <message>
         <source>It automatically pauses or resumes media when your AirPods are taken out or put in your ears.</source>
-        <translation>AirPods을 빼거나 귀에 넣으면 자동으로 미디어를 일시 중지하거나 다시 시작합니다.</translation>
+        <translation>AirPods을 귀에서 빼거나 착용하면 미디어를 자동으로 일시 정지하거나 재개합니다.</translation>
     </message>
     <message>
         <source>Unavailable</source>
-        <translation>사용할수 없음</translation>
+        <translation>사용할 수 없음</translation>
     </message>
     <message>
         <source>Disconnected</source>
-        <translation>연결끊김</translation>
+        <translation>연결되지 않음</translation>
     </message>
     <message>
         <source>Waiting for Binding</source>
-        <translation>연결중</translation>
+        <translation>연결 대기 중</translation>
     </message>
     <message>
-        <source>Off</source>
-        <translation type="unfinished"></translation>
+        <source>Keeps the audio device awake while your AirPods are connected so short sounds start immediately. This may produce audible hiss and use more battery.</source>
+        <translation>AirPods이 연결된 동안 오디오 기기를 활성 상태로 유지하여 짧은 소리가 즉시 재생되도록 합니다. 잡음이 들리거나 배터리 사용량이 증가할 수 있습니다.</translation>
     </message>
     <message>
-        <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <source>A click on the tray icon connects the selected device instead of opening the main window. Double-click still opens it.</source>
+        <translation>트레이 아이콘을 클릭하면 기본 창을 여는 대신 선택한 기기에 연결합니다. 두 번 클릭하면 기본 창이 열립니다.</translation>
     </message>
     <message>
-        <source>Transparency</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>It fixes short audio playback problems, but may increase battery consumption.</source>
+            <translation>짧은 오디오 재생 문제를 해결하지만 배터리 소모를 증가시킬 수 있습니다.</translation>
+        </message>
     <message>
-        <source>Adaptive</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Off</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Unknown</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Noise Cancellation</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Enabled</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Transparency</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Disabled</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Adaptive</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Automatically lowers media volume when you start speaking (AirPods Pro/Max only).</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Unknown</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Adjusts media volume based on your environment and listening habits.</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Enabled</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Protects your hearing by reducing loud sounds.</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Disabled</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Controls the amount of environmental sound in Adaptive mode (0-50).</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Automatically lowers media volume when you start speaking (AirPods Pro/Max only).</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Adjusts media volume based on your environment and listening habits.</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Protects your hearing by reducing loud sounds.</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Controls the amount of environmental sound in Adaptive mode (0-50).</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).</source>
+            <translation type="unfinished"></translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -298,8 +401,8 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
 <context>
     <name>SettingsWindow</name>
     <message>
-        <source>AirPodsWindows Settings</source>
-        <translation>AirPodsWindows 설정</translation>
+        <source>AirPodsDesktop Settings</source>
+        <translation>AirPodsDesktop 설정</translation>
     </message>
     <message>
         <source>General</source>
@@ -307,11 +410,11 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>Open logs directory</source>
-        <translation>로그파일 열기</translation>
+        <translation>로그 폴더 열기</translation>
     </message>
     <message>
         <source>Bluetooth maximum receiving range</source>
-        <translation>블루투스 최대 수신 범위</translation>
+        <translation>Bluetooth 최대 수신 거리</translation>
     </message>
     <message>
         <source>Unbind AirPods</source>
@@ -327,7 +430,7 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>Visual</source>
-        <translation>시각적인</translation>
+        <translation>표시</translation>
     </message>
     <message>
         <source>Display battery on tray icon</source>
@@ -335,7 +438,7 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>Disable</source>
-        <translation>사용안함</translation>
+        <translation>안 함</translation>
     </message>
     <message>
         <source>When low battery</source>
@@ -351,54 +454,137 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>Automatic ear detection</source>
-        <translation>자동 귀 탐지</translation>
+        <translation>자동으로 착용 감지</translation>
     </message>
     <message>
         <source>Low audio latency</source>
-        <translation>낮은 오디오 지연 시간</translation>
+        <translation>오디오 지연 최소화</translation>
     </message>
     <message>
         <source>About</source>
         <translation>정보</translation>
     </message>
+        <message>
+            <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+            <translation type="unfinished"></translation>
+        </message>
+        <message>
+            <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
         <source>Display battery on taskbar</source>
-        <translation type="unfinished"></translation>
+        <translation>작업 표시줄에 배터리 상태 표시</translation>
     </message>
     <message>
         <source>As text</source>
-        <translation type="unfinished"></translation>
+        <translation>텍스트</translation>
     </message>
     <message>
         <source>As icon</source>
+        <translation>아이콘</translation>
+    </message>
+    <message>
+        <source>Connect the selected device on a tray icon click</source>
+        <translation>트레이 아이콘을 클릭하여 선택한 기기에 연결</translation>
+    </message>
+    <message>
+        <source>Device</source>
+        <translation>기기</translation>
+    </message>
+    <message>
+        <source>The paired Bluetooth audio device a tray icon click connects.</source>
+        <translation>트레이 아이콘 클릭 시 연결할 페어링된 Bluetooth 오디오 기기입니다.</translation>
+    </message>
+    <message>
+        <source>Forget the bound AirPods so that another pair can be bound.</source>
+        <translation>다른 AirPods을 바인딩할 수 있도록 현재 AirPods의 바인딩을 해제합니다.</translation>
+    </message>
+    <message>
+        <source>Diagnostics</source>
+        <translation>진단</translation>
+    </message>
+    <message>
+        <source>Log files help when reporting an issue.</source>
+        <translation>문제를 신고할 때 로그 파일이 도움이 됩니다.</translation>
+    </message>
+    <message>
+        <source>Appearance</source>
+        <translation>화면 모드</translation>
+    </message>
+    <message>
+        <source>Use system setting</source>
+        <translation>시스템 설정 사용</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>라이트</translation>
+    </message>
+    <message>
+        <source>Dark</source>
+        <translation>다크</translation>
+    </message>
+    <message>
+            <source>AirPodsWindows Settings</source>
+            <translation>AirPodsWindows 설정</translation>
+        </message>
+    <message>
+            <source>Conversational awareness</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Personalized volume</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Reduce loud sounds</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Noise control mode</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Adaptive transparency level</source>
+            <translation type="unfinished"></translation>
+        </message>
+</context>
+<context>
+    <name>UpdateWindow</name>
+    <message>
+        <source>Software Update</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Conversational awareness</source>
+        <source>View release</source>
+        <translation>업데이트 내용 보기</translation>
+    </message>
+    <message>
+        <source>Skip this version</source>
+        <translation>이 버전 건너뛰기</translation>
+    </message>
+    <message>
+        <source>Remind me later</source>
+        <translation>나중에 하기</translation>
+    </message>
+    <message>
+        <source>Update now</source>
+        <translation>지금 업데이트</translation>
+    </message>
+    <message>
+        <source>Download Manually</source>
+        <translation>수동 다운로드</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>닫기</translation>
+    </message>
+    <message>
+        <source>If the download is slow, you can download the update manually. AirPodsDesktop will close when you switch to manual download.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Personalized volume</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Reduce loud sounds</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Noise control mode</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Adaptive transparency level</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
+        <source>What&apos;s new</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

@@ -24,48 +24,59 @@
 <p align="center">🌎 English | 🌏 <a href="/README-CN.md">简体中文</a> | 🌏 <a href="/README-TW.md">繁體中文</a></p>
 
 ## 🔍 Preview
-![Preview Image](/Assets/Preview.gif)
+
+| Light theme | Dark theme |
+| :---: | :---: |
+| <img src="/Assets/Preview-Light.gif" alt="Light theme popup animation" width="360"> | <img src="/Assets/Preview-Dark.gif" alt="Dark theme popup animation" width="360"> |
 
 ## ✨ Features
 
-### Basic Features
-* 🔋 **Battery information display** - Real-time battery level for left/right earbuds and case
-* 👂 **Automatic ear detection** - Auto pause when removed, auto resume when put back
-* 🚀 **Low audio latency mode** - Fixes short audio playback issues
-* 🌈 **Beautiful animation** - Elegant user interface experience
+* 🔋 Battery information in the notification area.
+* 👂 Automatic ear detection and media playback control.
+* 🚀 Low audio latency mode.
+* 🌈 Animated device popups and light, dark, or system themes.
 
-### Advanced ANC Features (requires MagicAAP driver)
-* 🎧 **Noise Control** - Switch between Off/Noise Cancellation/Transparency/Adaptive modes
-* 🗣️ **Conversational Awareness** - Automatically lower media volume when speaking (AirPods Pro/Max)
-* 🔊 **Personalized Volume** - Adjust volume based on environment and listening habits
-* 👂 **Ear Detection Status** - Real-time detection of left/right earbud wearing status
-* 🔇 **Loud Sound Reduction** - Protect hearing by reducing loud sounds
-* 📊 **Adaptive Transparency Level** - Fine control of environmental sound pass-through (0-50)
+### Advanced ANC features (requires the MagicAAP driver)
 
-## ⚙️ System Requirements
+* 🎧 Noise control - switch between Off / Noise Cancellation / Transparency / Adaptive.
+* 🗣️ Conversational awareness - lowers media volume while you speak (AirPods Pro/Max), with an adjustable speaking-volume reduction.
+* 🔊 Personalized volume - adjusts volume from your environment and listening habits.
+* 👂 Ear detection status - real-time left/right wearing status.
+* 🔇 Loud sound reduction - protects your hearing by lowering loud sounds.
+* 📊 Adaptive transparency level - fine control of environmental sound pass-through (0-50).
 
-- **OS**: Windows 10/11
-- **Bluetooth**: Requires Bluetooth 4.0+ adapter
-- **AirPods**: All AirPods models supported
-- **ANC Features**: Requires [MagicAAP driver](https://magicpods.app/magicaap/) (AirPods Pro/Max/AirPods 4 ANC only)
+## 💻 System requirements
+
+Official builds support Windows 10 1809 or newer and Windows 11 on x64. 32-bit Windows and ARM64
+are not supported. Existing Qt 5/Win32 users can migrate through the in-app updater while keeping
+their user settings.
+
+ANC control additionally requires the [MagicAAP driver](https://magicpods.app/magicaap/) and only
+applies to AirPods Pro / Max / AirPods 4 (ANC).
 
 ## 📦 Installation
 
 1. Download the latest version from [Releases](https://github.com/YimingZhanshen/AirPodsWindows/releases)
 2. Run the installer or extract the portable version
-3. (Optional) Install MagicAAP driver to enable ANC control features
+3. (Optional) Install the MagicAAP driver to enable ANC control features
 
-## 🛠️ Build
-See the [Build Instructions](/Docs/Build.md).
+## 🛠️ Build and test
+
+See the [Build Instructions](/Docs/Build.md) for Windows prerequisites, build commands, and tests.
 
 ## 🤝 Contribute
+
 *AirPodsWindows* is an open source project, here are some ways you can contribute:
+
 * [Open an issue](https://github.com/YimingZhanshen/AirPodsWindows/issues/new/choose) to report bugs or suggest new features.
-* [Submit a PR](https://github.com/YimingZhanshen/AirPodsWindows/compare) to fix a known bug or try something from the TODO list.
+* [Submit a PR](https://github.com/YimingZhanshen/AirPodsWindows/compare) to fix bugs, improve documentation, or add features.
 * [Translate to other languages](/CONTRIBUTING.md#-translation-guide) or [improve existing translations](/CONTRIBUTING.md#-translation-guide).
 
-## 💎 Third-Party Libraries
-* [Qt 5.15.2](https://www.qt.io/download-qt-installer) ([LGPLv3 License](https://doc.qt.io/qt-5/lgpl.html))
+Keep `README.md`, `README-CN.md`, and `README-TW.md` aligned in section order, features, commands, links, and credits when updating project documentation.
+
+## 💎 Third-party dependencies
+
+* [Qt 6.8.3](https://www.qt.io/download-qt-installer) ([LGPLv3 License](https://doc.qt.io/qt-6/lgpl.html))
 * [spdlog](https://github.com/gabime/spdlog) ([MIT License](https://github.com/gabime/spdlog/blob/v1.x/LICENSE))
 * [cxxopts](https://github.com/jarro2783/cxxopts) ([MIT License](https://github.com/jarro2783/cxxopts/blob/master/LICENSE))
 * [cpr](https://github.com/whoshuu/cpr) ([MIT License](https://github.com/whoshuu/cpr/blob/master/LICENSE))
@@ -74,6 +85,8 @@ See the [Build Instructions](/Docs/Build.md).
 * [pfr](https://github.com/boostorg/pfr) ([BSL-1.0 License](https://github.com/boostorg/pfr/blob/develop/LICENSE_1_0.txt))
 * [magic_enum](https://github.com/Neargye/magic_enum) ([MIT License](https://github.com/Neargye/magic_enum/blob/master/LICENSE))
 * [stacktrace](https://github.com/boostorg/stacktrace) ([BSL-1.0 License](https://www.boost.org/LICENSE_1_0.txt))
+* [Inter](/Source/Resource/Font/Inter/LICENSE.txt) (SIL Open Font License 1.1)
+* [Noto Sans TC](/Source/Resource/Font/NotoSansTC/LICENSE.txt) (SIL Open Font License 1.1)
 
 ## 🍺 Credits & References
 
@@ -98,3 +111,4 @@ This project is licensed under the [GPLv3 License](/LICENSE).
 
 ---
 <p align="center">If this project helps you, please consider giving a ⭐ Star!</p>
+

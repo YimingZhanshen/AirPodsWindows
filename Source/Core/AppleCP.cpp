@@ -52,6 +52,9 @@ Core::AirPods::Model AirPods::GetModel(uint16_t modelId)
         return Core::AirPods::Model::AirPods_4;
     case 0x201B:
         return Core::AirPods::Model::AirPods_4_ANC;
+    case 0x2030:
+    case 0x2036:
+        return Core::AirPods::Model::AirPods_5;
     case 0x200E:
         return Core::AirPods::Model::AirPods_Pro;
     case 0x2014:
@@ -65,7 +68,8 @@ Core::AirPods::Model AirPods::GetModel(uint16_t modelId)
     case 0x201F:
         return Core::AirPods::Model::AirPods_Max_USB_C;
     case 0x201D:
-        return Core::AirPods::Model::Powerbeats_Pro_2;        // case 0x2003:
+        return Core::AirPods::Model::Powerbeats_Pro_2;
+        // case 0x2003:
         //    return Core::AirPods::Model::Powerbeats_3;
         // case 0x2005:
         //    return Core::AirPods::Model::Beats_X;

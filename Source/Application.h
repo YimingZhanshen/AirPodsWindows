@@ -21,71 +21,106 @@
 #include <memory>
 #include <SingleApplication>
 
+#include <QLocale>
 #include <QTranslator>
 
-#include "Gui/TrayIcon.h"
-#include "Gui/TaskbarStatus.h"
-#include "Gui/MainWindow.h"
-#include "Gui/DownloadWindow.h"
-#include "Core/AirPods.h"
-#include "Core/LowAudioLatency.h"
+#include "Core/Settings.h"
 #include "Opts.h"
 
-class ApdApplication : public SingleApplication
+namespace Core::AirPods {
+class Manager;
+}
+
+namespace Core::LowAudioLatency {
+class Controller;
+}
+
+namespace Core::AutoStart {
+class Service;
+}
+
+namespace Core::QuickConnect {
+class Backend;
+class Controller;
+} // namespace Core::QuickConnect
+
+namespace Gui {
+class MainWindow;
+class TaskbarStatus;
+class TrayIcon;
+} // namespace Gui
+
+class ApdApplication : public SingleApplication, private Core::Settings::ApplyObserver
 {
     Q_OBJECT
 
 public:
     static void PreConstruction();
     ApdApplication(int argc, char *argv[]);
+    ~ApdApplication() override;
 
     bool Prepare(int argc, char *argv[]);
     int Run();
 
-    inline auto &GetTrayIcon()
-    {
-        return _trayIcon;
-    }
-    inline auto &GetTaskbarStatus()
-    {
-        return _taskbarStatus;
-    }
-    inline auto &GetMainWindow()
-    {
-        return _mainWindow;
-    }
     inline auto &GetLowAudioLatencyController()
     {
         return _lowAudioLatencyController;
     }
 
-    inline auto GetCurrentLoadedLocaleIndex()
+    int GetCurrentLoadedLocaleIndex() const
     {
         return _currentLoadedLocaleIndex;
     }
 
-    const QVector<QLocale> &AvailableLocales();
-
     static void QuitSafely();
+
+    Core::AirPods::Manager &GetAirPodsManager();
 
 Q_SIGNALS:
     void SetTranslatorSafely(const QLocale &locale);
 
 private:
     static inline Opts::LaunchOptsManager _launchOptsMgr;
-    QTranslator _translator;
+    std::unique_ptr<QTranslator> _translator;
     int _currentLoadedLocaleIndex{0};
+    // Declared before the GUI members: `Gui::TrayIcon` and the `Gui::SettingsWindow` it owns hold a
+    // reference to the controller, so the controller has to outlive them, and members are destroyed
+    // in reverse declaration order.
+    std::shared_ptr<Core::QuickConnect::Backend> _quickConnectBackend;
+    std::unique_ptr<Core::QuickConnect::Controller> _quickConnect;
     std::unique_ptr<Gui::TrayIcon> _trayIcon;
     std::unique_ptr<Gui::TaskbarStatus> _taskbarStatus;
     std::unique_ptr<Gui::MainWindow> _mainWindow;
-    std::unique_ptr<Gui::DownloadWindow> _downloadWindow;
+    std::unique_ptr<Core::AirPods::Manager> _airPodsManager;
     std::unique_ptr<Core::LowAudioLatency::Controller> _lowAudioLatencyController;
+    std::unique_ptr<Core::AutoStart::Service> _autoStartService;
 
     void InitSettings(Core::Settings::LoadResult loadResult);
     void FirstTimeUse();
 
+    void ConnectAirPodsManager();
+    void ConnectGuiComponents();
+
     void SetTranslator(const QLocale &locale);
     void InitTranslator();
+
+    void OnLanguageLocaleChanged(const QLocale &locale) override;
+    void OnAppearanceModeChanged(Core::Settings::AppearanceMode mode) override;
+    void OnAutoRunChanged(bool enable) override;
+    void OnLowAudioLatencyChanged(bool enable) override;
+    void OnAutomaticEarDetectionChanged(bool enable) override;
+    void OnConversationalAwarenessChanged(bool enable) override;
+    void OnConversationalAwarenessVolumePercentChanged(uint8_t percent) override;
+    void OnPersonalizedVolumeChanged(bool enable) override;
+    void OnLoudSoundReductionChanged(bool enable) override;
+    void OnAdaptiveTransparencyLevelChanged(uint8_t level) override;
+    void OnNoiseControlModeChanged(uint32_t mode) override;
+    void OnRssiMinChanged(int16_t rssiMin) override;
+    void OnDeviceAddressChanged(uint64_t address) override;
+    void OnTrayIconBatteryChanged(Core::Settings::TrayIconBatteryBehavior behavior) override;
+    void OnTrayQuickConnectEnabledChanged(bool enable) override;
+    void OnTrayQuickConnectDeviceChanged(const QString &deviceId) override;
+    void OnTaskbarBatteryChanged(Core::Settings::TaskbarStatusBehavior behavior) override;
 };
 
 #define ApdApp (dynamic_cast<ApdApplication *>(QCoreApplication::instance()))

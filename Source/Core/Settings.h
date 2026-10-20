@@ -18,17 +18,53 @@
 
 #pragma once
 
+#include <cstdint>
+#include <memory>
 #include <mutex>
 
-#include <QSettings>
+#include <QCoreApplication>
+#include <QLocale>
 
 #include "../Helper.h"
 
 namespace Core::Settings {
 
+class Repository;
+
 enum class TrayIconBatteryBehavior : uint32_t { Disable, WhenLowBattery, Always };
 enum class TaskbarStatusBehavior : uint32_t { Disable, Text, Icon };
+enum class AppearanceMode : uint32_t { System, Light, Dark };
 enum class LoadResult : uint32_t { AbiIncompatible, NoAbiField, Successful };
+
+// Receives settings side effects so that this module doesn't need to know
+// about GUI or other application services.
+//
+class ApplyObserver
+{
+public:
+    virtual ~ApplyObserver() = default;
+
+    virtual void OnLanguageLocaleChanged(const QLocale &locale) = 0;
+    virtual void OnAppearanceModeChanged(AppearanceMode mode) = 0;
+    virtual void OnAutoRunChanged(bool enable) = 0;
+    virtual void OnLowAudioLatencyChanged(bool enable) = 0;
+    virtual void OnAutomaticEarDetectionChanged(bool enable) = 0;
+    virtual void OnConversationalAwarenessChanged(bool enable) = 0;
+    virtual void OnConversationalAwarenessVolumePercentChanged(uint8_t percent) = 0;
+    virtual void OnPersonalizedVolumeChanged(bool enable) = 0;
+    virtual void OnLoudSoundReductionChanged(bool enable) = 0;
+    virtual void OnAdaptiveTransparencyLevelChanged(uint8_t level) = 0;
+    virtual void OnNoiseControlModeChanged(uint32_t mode) = 0;
+    virtual void OnRssiMinChanged(int16_t rssiMin) = 0;
+    virtual void OnDeviceAddressChanged(uint64_t address) = 0;
+    virtual void OnTrayIconBatteryChanged(TrayIconBatteryBehavior behavior) = 0;
+    virtual void OnTrayQuickConnectEnabledChanged(bool enable) = 0;
+    virtual void OnTrayQuickConnectDeviceChanged(const QString &deviceId) = 0;
+    virtual void OnTaskbarBatteryChanged(TaskbarStatusBehavior behavior) = 0;
+};
+
+void SetApplyObserver(ApplyObserver *observer);
+void SetRepository(std::unique_ptr<Repository> repository);
 
 // TODO: in [v1.0.0] [kFieldsAbiVersion = 2]
 //        - Rename `tray_icon_battery` to `battery_on_tray_icon`
@@ -36,31 +72,33 @@ enum class LoadResult : uint32_t { AbiIncompatible, NoAbiField, Successful };
 // clang-format off
 #define SETTINGS_FIELDS(callback)                                                                  \
     callback(QString, language_locale, {}, Impl::OnApply(&OnApply_language_locale))                \
+    callback(AppearanceMode, appearance_mode, {AppearanceMode::System},                            \
+        Impl::OnApply(&OnApply_appearance_mode))                                                   \
     callback(bool, auto_run, {false}, Impl::OnApply(&OnApply_auto_run))                            \
     callback(bool, low_audio_latency, {false},                                                     \
         Impl::OnApply(&OnApply_low_audio_latency),                                                 \
-        Impl::Desc{QObject::tr("It fixes short audio playback problems, but may increase battery consumption.")}) \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Keeps the audio device awake while your AirPods are connected so short sounds start immediately. This may produce audible hiss and use more battery.")}) \
     callback(bool, automatic_ear_detection, {true},                                                \
         Impl::OnApply(&OnApply_automatic_ear_detection),                                           \
-        Impl::Desc{QObject::tr("It automatically pauses or resumes media when your AirPods are taken out or put in your ears.")}) \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "It automatically pauses or resumes media when your AirPods are taken out or put in your ears.")}) \
     callback(bool, conversational_awareness, {false},                                              \
         Impl::OnApply(&OnApply_conversational_awareness),                                          \
-        Impl::Desc{QObject::tr("Automatically lowers media volume when you start speaking (AirPods Pro/Max only).")}) \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Automatically lowers media volume when you start speaking (AirPods Pro/Max only).")}) \
     callback(uint8_t, conversational_awareness_volume_percent, {40},                               \
         Impl::OnApply(&OnApply_conversational_awareness_volume_percent),                           \
-        Impl::Desc{QObject::tr("Volume percentage when speaking (based on your pre-speaking volume).")}) \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Volume percentage when speaking (based on your pre-speaking volume).")}) \
     callback(bool, personalized_volume, {false},                                                   \
         Impl::OnApply(&OnApply_personalized_volume),                                               \
-        Impl::Desc{QObject::tr("Adjusts media volume based on your environment and listening habits.")}) \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Adjusts media volume based on your environment and listening habits.")}) \
     callback(bool, loud_sound_reduction, {false},                                                  \
         Impl::OnApply(&OnApply_loud_sound_reduction),                                              \
-        Impl::Desc{QObject::tr("Protects your hearing by reducing loud sounds.")})                 \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Protects your hearing by reducing loud sounds.")})                 \
     callback(uint8_t, adaptive_transparency_level, {25},                                           \
         Impl::OnApply(&OnApply_adaptive_transparency_level),                                       \
-        Impl::Desc{QObject::tr("Controls the amount of environmental sound in Adaptive mode (0-50).")}) \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Controls the amount of environmental sound in Adaptive mode (0-50).")}) \
     callback(uint32_t, noise_control_mode, {1},                                                    \
         Impl::OnApply(&OnApply_noise_control_mode),                                                \
-        Impl::Desc{QObject::tr("Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).")}) \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).")}) \
     callback(QString, skipped_version, {})                                                         \
     callback(int16_t, rssi_min, {-80}, Impl::OnApply(&OnApply_rssi_min))                           \
     callback(bool, reduce_loud_sounds, {false}, Impl::Deprecated())                                \
@@ -70,6 +108,12 @@ enum class LoadResult : uint32_t { AbiIncompatible, NoAbiField, Successful };
         Impl::Sensitive{})                                                                         \
     callback(TrayIconBatteryBehavior, tray_icon_battery, {TrayIconBatteryBehavior::Disable},       \
         Impl::OnApply(&OnApply_tray_icon_battery))                                                 \
+    callback(bool, tray_quick_connect_enabled, {false},                                            \
+        Impl::OnApply(&OnApply_tray_quick_connect_enabled),                                         \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "A click on the tray icon connects the selected device instead of opening the main window. Double-click still opens it.")}) \
+    callback(QString, tray_quick_connect_device_id, {},                                             \
+        Impl::OnApply(&OnApply_tray_quick_connect_device_id),                                       \
+        Impl::Sensitive{})                                                                          \
     callback(TaskbarStatusBehavior, battery_on_taskbar, {TaskbarStatusBehavior::Disable},          \
         Impl::OnApply(&OnApply_battery_on_taskbar))
 // clang-format on
@@ -110,15 +154,15 @@ class Desc
 {
 public:
     Desc() = default;
-    Desc(QString description) : _description{std::move(description)} {}
+    Desc(const char *sourceText) : _sourceText{sourceText} {}
 
-    const QString &Description() const
+    QString Description() const
     {
-        return _description;
+        return _sourceText ? QCoreApplication::translate("QObject", _sourceText) : QString{};
     }
 
 private:
-    QString _description;
+    const char *_sourceText{nullptr};
 };
 
 // clang-format off
@@ -179,7 +223,7 @@ public:
         return _onApply;
     }
 
-    const QString &Description() const
+    QString Description() const
     {
         return _description.Description();
     }
@@ -226,6 +270,7 @@ private:
 constexpr inline uint32_t kFieldsAbiVersion = 1;
 
 void OnApply_language_locale(const Fields &newFields);
+void OnApply_appearance_mode(const Fields &newFields);
 void OnApply_auto_run(const Fields &newFields);
 void OnApply_low_audio_latency(const Fields &newFields);
 void OnApply_automatic_ear_detection(const Fields &newFields);
@@ -238,6 +283,8 @@ void OnApply_noise_control_mode(const Fields &newFields);
 void OnApply_rssi_min(const Fields &newFields);
 void OnApply_device_address(const Fields &newFields);
 void OnApply_tray_icon_battery(const Fields &newFields);
+void OnApply_tray_quick_connect_enabled(const Fields &newFields);
+void OnApply_tray_quick_connect_device_id(const Fields &newFields);
 void OnApply_battery_on_taskbar(const Fields &newFields);
 
 struct MetaFields {

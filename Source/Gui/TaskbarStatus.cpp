@@ -17,13 +17,13 @@
 //
 
 #include "TaskbarStatus.h"
+#include "TaskbarGeometry.h"
 
 #include <QWindow>
 #include <QApplication>
-#include <QDesktopWidget>
 
 #include "../Core/OS/Windows.h"
-#include "../Application.h"
+#include "Theme.h"
 
 //
 // Windows 10
@@ -97,7 +97,8 @@ std::optional<TaskBarInfo> GetTaskBarInfo()
 
         rectMSTaskSwWClassForParent = rectMSTaskSwWClass;
         if (MapWindowPoints(
-                HWND_DESKTOP, hReBarWindow32, (POINT *)&rectMSTaskSwWClassForParent, 2) == 0) {
+                HWND_DESKTOP, hReBarWindow32, (POINT *)&rectMSTaskSwWClassForParent, 2) == 0)
+        {
             LOG(Warn, "Failed to get the rect of the parent of window 'MSTaskSwWClass'.");
             break;
         }
@@ -143,7 +144,7 @@ TaskbarStatus::TaskbarStatus(QWidget *parent) : QDialog{parent}
     // (The parameter is incorrect.)"
     //
     // It is printed at
-    // https://code.qt.io/cgit/qt/qtbase.git/tree/src/plugins/platforms/windows/qwindowsbackingstore.cpp?h=v5.15.2#n108
+    // Match the alpha-composition behavior of Qt's Windows backing store.
     //
     // We remove the flag `Qt::FramelessWindowHint` to make it call `BitBlt` instead of
     // `UpdateLayeredWindowIndirect`, and probably thanks to the later `setParent` call (I guess),
@@ -152,8 +153,8 @@ TaskbarStatus::TaskbarStatus(QWidget *parent) : QDialog{parent}
     setWindowFlags(
         windowFlags() | Qt::Tool /* | Qt::FramelessWindowHint*/ | Qt::WindowStaysOnTopHint);
 
-    SetPaletteColor(_ui.labelLeft, QPalette::WindowText, Qt::white);
-    SetPaletteColor(_ui.labelRight, QPalette::WindowText, Qt::white);
+    // Lives inside the shell's taskbar window; DWM attributes are not for it.
+    setProperty(Theme::Manager::kSkipDwmProperty, true);
 
     layout()->setContentsMargins(5, 5, 5, 5);
 
@@ -161,10 +162,12 @@ TaskbarStatus::TaskbarStatus(QWidget *parent) : QDialog{parent}
     _icon.right->SetText("R");
     _battery.left->setBatterySize(25, 10);
     _battery.left->setShowText(false);
-    _battery.left->setChargingIconColor(Qt::white);
     _battery.right->setBatterySize(25, 10);
     _battery.right->setShowText(false);
-    _battery.right->setChargingIconColor(Qt::white);
+
+    ApplyTheme();
+    connect(
+        &Theme::Manager::Instance(), &Theme::Manager::Changed, this, &TaskbarStatus::ApplyTheme);
 
     _ui.horizontalLayoutLeft->insertWidget(0, _icon.left);
     _ui.horizontalLayoutLeft->addWidget(_battery.left);
@@ -183,6 +186,45 @@ void TaskbarStatus::UpdateState(const Core::AirPods::State &state)
     _status = Status::Updating;
     _airPodsState = state;
     Repaint();
+}
+
+void TaskbarStatus::SetToolTip(const QString &text)
+{
+    setToolTip(text);
+}
+
+void TaskbarStatus::ApplyTheme()
+{
+    using Utils::Qt::SetPaletteColor;
+
+    const auto &theme = Theme::Manager::Instance();
+    const auto &colors = theme.Colors();
+
+    // The taskbar follows `SystemUsesLightTheme`, which is independent of the apps theme.
+    const bool darkTaskbar = theme.IsSystemDark();
+    const QColor foreground = darkTaskbar ? QColor{"#FFFFFF"} : QColor{"#1B1B1B"};
+    const QColor iconForeground = darkTaskbar ? QColor{"#1B1B1B"} : QColor{"#FFFFFF"};
+    const QColor batteryBorder = darkTaskbar ? QColor{"#C8C8C8"} : QColor{"#5A5A5A"};
+
+    SetPaletteColor(_ui.labelLeft, QPalette::WindowText, foreground);
+    SetPaletteColor(_ui.labelRight, QPalette::WindowText, foreground);
+
+    for (auto *icon : {_icon.left, _icon.right}) {
+        icon->SetBgColor(foreground);
+        icon->SetFgColor(iconForeground);
+        icon->update();
+    }
+
+    for (auto *battery : {_battery.left, _battery.right}) {
+        battery->setChargingIconColor(foreground);
+        battery->setBorderColor(batteryBorder);
+        battery->setNormalColor(colors.batteryNormal);
+        battery->setAlarmColor(colors.batteryAlarm);
+        battery->setBorderRadius(3);
+        battery->setBackgroundRadius(2);
+    }
+
+    update();
 }
 
 void TaskbarStatus::UpdateVisible()
@@ -213,11 +255,11 @@ bool TaskbarStatus::Enable()
     const auto &info = optInfo.value();
 
     winId(); // makes `windowHandle()` have a value
-    windowHandle()->setParent(QWindow::fromWinId((WId)info.hReBarWindow32));
+    windowHandle()->setParent(QWindow::fromWinId(reinterpret_cast<WId>(info.hReBarWindow32)));
     setAttribute(Qt::WA_TranslucentBackground);
     UpdatePos(info, true);
     _isFirstTimeout = true;
-    _updateTimer.start(kUpdateInterval);
+    _updateTimer.start(kInitialUpdateInterval);
     show();
     return true;
 }
@@ -241,71 +283,32 @@ void TaskbarStatus::UpdatePos(const TaskBarInfo &info, bool enable)
 {
     LOG(Trace, "The taskbar is '{}'", info.isHorizontal ? "horizontal" : "vertical");
 
-    const auto &rectMSTaskSwWClass = info.rectMSTaskSwWClass;
     const auto &rectMSTaskSwWClassForParent = info.rectMSTaskSwWClassForParent;
     const auto &rectReBarWindow32 = info.rectReBarWindow32;
+    const auto dpi = static_cast<int>(GetDpiForWindow(info.hReBarWindow32));
+    const auto layout = TaskbarGeometry::CalculateLayout(
+        rectReBarWindow32.size(), rectMSTaskSwWClassForParent, dpi, info.isHorizontal,
+        QSize{kFixedWidth, kFixedHeight});
 
     if (enable) {
         if (!_isWin11OrGreater) {
-            if (info.isHorizontal) {
-                // Avoid causing multiple moves
-                auto newWidth = rectReBarWindow32.right() - kFixedWidth - rectMSTaskSwWClass.left();
-
-                MoveWindow(
-                    info.hMSTaskSwWClass, rectMSTaskSwWClassForParent.left(),
-                    rectMSTaskSwWClassForParent.top(), newWidth,
-                    rectMSTaskSwWClassForParent.height(), true);
-
-                move(rectReBarWindow32.width() - kFixedWidth, 0);
-            }
-            else {
-                // Same as above
-                auto newHeight =
-                    rectReBarWindow32.bottom() - kFixedHeight - rectMSTaskSwWClass.top();
-
-                MoveWindow(
-                    info.hMSTaskSwWClass, rectMSTaskSwWClassForParent.left(),
-                    rectMSTaskSwWClassForParent.top(), rectMSTaskSwWClassForParent.width(),
-                    newHeight, true);
-
-                move(0, rectReBarWindow32.height() - kFixedHeight);
-            }
-        }
-        else {
-            if (info.isHorizontal) {
-                move(rectReBarWindow32.width() - kFixedWidth, 0);
-            }
-            else {
-                // Currently Windows 11 does not support vertical taskbar, so we were unable to test
-                // it.
-                move(0, rectReBarWindow32.height() - kFixedHeight);
-            }
+            const auto &taskButtons = layout.taskButtonsNative;
+            MoveWindow(
+                info.hMSTaskSwWClass, taskButtons.left(), taskButtons.top(), taskButtons.width(),
+                taskButtons.height(), true);
         }
 
-        if (info.isHorizontal) {
-            _cachedLength = rectReBarWindow32.width();
-            setFixedSize(kFixedWidth, info.rectMSTaskSwWClass.height());
-        }
-        else {
-            _cachedLength = rectReBarWindow32.height();
-            setFixedSize(info.rectMSTaskSwWClass.width(), kFixedHeight);
-        }
+        move(layout.statusLogical.topLeft());
+        setFixedSize(layout.statusLogical.size());
+        _cachedLength = info.isHorizontal ? rectReBarWindow32.width() : rectReBarWindow32.height();
     }
     else {
         if (!_isWin11OrGreater) {
-            if (info.isHorizontal) {
-                MoveWindow(
-                    info.hMSTaskSwWClass, rectMSTaskSwWClassForParent.left(),
-                    rectMSTaskSwWClassForParent.top(),
-                    rectReBarWindow32.right() - rectMSTaskSwWClass.left(),
-                    rectMSTaskSwWClass.height(), true);
-            }
-            else {
-                MoveWindow(
-                    info.hMSTaskSwWClass, rectMSTaskSwWClassForParent.left(),
-                    rectMSTaskSwWClassForParent.top(), rectMSTaskSwWClass.width(),
-                    rectReBarWindow32.bottom() - rectMSTaskSwWClass.top(), true);
-            }
+            const auto restored = TaskbarGeometry::RestoreTaskButtons(
+                rectReBarWindow32.size(), rectMSTaskSwWClassForParent, info.isHorizontal);
+            MoveWindow(
+                info.hMSTaskSwWClass, restored.left(), restored.top(), restored.width(),
+                restored.height(), true);
         }
     }
 }
@@ -400,8 +403,6 @@ void TaskbarStatus::Repaint()
         APD_ASSERT(false);
     }
 
-    setToolTip(ApdApp->GetTrayIcon()->GetToolTip());
-
     UpdateVisible();
 }
 
@@ -422,6 +423,7 @@ void TaskbarStatus::OnUpdateTimer()
     // first update may cause some shifting, I guess it's `setParent` causing some weird Qt bugs.
     if (_isFirstTimeout) {
         _isFirstTimeout = false;
+        _updateTimer.setInterval(kIdleUpdateInterval);
     }
 
     if (taskbarResized) {
@@ -471,10 +473,10 @@ void TaskbarStatus::mouseReleaseEvent(QMouseEvent *event)
         LOG(Debug, "_drawDebugBorder: {}", _drawDebugBorder);
         repaint();
 #endif
-        ApdApp->GetMainWindow()->show();
+        emit ShowMainWindowRequested();
     }
     else if (button == Qt::RightButton) {
-        ApdApp->GetTrayIcon()->GetContextMenu()->popup(event->globalPos());
+        emit ShowTrayMenuRequested(event->globalPosition().toPoint());
     }
 
     QDialog::mouseReleaseEvent(event);

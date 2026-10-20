@@ -18,30 +18,29 @@
 
 #pragma once
 
+#include <atomic>
+#include <thread>
+
 #include <QDialog>
 
 #include "ui_MainWindow.h"
 
-#include <QVideoWidget>
 #include <QMediaPlayer>
 #include <QPropertyAnimation>
 
-#include "../Utils.h"
+#include "Utils.h"
+#include "MainWindowPresentation.h"
+#include "AnimationPlayback.h"
 #include "../Core/AirPods.h"
 #include "../Core/Update.h"
 #include "Base.h"
 #include "Widget/Battery.h"
+#include "Widget/AnimationView.h"
 
 namespace Gui {
 
 class CloseButton;
-class VideoWidget;
 class BatteryInfo;
-
-enum class ButtonAction : uint32_t {
-    NoButton,
-    Bind,
-};
 
 class MainWindow : public QDialog
 {
@@ -49,11 +48,10 @@ class MainWindow : public QDialog
 
 public:
     MainWindow(QWidget *parent = nullptr);
+    ~MainWindow();
 
-    inline auto &GetApdMgr()
-    {
-        return _apdMgr;
-    }
+    void StartUpdateChecks();
+    void Show();
 
     void UpdateState(const Core::AirPods::State &state);
     void Available();
@@ -73,49 +71,59 @@ Q_SIGNALS:
     void ShowSafely();
     void HideSafely();
     bool VersionUpdateAvailableSafely(const Core::Update::ReleaseInfo &releaseInfo, bool silent);
+    void SilentUpdateAvailable(const Core::Update::ReleaseInfo &releaseInfo);
 
 private:
-    constexpr static QSize _screenMargin{50, 100};
+    constexpr static QSize _windowSize{320, 300};
+    constexpr static QSize _screenMargin{24, 24};
+    constexpr static qreal _windowCornerRadius = 32.0;
+    constexpr static int _deviceLabelMaximumPointSize = 18;
+    constexpr static int _deviceLabelMinimumPointSize = 12;
 
     Ui::MainWindow _ui;
 
     QPropertyAnimation _posAnimation{this, "pos"};
-    VideoWidget *_videoWidget;
-    QMediaPlayer *_mediaPlayer = new QMediaPlayer{this};
+    Widget::AnimationView *_animationView;
+    AnimationPlayback *_playback;
     QTimer *_autoHideTimer = new QTimer{this};
     CloseButton *_closeButton;
     Widget::Battery *_leftBattery = new Widget::Battery{this};
     Widget::Battery *_rightBattery = new Widget::Battery{this};
     Widget::Battery *_caseBattery = new Widget::Battery{this};
 
-    Core::AirPods::Manager _apdMgr;
     Core::Update::AsyncChecker _updateChecker{[this](auto &&...args) {
         VersionUpdateAvailableSafely(std::forward<decltype(args)>(args)...);
     }};
     std::optional<Core::AirPods::Model> _cacheModel;
     ButtonAction _buttonAction{ButtonAction::NoButton};
-    Status _status{Status::Unavailable};
-    std::optional<Core::AirPods::State> _cachedState;
+    MainWindowViewModel _viewModel;
     bool _isVisible{false};
-    bool _isAnimationPlaying{false};
+    std::atomic<bool> _deviceQueryRunning{false};
+    std::jthread _deviceQueryThread;
 
     void ChangeButtonAction(ButtonAction action);
     void SetAnimation(std::optional<Core::AirPods::Model> model);
     void PlayAnimation();
     void StopAnimation();
     void BindDevice();
+    void ShowDeviceSelector(std::vector<Core::Bluetooth::Device> devices);
     void ControlAutoHideTimer(bool start);
     void VersionUpdateAvailable(const Core::Update::ReleaseInfo &releaseInfo, bool silent);
     void Repaint();
+    void ApplyTheme();
+    void FitDeviceLabelFont(const QString &text);
 
     void OnAppStateChanged(Qt::ApplicationState state);
     void OnPosMoveFinished();
     void OnAnimationClicked();
     void OnButtonClicked();
-    void OnPlayerStateChanged(QMediaPlayer::State newState);
 
     void DoHide();
+    void BeginShow(bool fromHidden);
+    void paintEvent(QPaintEvent *event) override;
     void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
+    void closeEvent(QCloseEvent *event) override;
 
     UTILS_QT_DISABLE_ESC_QUIT(QDialog);
     UTILS_QT_REGISTER_LANGUAGECHANGE(QDialog, [this] {

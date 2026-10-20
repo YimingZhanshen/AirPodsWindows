@@ -18,12 +18,12 @@
 
 #pragma once
 
-#include <memory>
 #include <chrono>
+#include <memory>
 
-#include <QTimer>
+#include <QAudioOutput>
 #include <QMediaPlayer>
-#include <QMediaPlaylist>
+#include <QTimer>
 
 using namespace std::chrono_literals;
 
@@ -35,21 +35,27 @@ class Controller : public QObject
 
 public:
     Controller(QObject *parent = nullptr);
+    ~Controller();
 
 Q_SIGNALS:
     void ControlSafely(bool enable);
+    void SetDeviceConnectedSafely(bool connected);
 
 private:
     constexpr static inline auto kRetryInterval = 30s;
-
     std::unique_ptr<QMediaPlayer> _mediaPlayer;
-    std::unique_ptr<QMediaPlaylist> _mediaPlaylist;
+    std::unique_ptr<QAudioOutput> _audioOutput;
     QTimer _initTimer;
-    bool _inited{false}, _enabled{false};
+    bool _inited{false}, _enabled{false}, _deviceConnected{false};
 
     bool Initialize();
+    bool StartWhenReady();
+    void ResetAudio();
     void Control(bool enable);
+    void SetDeviceConnected(bool connected);
 
+    void Start();
+    void Stop();
     void OnError(QMediaPlayer::Error error);
 };
 

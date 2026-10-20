@@ -18,27 +18,33 @@
 
 #include "LowAudioLatency.h"
 
-#include <QAudioDeviceInfo>
+#include <QAudioDevice>
+#include <QMediaDevices>
+#include <QUrl>
 
 #include "../Logger.h"
-#include "../Application.h"
 
 namespace Core::LowAudioLatency {
 
 Controller::Controller(QObject *parent) : QObject{parent}
 {
     connect(this, &Controller::ControlSafely, this, &Controller::Control);
+    connect(this, &Controller::SetDeviceConnectedSafely, this, &Controller::SetDeviceConnected);
 
+    _initTimer.setInterval(kRetryInterval);
     _initTimer.callOnTimeout([this] {
-        if (Initialize()) {
+        if (!_enabled || !_deviceConnected) {
             _initTimer.stop();
+            return;
         }
+        StartWhenReady();
     });
+}
 
-    if (!Initialize()) {
-        // retry later
-        _initTimer.start(kRetryInterval);
-    }
+Controller::~Controller()
+{
+    _initTimer.stop();
+    ResetAudio();
 }
 
 bool Controller::Initialize()
@@ -46,57 +52,126 @@ bool Controller::Initialize()
     // issue #20
     //
     // Constructing `QMediaPlayer` when no audio output device is enabled will cause `play` to
-    // continually raise errors and is unrecoverable.
-    if (QAudioDeviceInfo::availableDevices(QAudio::AudioOutput).empty()) {
+    // continually raise errors and is unrecoverable until the device list changes.
+    if (QMediaDevices::audioOutputs().empty()) {
         LOG(Warn, "LowAudioLatency: Try to init, but no audio output device is enabled.");
         return false;
     }
 
     _mediaPlayer = std::make_unique<QMediaPlayer>();
-    _mediaPlaylist = std::make_unique<QMediaPlaylist>();
+    _audioOutput = std::make_unique<QAudioOutput>();
 
     connect(
-        _mediaPlayer.get(), qOverload<QMediaPlayer::Error>(&QMediaPlayer::error), this,
-        &Controller::OnError);
+        _mediaPlayer.get(), &QMediaPlayer::errorOccurred, this,
+        [this](QMediaPlayer::Error error, const QString &) { OnError(error); });
 
-    _mediaPlaylist->addMedia(QUrl{"qrc:/Resource/Audio/Silence.mp3"});
-    _mediaPlaylist->setPlaybackMode(QMediaPlaylist::Loop);
-    _mediaPlayer->setPlaylist(_mediaPlaylist.get());
+    _mediaPlayer->setAudioOutput(_audioOutput.get());
+    _mediaPlayer->setSource(QUrl{"qrc:/Resource/Audio/Silence.mp3"});
+    _mediaPlayer->setLoops(QMediaPlayer::Infinite);
 
     _inited = true;
+    LOG(Info, "LowAudioLatency: Compatible media backend initialized.");
+    return true;
+}
 
-    LOG(Info, "LowAudioLatency: Init successful. _enabled: {}", _enabled);
-
-    if (_enabled) {
-        Control(true);
+bool Controller::StartWhenReady()
+{
+    if (!_inited && !Initialize()) {
+        if (!_initTimer.isActive()) {
+            _initTimer.start();
+        }
+        return false;
     }
 
+    _initTimer.stop();
+    Start();
     return true;
+}
+
+void Controller::ResetAudio()
+{
+    Stop();
+    _mediaPlayer.reset();
+    _audioOutput.reset();
+    _inited = false;
 }
 
 void Controller::Control(bool enable)
 {
     LOG(Info, "LowAudioLatency::Controller Control: {}, _inited: {}", enable, _inited);
 
-    if (_inited) {
-        if (enable) {
-            _mediaPlayer->play();
+    _enabled = enable;
+
+    if (enable) {
+        if (!_deviceConnected) {
+            LOG(Info, "LowAudioLatency: Waiting for the bound device to connect.");
+            return;
         }
-        else {
-            _mediaPlayer->stop();
-        }
+        StartWhenReady();
+    }
+    else {
+        _initTimer.stop();
+        ResetAudio();
+    }
+}
+
+void Controller::SetDeviceConnected(bool connected)
+{
+    if (_deviceConnected == connected) {
+        return;
     }
 
-    _enabled = enable;
+    _deviceConnected = connected;
+    if (!_enabled) {
+        return;
+    }
+
+    if (!connected) {
+        LOG(Info, "LowAudioLatency: Bound device disconnected; releasing the audio stream.");
+        _initTimer.stop();
+        ResetAudio();
+        return;
+    }
+
+    LOG(Info, "LowAudioLatency: Bound device connected; starting the compatible media stream.");
+    StartWhenReady();
+}
+
+void Controller::Start()
+{
+    if (!_inited || !_enabled || !_deviceConnected || !_mediaPlayer) {
+        return;
+    }
+
+    if (_mediaPlayer->playbackState() != QMediaPlayer::PlayingState) {
+        _mediaPlayer->play();
+    }
+}
+
+void Controller::Stop()
+{
+    if (_mediaPlayer) {
+        _mediaPlayer->stop();
+    }
 }
 
 void Controller::OnError(QMediaPlayer::Error error)
 {
+    if (!_enabled) {
+        return;
+    }
+
     LOG(Warn, "LowAudioLatency::Controller error: {}. Reinit later.", error);
 
-    _mediaPlayer->stop();
-    _inited = false;
-    _initTimer.start(kRetryInterval);
+    // Do not destroy QMediaPlayer while it is emitting its error signal.
+    const auto *failedPlayer = _mediaPlayer.get();
+    QTimer::singleShot(0, this, [this, failedPlayer] {
+        if (!_enabled || !_deviceConnected || _mediaPlayer.get() != failedPlayer) {
+            return;
+        }
+        ResetAudio();
+        _initTimer.start();
+    });
 }
 
 } // namespace Core::LowAudioLatency

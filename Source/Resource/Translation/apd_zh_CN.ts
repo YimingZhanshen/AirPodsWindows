@@ -51,45 +51,7 @@ Enjoy it all.</source>
     </message>
 </context>
 <context>
-    <name>DownloadWindow</name>
-    <message>
-        <source>Download new version</source>
-        <translation>下载新版本</translation>
-    </message>
-    <message>
-        <source>Download Manually</source>
-        <translation>手动下载</translation>
-    </message>
-    <message>
-        <source>If the download is slow or fails, you can:</source>
-        <translation>如果下载缓慢或失败，您可以：</translation>
-    </message>
-</context>
-<context>
-    <name>Gui::DownloadWindow</name>
-    <message>
-        <source>Oops, an error occurred during the automatic update.
-Please download and install the new version manually.</source>
-        <translation>哎呀，在自动更新时发生了一个错误。
-请手动下载安装新版本。</translation>
-    </message>
-</context>
-<context>
     <name>Gui::MainWindow</name>
-    <message>
-        <source>Change log:</source>
-        <translation>变更日志：</translation>
-    </message>
-    <message>
-        <source>Hey! I found a new version available!
-
-Current version: %1
-Latest version: %2%3</source>
-        <translation>嗨！我发现了一个可用的新版本！
-
-当前版本：%1
-最新版本：%2%3</translation>
-    </message>
     <message>
         <source>Bind to AirPods</source>
         <translation>绑定到 AirPods</translation>
@@ -98,13 +60,27 @@ Latest version: %2%3</source>
         <source>Please select your AirPods device below.</source>
         <translation>请在下方选择您的 AirPods 设备。</translation>
     </message>
+    <message>
+            <source>Change log:</source>
+            <translation>变更日志：</translation>
+        </message>
+    <message>
+            <source>Hey! I found a new version available!
+
+    Current version: %1
+    Latest version: %2%3</source>
+            <translation>嗨！我发现了一个可用的新版本！
+
+    当前版本：%1
+    最新版本：%2%3</translation>
+        </message>
 </context>
 <context>
     <name>Gui::SettingsWindow</name>
     <message>
         <source>|</source>
         <extracomment>To credit translators, you can leave your name here if you wish. (Sorted by time added, separated by &quot;|&quot; character, only single &quot;|&quot; for empty)</extracomment>
-        <translation></translation>
+        <translation>|</translation>
     </message>
     <message>
         <source>Translation Contributors:</source>
@@ -115,21 +91,33 @@ Latest version: %2%3</source>
         <translation>第三方库：</translation>
     </message>
     <message>
-        <source>Off</source>
+        <source>Saved device (not available)</source>
+        <translation>已保存的设备（当前不可用）</translation>
+    </message>
+    <message>
+        <source>Restore Defaults</source>
+        <translation>恢复默认设置</translation>
+    </message>
+    <message>
+        <source>Close</source>
         <translation>关闭</translation>
     </message>
     <message>
-        <source>Noise Cancellation</source>
-        <translation>降噪</translation>
-    </message>
+            <source>Off</source>
+            <translation>关闭</translation>
+        </message>
     <message>
-        <source>Transparency</source>
-        <translation>通透</translation>
-    </message>
+            <source>Noise Cancellation</source>
+            <translation>降噪</translation>
+        </message>
     <message>
-        <source>Adaptive</source>
-        <translation>自适应</translation>
-    </message>
+            <source>Transparency</source>
+            <translation>通透</translation>
+        </message>
+    <message>
+            <source>Adaptive</source>
+            <translation>自适应</translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -166,67 +154,170 @@ Latest version: %2%3</source>
         <translation>退出</translation>
     </message>
     <message>
-        <source>Noise Control</source>
-        <translation>降噪控制</translation>
+        <source>Low audio latency (may cause hiss)</source>
+        <translation>低音频延迟（可能产生嘶嘶声）</translation>
     </message>
     <message>
-        <source>Off</source>
-        <translation>关闭</translation>
+        <source>Quick connection is disabled.</source>
+        <translation>快速连接已禁用。</translation>
     </message>
     <message>
-        <source>Noise Cancellation</source>
-        <translation>降噪</translation>
+        <source>Choose a Bluetooth audio device in Settings first.</source>
+        <translation>请先在设置中选择蓝牙音频设备。</translation>
     </message>
     <message>
-        <source>Transparency</source>
-        <translation>通透</translation>
+        <source>The selected device is not available. Turn it on or bring it into range.</source>
+        <translation>选定的设备当前不可用，请打开电源或将其移入接收范围内。</translation>
     </message>
     <message>
-        <source>Adaptive</source>
-        <translation>自适应</translation>
+        <source>%1 is already connected.</source>
+        <translation>%1 已经连接。</translation>
+    </message>
+    <message>
+        <source>Connecting to %1...</source>
+        <translation>正在连接 %1…</translation>
+    </message>
+    <message>
+        <source>%1 connected.</source>
+        <translation>%1 已连接。</translation>
+    </message>
+    <message>
+        <source>Connection to %1 timed out.</source>
+        <translation>连接 %1 超时。</translation>
+    </message>
+    <message>
+        <source>Windows could not connect to %1.</source>
+        <translation>Windows 无法连接 %1。</translation>
+    </message>
+    <message>
+        <source>Quick connect</source>
+        <translation>快速连接</translation>
+    </message>
+    <message>
+            <source>Noise Control</source>
+            <translation>降噪控制</translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation>关闭</translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation>降噪</translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation>通透</translation>
+        </message>
+    <message>
+            <source>Adaptive</source>
+            <translation>自适应</translation>
+        </message>
+</context>
+<context>
+    <name>Gui::UpdateWindow</name>
+    <message>
+        <source>Ready to install. You are using %1.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Downloading update</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Unable to update</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The automatic update was stopped</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Release type</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>New version</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Preview release</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stable release</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No release notes for this version</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The automatic update could not be completed. Please download and install the new version manually, or close this window to continue using AirPodsDesktop.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Waiting for download size...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1 downloaded</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Preparing to install...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Downloading...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1% - %2 of %3</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>MainWindow</name>
     <message>
-        <source>AirPodsWindows information</source>
-        <translation>AirPodsWindows 信息</translation>
+        <source>AirPodsDesktop information</source>
+        <translation>AirPodsDesktop 信息</translation>
     </message>
+    <message>
+            <source>AirPodsWindows information</source>
+            <translation>AirPodsWindows 信息</translation>
+        </message>
 </context>
 <context>
     <name>QMessageBox</name>
     <message>
         <source>No paired device found.
 You need to pair your AirPods in Windows Bluetooth Settings first.</source>
-        <translation>没有找到配对的设备。
+        <translation>未找到已配对的设备。
 您需要先在 Windows 蓝牙设置中配对您的 AirPods。</translation>
     </message>
     <message>
-        <source>Update now</source>
-        <translation>现在更新</translation>
-    </message>
+            <source>Update now</source>
+            <translation>现在更新</translation>
+        </message>
     <message>
-        <source>Skip this version</source>
-        <translation>跳过这个版本</translation>
-    </message>
+            <source>Skip this version</source>
+            <translation>跳过这个版本</translation>
+        </message>
     <message>
-        <source>View release</source>
-        <translation>查看发布</translation>
-    </message>
+            <source>View release</source>
+            <translation>查看发布</translation>
+        </message>
     <message>
-        <source>Remind me later</source>
-        <translation>稍后提醒我</translation>
-    </message>
+            <source>Remind me later</source>
+            <translation>稍后提醒我</translation>
+        </message>
 </context>
 <context>
     <name>QObject</name>
     <message>
-        <source>It fixes short audio playback problems, but may increase battery consumption.</source>
-        <translation>修复短音频的播放问题，但可能会增加电池消耗。</translation>
-    </message>
-    <message>
         <source>It automatically pauses or resumes media when your AirPods are taken out or put in your ears.</source>
-        <translation>当您的 AirPods 被取下或放入耳朵时自动暂停或恢复媒体。</translation>
+        <translation>当您取下或戴上 AirPods 时，自动暂停或恢复媒体播放。</translation>
     </message>
     <message>
         <source>Unavailable</source>
@@ -241,53 +332,65 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <translation>等待绑定</translation>
     </message>
     <message>
-        <source>Off</source>
-        <translation>关闭</translation>
+        <source>Keeps the audio device awake while your AirPods are connected so short sounds start immediately. This may produce audible hiss and use more battery.</source>
+        <translation>在 AirPods 连接期间保持音频设备唤醒，使短促提示音能够立即播放。这可能会产生可听见的嘶嘶声，并增加电池消耗。</translation>
     </message>
     <message>
-        <source>Noise Cancellation</source>
-        <translation>降噪</translation>
+        <source>A click on the tray icon connects the selected device instead of opening the main window. Double-click still opens it.</source>
+        <translation>单击系统托盘图标会连接选定的设备，而不是打开主窗口；双击仍会打开主窗口。</translation>
     </message>
     <message>
-        <source>Transparency</source>
-        <translation>通透</translation>
-    </message>
+            <source>It fixes short audio playback problems, but may increase battery consumption.</source>
+            <translation>修复短音频的播放问题，但可能会增加电池消耗。</translation>
+        </message>
     <message>
-        <source>Adaptive</source>
-        <translation>自适应</translation>
-    </message>
+            <source>Off</source>
+            <translation>关闭</translation>
+        </message>
     <message>
-        <source>Unknown</source>
-        <translation>未知</translation>
-    </message>
+            <source>Noise Cancellation</source>
+            <translation>降噪</translation>
+        </message>
     <message>
-        <source>Enabled</source>
-        <translation>已启用</translation>
-    </message>
+            <source>Transparency</source>
+            <translation>通透</translation>
+        </message>
     <message>
-        <source>Disabled</source>
-        <translation>已禁用</translation>
-    </message>
+            <source>Adaptive</source>
+            <translation>自适应</translation>
+        </message>
     <message>
-        <source>Automatically lowers media volume when you start speaking (AirPods Pro/Max only).</source>
-        <translation>当您开始说话时自动降低媒体音量（仅限 AirPods Pro/Max）。</translation>
-    </message>
+            <source>Unknown</source>
+            <translation>未知</translation>
+        </message>
     <message>
-        <source>Adjusts media volume based on your environment and listening habits.</source>
-        <translation>根据您的环境和聆听习惯自动调整媒体音量。</translation>
-    </message>
+            <source>Enabled</source>
+            <translation>已启用</translation>
+        </message>
     <message>
-        <source>Protects your hearing by reducing loud sounds.</source>
-        <translation>通过降低响亮的声音来保护您的听力。</translation>
-    </message>
+            <source>Disabled</source>
+            <translation>已禁用</translation>
+        </message>
     <message>
-        <source>Controls the amount of environmental sound in Adaptive mode (0-50).</source>
-        <translation>控制自适应模式下的环境声音量（0-50）。</translation>
-    </message>
+            <source>Automatically lowers media volume when you start speaking (AirPods Pro/Max only).</source>
+            <translation>当您开始说话时自动降低媒体音量（仅限 AirPods Pro/Max）。</translation>
+        </message>
     <message>
-        <source>Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).</source>
-        <translation>当前降噪控制模式（1=关闭，2=降噪，3=通透，4=自适应）。</translation>
-    </message>
+            <source>Adjusts media volume based on your environment and listening habits.</source>
+            <translation>根据您的环境和聆听习惯自动调整媒体音量。</translation>
+        </message>
+    <message>
+            <source>Protects your hearing by reducing loud sounds.</source>
+            <translation>通过降低响亮的声音来保护您的听力。</translation>
+        </message>
+    <message>
+            <source>Controls the amount of environmental sound in Adaptive mode (0-50).</source>
+            <translation>控制自适应模式下的环境声音量（0-50）。</translation>
+        </message>
+    <message>
+            <source>Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).</source>
+            <translation>当前降噪控制模式（1=关闭，2=降噪，3=通透，4=自适应）。</translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -299,8 +402,8 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
 <context>
     <name>SettingsWindow</name>
     <message>
-        <source>AirPodsWindows Settings</source>
-        <translation>AirPodsWindows 设置</translation>
+        <source>AirPodsDesktop Settings</source>
+        <translation>AirPodsDesktop 设置</translation>
     </message>
     <message>
         <source>General</source>
@@ -324,11 +427,11 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>Visual</source>
-        <translation>视觉</translation>
+        <translation>外观</translation>
     </message>
     <message>
         <source>Display battery on tray icon</source>
-        <translation>在托盘图标上显示电池</translation>
+        <translation>在系统托盘图标上显示电量</translation>
     </message>
     <message>
         <source>Disable</source>
@@ -336,11 +439,11 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>When low battery</source>
-        <translation>当低电量时</translation>
+        <translation>电量不足时</translation>
     </message>
     <message>
         <source>Always</source>
-        <translation>总是</translation>
+        <translation>始终</translation>
     </message>
     <message>
         <source>Features</source>
@@ -348,7 +451,7 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>Automatic ear detection</source>
-        <translation>自动人耳检测</translation>
+        <translation>自动入耳检测</translation>
     </message>
     <message>
         <source>Low audio latency</source>
@@ -358,53 +461,136 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>About</source>
         <translation>关于</translation>
     </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;开源 &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;仓库&lt;/span&gt;&lt;/a&gt; 根据 &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt; 许可。&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
-    </message>
+        <message>
+            <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+            <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;开源 &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;仓库&lt;/span&gt;&lt;/a&gt; 根据 &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt; 许可。&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+        </message>
     <message>
         <source>Language</source>
         <translation>语言</translation>
     </message>
-    <message>
-        <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
-        <translation>版权所有 © 2021-2026 SpriteOvO &amp; YimingZhanshen. 保留所有权利。</translation>
-    </message>
+        <message>
+            <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
+            <translation>版权所有 © 2021-2026 SpriteOvO &amp; YimingZhanshen. 保留所有权利。</translation>
+        </message>
     <message>
         <source>Display battery on taskbar</source>
-        <translation>在任务栏上显示电池</translation>
+        <translation>在任务栏上显示电量</translation>
     </message>
     <message>
         <source>As text</source>
-        <translation>以文本</translation>
+        <translation>以文本显示</translation>
     </message>
     <message>
         <source>As icon</source>
-        <translation>以图标</translation>
+        <translation>以图标显示</translation>
     </message>
     <message>
-        <source>Conversational awareness</source>
-        <translation>对话感知</translation>
+        <source>Connect the selected device on a tray icon click</source>
+        <translation>单击系统托盘图标时连接选定的设备</translation>
     </message>
     <message>
-        <source>Speaking volume reduction:</source>
-        <translation>说话时音量降低至：</translation>
+        <source>Device</source>
+        <translation>设备</translation>
     </message>
     <message>
-        <source>Personalized volume</source>
-        <translation>个性化音量</translation>
+        <source>The paired Bluetooth audio device a tray icon click connects.</source>
+        <translation>单击系统托盘图标时要连接的已配对蓝牙音频设备。</translation>
     </message>
     <message>
-        <source>Reduce loud sounds</source>
-        <translation>响亮声音降低</translation>
+        <source>Forget the bound AirPods so that another pair can be bound.</source>
+        <translation>解除当前绑定的 AirPods，以便绑定另一副。</translation>
     </message>
     <message>
-        <source>Noise control mode</source>
-        <translation>降噪控制模式</translation>
+        <source>Diagnostics</source>
+        <translation>诊断</translation>
     </message>
     <message>
-        <source>Adaptive transparency level</source>
-        <translation>自适应通透级别</translation>
+        <source>Log files help when reporting an issue.</source>
+        <translation>报告问题时，日志文件能提供帮助。</translation>
+    </message>
+    <message>
+        <source>Appearance</source>
+        <translation>外观</translation>
+    </message>
+    <message>
+        <source>Use system setting</source>
+        <translation>跟随系统</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>浅色</translation>
+    </message>
+    <message>
+        <source>Dark</source>
+        <translation>深色</translation>
+    </message>
+    <message>
+            <source>AirPodsWindows Settings</source>
+            <translation>AirPodsWindows 设置</translation>
+        </message>
+    <message>
+            <source>Conversational awareness</source>
+            <translation>对话感知</translation>
+        </message>
+    <message>
+            <source>Speaking volume reduction:</source>
+            <translation>说话时音量降低至：</translation>
+        </message>
+    <message>
+            <source>Personalized volume</source>
+            <translation>个性化音量</translation>
+        </message>
+    <message>
+            <source>Reduce loud sounds</source>
+            <translation>响亮声音降低</translation>
+        </message>
+    <message>
+            <source>Noise control mode</source>
+            <translation>降噪控制模式</translation>
+        </message>
+    <message>
+            <source>Adaptive transparency level</source>
+            <translation>自适应通透级别</translation>
+        </message>
+</context>
+<context>
+    <name>UpdateWindow</name>
+    <message>
+        <source>Software Update</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>View release</source>
+        <translation>查看发行说明</translation>
+    </message>
+    <message>
+        <source>Skip this version</source>
+        <translation>跳过此版本</translation>
+    </message>
+    <message>
+        <source>Remind me later</source>
+        <translation>稍后提醒我</translation>
+    </message>
+    <message>
+        <source>Update now</source>
+        <translation>立即更新</translation>
+    </message>
+    <message>
+        <source>Download Manually</source>
+        <translation>手动下载</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <source>If the download is slow, you can download the update manually. AirPodsDesktop will close when you switch to manual download.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>What&apos;s new</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 </TS>

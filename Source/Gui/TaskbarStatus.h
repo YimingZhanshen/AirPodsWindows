@@ -21,12 +21,13 @@
 #include <optional>
 
 #include <QDialog>
+#include <QPainter>
 
 #include "ui_TaskbarStatus.h"
 
 #include "../Core/AirPods.h"
 #include "../Core/Settings.h"
-#include "../Utils.h"
+#include "Utils.h"
 #include "Base.h"
 #include "Widget/Battery.h"
 
@@ -124,15 +125,19 @@ public:
     void Unavailable();
     void Disconnect();
     void Unbind();
+    void SetToolTip(const QString &text);
 
 Q_SIGNALS:
     void OnSettingsChangedSafely(TaskbarStatusBehavior value);
+    void ShowMainWindowRequested();
+    void ShowTrayMenuRequested(const QPoint &position);
 
 private:
     constexpr static inline auto kFixedWidth{60};  // for horizontal taskbar
     constexpr static inline auto kFixedHeight{40}; // for vertical taskbar
 
-    constexpr static inline auto kUpdateInterval{100ms};
+    constexpr static inline auto kInitialUpdateInterval{100ms};
+    constexpr static inline auto kIdleUpdateInterval{2s};
 
     Ui::TaskbarStatus _ui;
     Helper::Sides<MiniIcon *> _icon = {new MiniIcon{this}, new MiniIcon{this}};
@@ -149,6 +154,7 @@ private:
     bool _drawDebugBorder{false};
 #endif
 
+    void ApplyTheme();
     void UpdateVisible();
     bool Enable();
     bool Disable();

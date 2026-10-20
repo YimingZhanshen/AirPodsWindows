@@ -17,8 +17,10 @@
 //
 
 #include "TrayIcon.h"
+#include "Theme.h"
 
 #include <QFont>
+#include <QApplication>
 #include <QPainter>
 #include <QSvgRenderer>
 
@@ -29,19 +31,36 @@
 
 namespace Gui {
 
-TrayIcon::TrayIcon()
+TrayIcon::TrayIcon(
+    std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect)
+    : _quickConnect{quickConnect}, _settingsWindow{std::move(getCurrentLocaleIndex), quickConnect}
 {
+    Theme::ConfigurePopupSurface(_menu);
+    _singleClickTimer.setSingleShot(true);
+    connect(&_singleClickTimer, &QTimer::timeout, this, [this] {
+        ExecuteTrayActivation(_trayActivationState.OnSingleClickTimeout());
+    });
+
     connect(_actionNewVersion, &QAction::triggered, this, &TrayIcon::OnNewVersionClicked);
+    connect(_actionLowAudioLatency, &QAction::triggered, this, [](bool enabled) {
+        Core::Settings::ModifiableAccess()->low_audio_latency = enabled;
+    });
     connect(_actionSettings, &QAction::triggered, this, &TrayIcon::OnSettingsClicked);
     connect(_actionAbout, &QAction::triggered, this, &TrayIcon::OnAboutClicked);
     connect(_actionQuit, &QAction::triggered, qApp, &QApplication::quit, Qt::DirectConnection);
     connect(_tray, &QSystemTrayIcon::activated, this, &TrayIcon::OnIconClicked);
-    connect(_tray, &QSystemTrayIcon::messageClicked, this, [this]() { ShowMainWindow(); });
+    connect(_tray, &QSystemTrayIcon::messageClicked, this, &TrayIcon::ShowMainWindowRequested);
+    connect(
+        &_quickConnect, &Core::QuickConnect::Controller::OutcomeChanged, this,
+        &TrayIcon::OnQuickConnectOutcome);
 
     connect(
         this, &TrayIcon::OnTrayIconBatteryChangedSafely, this, &TrayIcon::OnTrayIconBatteryChanged);
+    connect(
+        this, &TrayIcon::OnLowAudioLatencyChangedSafely, this, &TrayIcon::OnLowAudioLatencyChanged);
 
     _actionNewVersion->setVisible(false);
+    _actionLowAudioLatency->setCheckable(true);
 
     // Setup noise control menu
     SetupNoiseControlMenu();
@@ -50,6 +69,7 @@ TrayIcon::TrayIcon()
     _menu->addSeparator();
     _menu->addMenu(_noiseControlMenu);
     _menu->addSeparator();
+    _menu->addAction(_actionLowAudioLatency);
     _menu->addAction(_actionSettings);
     _menu->addSeparator();
     _menu->addAction(_actionAbout);
@@ -59,7 +79,7 @@ TrayIcon::TrayIcon()
     _noiseControlMenu->menuAction()->setVisible(false);
 
     _tray->setContextMenu(_menu);
-    _tray->setIcon(ApdApplication::windowIcon());
+    _tray->setIcon(qApp->windowIcon());
     _tray->show();
 }
 
@@ -100,7 +120,7 @@ void TrayIcon::SetupNoiseControlMenu()
 
 void TrayIcon::OnNoiseControlModeSelected(Core::AAP::NoiseControlMode mode)
 {
-    auto &apdMgr = ApdApp->GetMainWindow()->GetApdMgr();
+    auto &apdMgr = ApdApp->GetAirPodsManager();
     
     // Save the previous mode to revert on failure
     auto previousMode = _currentNoiseMode;
@@ -175,6 +195,12 @@ void TrayIcon::Unavailable()
 
 void TrayIcon::Disconnect()
 {
+    // No device is bound yet, so "Waiting for Binding" outranks "Disconnected". The scanner
+    // reports itself available on every (re)start, and that must not overwrite this state.
+    if (_status == Status::Unbind) {
+        return;
+    }
+
     _status = Status::Disconnected;
     _airPodsState.reset();
     _currentNoiseMode.reset();
@@ -200,7 +226,12 @@ void TrayIcon::VersionUpdateAvailable(const Core::Update::ReleaseInfo &releaseIn
 
 void TrayIcon::ShowMainWindow()
 {
-    ApdApp->GetMainWindow()->show();
+    emit ShowMainWindowRequested();
+}
+
+void TrayIcon::ShowContextMenu(const QPoint &position)
+{
+    _menu->popup(position);
 }
 
 void TrayIcon::Repaint()
@@ -271,7 +302,9 @@ void TrayIcon::Repaint()
         toolTipContent += '\n' + _actionNewVersion->text();
     }
 
-    _tray->setToolTip("AirPodsWindows\n" + toolTipContent.trimmed());
+    const auto toolTip = "AirPodsWindows\n" + toolTipContent.trimmed();
+    _tray->setToolTip(toolTip);
+    emit ToolTipChanged(toolTip);
 
     // RepaintIcon
 
@@ -302,13 +335,22 @@ void TrayIcon::Repaint()
     } while (false);
 
     static const QColor kNewVersionAvailableDot = Qt::yellow;
+    const IconRenderState nextIconRenderState{
+        .text = iconText,
+        .showUpdateDot = _updateReleaseInfo.has_value(),
+    };
+
+    if (_lastIconRenderState == nextIconRenderState) {
+        return;
+    }
 
     auto optIcon = GenerateIcon(
-        64, iconText,
-        _updateReleaseInfo.has_value() ? std::optional<QColor>{kNewVersionAvailableDot}
-                                       : std::nullopt);
+        64, nextIconRenderState.text,
+        nextIconRenderState.showUpdateDot ? std::optional<QColor>{kNewVersionAvailableDot}
+                                          : std::nullopt);
     if (optIcon.has_value()) {
         _tray->setIcon(QIcon{QPixmap::fromImage(optIcon.value())});
+        _lastIconRenderState = nextIconRenderState;
     }
 }
 
@@ -365,7 +407,7 @@ std::optional<QImage> TrayIcon::GenerateIcon(
         auto textHeight = size * 0.8;
 
         if (!trayIconFonts.contains(textHeight)) {
-            trayIconFonts[textHeight] = adjustFont(ApdApp->font().family(), textHeight);
+            trayIconFonts[textHeight] = adjustFont(qApp->font().family(), textHeight);
         }
 
         const auto &optFont = trayIconFonts[textHeight];
@@ -375,7 +417,7 @@ std::optional<QImage> TrayIcon::GenerateIcon(
         const auto &font = optFont.value();
         const auto &fontMetrics = QFontMetrics{font};
 
-        const auto textWidth = fontMetrics.width(text);
+        const auto textWidth = fontMetrics.horizontalAdvance(text);
         textHeight = fontMetrics.height();
 
         constexpr auto kMargin = QSizeF{2, 0};
@@ -423,7 +465,7 @@ void TrayIcon::OnNewVersionClicked()
     _updateReleaseInfo.reset();
     Repaint();
 
-    ApdApp->GetMainWindow()->AskUserUpdate(releaseInfo);
+    emit UserUpdateRequested(releaseInfo);
 }
 
 void TrayIcon::OnSettingsClicked()
@@ -447,17 +489,86 @@ void TrayIcon::OnAboutClicked()
 
 void TrayIcon::OnIconClicked(QSystemTrayIcon::ActivationReason reason)
 {
-    if (reason == QSystemTrayIcon::DoubleClick || reason == QSystemTrayIcon::Trigger ||
-        reason == QSystemTrayIcon::MiddleClick)
-    {
+    const auto result = _trayActivationState.OnActivation(reason, _quickConnect.IsEnabled());
+
+    switch (result.timer) {
+    case SingleClickTimer::Start:
+        // Read the interval each time; the user can change it in Windows while we are running.
+        _singleClickTimer.start(QApplication::doubleClickInterval());
+        break;
+    case SingleClickTimer::Stop:
+        _singleClickTimer.stop();
+        break;
+    case SingleClickTimer::Unchanged:
+        break;
+    }
+
+    ExecuteTrayActivation(result.action);
+}
+
+void TrayIcon::ExecuteTrayActivation(TrayActivationAction action)
+{
+    if (action == TrayActivationAction::QuickConnect) {
+        _quickConnect.Request();
+        return;
+    }
+
+    if (action == TrayActivationAction::ShowMainWindow) {
         ShowMainWindow();
     }
+}
+
+void TrayIcon::OnQuickConnectOutcome(Core::QuickConnect::Outcome outcome, const QString &deviceName)
+{
+    QString text;
+    QSystemTrayIcon::MessageIcon icon = QSystemTrayIcon::Information;
+
+    switch (outcome) {
+    case Core::QuickConnect::Outcome::Disabled:
+        text = tr("Quick connection is disabled.");
+        break;
+    case Core::QuickConnect::Outcome::NoDevice:
+        text = tr("Choose a Bluetooth audio device in Settings first.");
+        icon = QSystemTrayIcon::Warning;
+        break;
+    case Core::QuickConnect::Outcome::DeviceUnavailable:
+        text = tr("The selected device is not available. Turn it on or bring it into range.");
+        icon = QSystemTrayIcon::Warning;
+        break;
+    case Core::QuickConnect::Outcome::AlreadyConnected:
+        text = tr("%1 is already connected.").arg(deviceName);
+        break;
+    case Core::QuickConnect::Outcome::RequestStarted:
+        text = tr("Connecting to %1...").arg(deviceName);
+        break;
+    case Core::QuickConnect::Outcome::Connected:
+        text = tr("%1 connected.").arg(deviceName);
+        break;
+    case Core::QuickConnect::Outcome::TimedOut:
+        text = tr("Connection to %1 timed out.").arg(deviceName);
+        icon = QSystemTrayIcon::Warning;
+        break;
+    case Core::QuickConnect::Outcome::Failed:
+        text = tr("Windows could not connect to %1.").arg(deviceName);
+        icon = QSystemTrayIcon::Warning;
+        break;
+    default:
+        return;
+    }
+
+    ShowMessage(tr("Quick connect"), text, icon);
 }
 
 void TrayIcon::OnTrayIconBatteryChanged(Core::Settings::TrayIconBatteryBehavior value)
 {
     _trayIconBatteryBehavior = value;
     Repaint();
+}
+
+void TrayIcon::OnLowAudioLatencyChanged(bool enabled)
+{
+    _actionLowAudioLatency->setChecked(enabled);
+    _settingsWindow.SetLowAudioLatencyChecked(enabled);
 }
 
 } // namespace Gui

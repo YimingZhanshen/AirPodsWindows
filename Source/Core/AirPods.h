@@ -18,13 +18,22 @@
 
 #pragma once
 
-#include <optional>
+#include <chrono>
+#include <cstdint>
 #include <functional>
+#include <limits>
+#include <mutex>
+#include <optional>
+#include <utility>
+#include <vector>
+
+#include <QObject>
 
 #include "Bluetooth.h"
 #include "AppleCP.h"
 #include "AAP.h"
 #include "AAPManager.h"
+#include "../Helper.h"
 
 namespace Core::AirPods {
 
@@ -84,10 +93,13 @@ struct State {
 
 namespace Details {
 
+QString ResolveDisplayName(QString deviceName, Model model);
+
 class Advertisement
 {
 public:
     using AddressType = decltype(Bluetooth::AdvertisementWatcher::ReceivedData::address);
+    using TimestampType = decltype(Bluetooth::AdvertisementWatcher::ReceivedData::timestamp);
 
     struct AdvState : AirPods::State {
         Side side;
@@ -98,7 +110,7 @@ public:
     Advertisement(const Bluetooth::AdvertisementWatcher::ReceivedData &data);
 
     int16_t GetRssi() const;
-    const auto &GetTimestamp() const;
+    const TimestampType &GetTimestamp() const;
     AddressType GetAddress() const;
     std::vector<uint8_t> GetDesensitizedData() const;
     const AdvState &GetAdvState() const;
@@ -124,7 +136,9 @@ public:
     };
 
     StateManager();
+    ~StateManager();
 
+    void SetOnDiscardState(std::function<void()> callback);
     std::optional<State> GetCurrentState() const;
 
     std::optional<UpdateEvent> OnAdvReceived(Advertisement adv);
@@ -138,6 +152,7 @@ private:
 
     mutable std::mutex _mutex;
 
+    std::function<void()> _onDiscardState;
     Helper::Timer _lostTimer;
     Helper::Sides<Helper::Timer> _stateResetTimer;
     Helper::Sides<std::optional<std::pair<Advertisement, Timestamp>>> _adv;
@@ -147,17 +162,20 @@ private:
     bool IsPossibleDesiredAdv(const Advertisement &adv) const;
     void UpdateAdv(Advertisement adv);
     std::optional<UpdateEvent> UpdateState();
-    void ResetAll();
+    std::function<void()> ResetAll();
 
-    void DoLost();
+    std::function<void()> DoLost();
     void DoStateReset(Side side);
 };
 } // namespace Details
 
-class Manager
+class Manager : public QObject
 {
+    Q_OBJECT
+
 public:
-    Manager();
+    explicit Manager(QObject *parent = nullptr);
+    ~Manager();
 
     void StartScanner();
     void StopScanner();
@@ -196,12 +214,13 @@ public:
 
 private:
     std::mutex _mutex;
-    Bluetooth::AdvertisementWatcher _adWatcher;
     Details::StateManager _stateMgr;
     std::optional<Bluetooth::Device> _boundDevice;
     std::optional<Model> _modelOverride;
     QString _deviceName;
+    Model _boundModel{Model::Unknown};
     bool _deviceConnected{false};
+    bool _scannerWanted{false};
     bool _automaticEarDetection{false};
     bool _conversationalAwarenessEnabled{false};
     uint8_t _conversationalAwarenessVolumePercent{40};
@@ -209,10 +228,17 @@ private:
     bool _loudSoundReductionEnabled{false};
     uint8_t _adaptiveTransparencyLevel{25};
     std::optional<AAP::NoiseControlMode> _currentNoiseControlMode;
-    
+    uint64_t _requestedDeviceAddress{0};
+    std::jthread _deviceLookupThread;
+
     // AAP Manager for L2CAP protocol communication
     AAP::Manager _aapMgr;
 
+    // Declared last so that it is destroyed first: its destructor stops the watcher and waits
+    // for in-flight callbacks, which reach `_stateMgr` and `_mutex` above.
+    Bluetooth::AdvertisementWatcher _adWatcher;
+
+    void CompleteBoundDeviceLookup(uint64_t address, std::optional<Bluetooth::Device> device);
     void OnBoundDeviceConnectionStateChanged(Bluetooth::DeviceState state);
     void OnStateChanged(Details::StateManager::UpdateEvent updateEvent);
     void OnLidOpened(bool opened);
@@ -220,7 +246,7 @@ private:
     bool OnAdvertisementReceived(const Bluetooth::AdvertisementWatcher::ReceivedData &data);
     void OnAdvWatcherStateChanged(
         Bluetooth::AdvertisementWatcher::State state, const std::optional<std::string> &optError);
-    
+
     // AAP callbacks
     void OnNoiseControlModeNotification(AAP::NoiseControlMode mode);
     void OnConversationalAwarenessStateChanged(AAP::ConversationalAwarenessState state);
@@ -234,6 +260,14 @@ private:
     void OnAAPDisconnected();
     void SetupAAPCallbacks();
     void ConnectAAP();
+
+Q_SIGNALS:
+    void StateUpdated(const Core::AirPods::State &newState);
+    void BoundDeviceUnavailable();
+    void Disconnected();
+    void LidToggled(bool opened);
+    void ScannerAvailabilityChanged(bool available);
+    void DeviceConnectionChanged(bool connected);
 };
 
 std::vector<Core::Bluetooth::Device> GetDevices();

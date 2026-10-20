@@ -19,15 +19,21 @@
 #include "MainWindow.h"
 
 #include <QScreen>
+#include <QCursor>
+#include <QFontMetrics>
 #include <QPainter>
 #include <QMessageBox>
+#include <QCloseEvent>
+#include <QEnterEvent>
 
 #include <Config.h>
 #include "../Helper.h"
 #include "../Error.h"
-#include "../Application.h"
 #include "../Core/AppleCP.h"
+#include "../Core/Settings.h"
+#include "UpdateWindow.h"
 #include "SelectWindow.h"
+#include "Theme.h"
 
 using namespace std::chrono_literals;
 
@@ -59,7 +65,7 @@ protected:
         DrawX(painter);
     }
 
-    void enterEvent(QEvent *event) override
+    void enterEvent(QEnterEvent *event) override
     {
         _isHovering = true;
         repaint();
@@ -90,15 +96,17 @@ protected:
         {
             painter.setPen(Qt::NoPen);
 
+            const auto &colors = Theme::Manager::Instance().Colors();
+
             QColor color;
             if (_isHoldDown) {
-                color = QColor{218, 218, 219};
+                color = colors.mainClosePressed;
             }
             else if (_isHovering) {
-                color = QColor{228, 228, 229};
+                color = colors.mainCloseHover;
             }
             else {
-                color = QColor{238, 238, 239};
+                color = colors.mainCloseBg;
             }
 
             painter.setBrush(QBrush{color});
@@ -111,7 +119,9 @@ protected:
     {
         painter.save();
         {
-            painter.setPen(QPen{QColor{131, 131, 135}, 3});
+            painter.setPen(QPen{
+                Theme::Manager::Instance().Colors().mainCloseGlyph, 2.5, Qt::SolidLine,
+                Qt::RoundCap});
             painter.setBrush(Qt::NoBrush);
 
             QSize size = this->size();
@@ -128,93 +138,43 @@ protected:
 
 //////////////////////////////////////////////////
 
-class VideoWidget : public QVideoWidget
-{
-    Q_OBJECT
-
-public:
-    using QVideoWidget::QVideoWidget;
-
-Q_SIGNALS:
-    void Clicked();
-
-private:
-    void mouseReleaseEvent(QMouseEvent *event) override
-    {
-        Q_EMIT Clicked();
-    }
-};
-
-//////////////////////////////////////////////////
-
-enum class NewVersionAction {
-    Update,
-    Skip,
-    Later,
-};
-
-NewVersionAction NewVersionMessageBox(
-    QWidget *parent, const QString &title, const QString &text,
-    const Core::Update::ReleaseInfo &releaseInfo)
-{
-    QMessageBox msgBox{QMessageBox::Question, title, text, QMessageBox::NoButton, parent};
-
-    const auto buttonUpdate = msgBox.addButton(QMessageBox::tr("Update now"), QMessageBox::YesRole);
-    const auto buttonSkip =
-        msgBox.addButton(QMessageBox::tr("Skip this version"), QMessageBox::AcceptRole);
-    const auto buttonView = msgBox.addButton(QMessageBox::tr("View release"), QMessageBox::NoRole);
-    const auto buttonLater =
-        msgBox.addButton(QMessageBox::tr("Remind me later"), QMessageBox::NoRole);
-
-    msgBox.setDefaultButton(buttonUpdate);
-
-    buttonView->disconnect();
-    msgBox.connect(buttonView, &QPushButton::clicked, &msgBox, [&] { releaseInfo.OpenUrl(); });
-
-    if (msgBox.exec() == -1) {
-        return NewVersionAction::Later;
-    }
-
-    const auto clickedButton = msgBox.clickedButton();
-
-    if (clickedButton == buttonUpdate) {
-        return NewVersionAction::Update;
-    }
-    else if (clickedButton == buttonSkip) {
-        return NewVersionAction::Skip;
-    }
-    else {
-        return NewVersionAction::Later;
-    }
-}
-
-//////////////////////////////////////////////////
-
 MainWindow::MainWindow(QWidget *parent) : QDialog{parent}
 {
     qRegisterMetaType<Core::AirPods::State>("Core::AirPods::State");
     qRegisterMetaType<Core::Update::ReleaseInfo>("Core::Update::ReleaseInfo");
 
-    _videoWidget = new VideoWidget{this};
+    _animationView = new Widget::AnimationView{this};
+    _playback = new AnimationPlayback{*_animationView, this};
     _closeButton = new CloseButton{this};
 
     _ui.setupUi(this);
 
-    setFixedSize(300, 300);
-    setAttribute(Qt::WA_DeleteOnClose);
+    setFixedSize(_windowSize);
     setWindowFlags(windowFlags() | Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
 
-    Utils::Qt::SetRoundedCorners(this, 30);
-    Utils::Qt::SetRoundedCorners(_ui.pushButton, 6);
-    Utils::Qt::SetPaletteColor(this, QPalette::Window, Qt::white);
-    Utils::Qt::SetPaletteColor(_ui.deviceLabel, QPalette::WindowText, QColor{94, 94, 94});
+    // A translucent backing store retains fractional edge alpha. Native window regions and
+    // QBitmap masks are binary and produce visibly stepped corners, especially above 100% DPI.
+    setAttribute(Qt::WA_TranslucentBackground);
+    setAutoFillBackground(false);
+    setProperty(Theme::Manager::kSkipDwmProperty, true);
+
+    _ui.pushButton->setProperty("cssClass", "accent");
+
+    auto titleFont = _ui.deviceLabel->font();
+    titleFont.setWeight(QFont::DemiBold);
+    _ui.deviceLabel->setFont(titleFont);
+    _ui.deviceLabel->setTextFormat(Qt::PlainText);
+    _ui.deviceLabel->setWordWrap(false);
+    _ui.deviceLabel->setProperty("fontRole", "display");
+
+    ApplyTheme();
+    connect(&Theme::Manager::Instance(), &Theme::Manager::Changed, this, &MainWindow::ApplyTheme);
 
     connect(qApp, &QGuiApplication::applicationStateChanged, this, &MainWindow::OnAppStateChanged);
     connect(_ui.pushButton, &QPushButton::clicked, this, &MainWindow::OnButtonClicked);
     connect(&_posAnimation, &QPropertyAnimation::finished, this, &MainWindow::OnPosMoveFinished);
-    connect(_videoWidget, &VideoWidget::Clicked, this, &MainWindow::OnAnimationClicked);
+    connect(_animationView, &Widget::AnimationView::Clicked, this, &MainWindow::OnAnimationClicked);
     connect(_closeButton, &CloseButton::Clicked, this, &MainWindow::DoHide);
-    connect(_mediaPlayer, &QMediaPlayer::stateChanged, this, &MainWindow::OnPlayerStateChanged);
 
     connect(this, &MainWindow::UpdateStateSafely, this, &MainWindow::UpdateState);
     connect(this, &MainWindow::AvailableSafely, this, &MainWindow::Available);
@@ -222,132 +182,107 @@ MainWindow::MainWindow(QWidget *parent) : QDialog{parent}
     connect(this, &MainWindow::DisconnectSafely, this, &MainWindow::Disconnect);
     connect(this, &MainWindow::BindSafely, this, &MainWindow::Bind);
     connect(this, &MainWindow::UnbindSafely, this, &MainWindow::Unbind);
-    connect(this, &MainWindow::ShowSafely, this, &MainWindow::show);
+    connect(this, &MainWindow::ShowSafely, this, &MainWindow::Show);
     connect(this, &MainWindow::HideSafely, this, &MainWindow::DoHide);
     connect(
         this, &MainWindow::VersionUpdateAvailableSafely, this, &MainWindow::VersionUpdateAvailable);
 
     _posAnimation.setDuration(500);
     _autoHideTimer->callOnTimeout([this] { DoHide(); });
-    _mediaPlayer->setMuted(true);
-    _mediaPlayer->setVideoOutput(_videoWidget);
 
-    _ui.layoutAnimation->addWidget(_videoWidget);
+    _ui.layoutAnimation->addWidget(_animationView);
     _ui.layoutPods->addWidget(_leftBattery);
     _ui.layoutPods->addWidget(_rightBattery);
     _ui.layoutCase->addWidget(_caseBattery);
     _ui.layoutClose->addWidget(_closeButton);
 
-    // For getting the correct initial height of `_videoWidget` later
+    // For getting the correct initial height of `_animationView` later
     _ui.layoutAnimation->activate();
-    _videoWidget->show();
+    _animationView->show();
+}
 
-    Unavailable();
+void MainWindow::StartUpdateChecks()
+{
     _updateChecker.Start();
+}
+
+MainWindow::~MainWindow()
+{
+    // Stop the decoder before QObject destroys the video surface child.
+    delete _playback;
+    _deviceQueryThread.request_stop();
+    if (_deviceQueryThread.joinable()) {
+        _deviceQueryThread.join();
+    }
 }
 
 void MainWindow::UpdateState(const Core::AirPods::State &state)
 {
     LOG(Info, "MainWindow::UpdateState");
 
-    _status = Status::Updating;
-    _cachedState = state;
+    _viewModel.UpdateState(state);
     Repaint();
-    ApdApp->GetTrayIcon()->UpdateState(state);
-    ApdApp->GetTaskbarStatus()->UpdateState(state);
 }
 
 void MainWindow::Available()
 {
     LOG(Info, "MainWindow::Available");
 
-    if (_status != Status::Unavailable) {
-        return;
-    }
-    _status = Status::Available;
-    Disconnect();
+    _viewModel.Available();
+    Repaint();
 }
 
 void MainWindow::Unavailable()
 {
     LOG(Info, "MainWindow::Unavailable");
 
-    _status = Status::Unavailable;
-    _cachedState.reset();
+    _viewModel.Unavailable();
     Repaint();
-    ApdApp->GetTrayIcon()->Unavailable();
-    ApdApp->GetTaskbarStatus()->Unavailable();
 }
 
 void MainWindow::Disconnect()
 {
     LOG(Info, "MainWindow::Disconnect");
 
-    if (_status == Status::Unbind) {
-        return;
-    }
-    _status = Status::Disconnected;
-    _cachedState.reset();
+    _viewModel.Disconnect();
     Repaint();
-    ApdApp->GetTrayIcon()->Disconnect();
-    ApdApp->GetTaskbarStatus()->Disconnect();
 }
 
 void MainWindow::Bind()
 {
     LOG(Info, "MainWindow::Bind");
 
-    _status = Status::Bind;
-    Disconnect();
+    _viewModel.Bind();
+    Repaint();
 }
 
 void MainWindow::Unbind()
 {
     LOG(Info, "MainWindow::Unbind");
 
-    _status = Status::Unbind;
-    _cachedState.reset();
+    _viewModel.Unbind();
     Repaint();
-    ApdApp->GetTrayIcon()->Unbind();
 }
 
 void MainWindow::AskUserUpdate(const Core::Update::ReleaseInfo &releaseInfo)
 {
     auto releaseVersion = releaseInfo.version.toString();
 
-    QString changeLogBlock;
-    if (!releaseInfo.changeLog.isEmpty()) {
-        changeLogBlock = QString{"\n\n%1\n%2"}.arg(tr("Change log:")).arg(releaseInfo.changeLog);
-    }
-
-    auto action = NewVersionMessageBox(
-        nullptr, Config::ProgramName,
-        tr("Hey! I found a new version available!\n"
-           "\n"
-           "Current version: %1\n"
-           "Latest version: %2"
-           "%3")
-            .arg(Core::Update::GetLocalVersion().toString())
-            .arg(releaseVersion)
-            .arg(changeLogBlock),
-        releaseInfo);
-
+    UpdateWindow updateWindow{releaseInfo};
+    updateWindow.exec();
+    const auto action = updateWindow.SelectedAction();
     switch (action) {
-    case Gui::NewVersionAction::Update:
+    case UpdateWindow::Action::Update:
         LOG(Info, "VersionUpdate: User clicked Update.");
 
-        if (!releaseInfo.CanAutoUpdate()) {
-            LOG(Info, "VersionUpdate: Cannot auto update. Popup latest url and quit.");
-            releaseInfo.OpenUrl();
-        }
-        else {
-            Gui::DownloadWindow{releaseInfo}.exec();
+        if (updateWindow.Result() == UpdateWindow::Outcome::KeepRunning) {
+            return;
         }
 
-        ApdApplication::QuitSafely();
+        Utils::Qt::QuitApplicationSafely();
         return;
 
-    case Gui::NewVersionAction::Skip:
+    case UpdateWindow::Action::Skip:
         LOG(Info, "VersionUpdate: User clicked Skip.");
 
         Core::Settings::ModifiableAccess()->skipped_version = releaseVersion;
@@ -355,7 +290,7 @@ void MainWindow::AskUserUpdate(const Core::Update::ReleaseInfo &releaseInfo)
         // Continue checking for new versions after the skipped version
         break;
 
-    case Gui::NewVersionAction::Later:
+    case UpdateWindow::Action::Later:
         LOG(Info, "VersionUpdate: User clicked Later.");
 
         _updateChecker.Stop();
@@ -395,74 +330,22 @@ void MainWindow::SetAnimation(std::optional<Core::AirPods::Model> model)
 
     if (!model.has_value()) {
         StopAnimation();
-        _mediaPlayer->setMedia(QMediaContent{});
+        _playback->SetAnimation({});
     }
     else {
-        QString media;
+        const auto presentation = GetAnimationPresentation(model.value());
 
-        // It's not possible to set video padding background color or get video resolution just
-        // through Qt, so we hardcode it here
-        QSize videoSize{};
+        auto aspectRatio =
+            (float)presentation.sourceSize.width() / (float)presentation.sourceSize.height();
+        auto widgetWidth = _animationView->height() * aspectRatio;
+        _animationView->setFixedWidth(widgetWidth);
+        _playback->SetAnimation(presentation);
 
-        switch (model.value()) {
-        case Core::AirPods::Model::AirPods_1:
-            media = "qrc:/Resource/Video/AirPods_1.avi";
-            videoSize = QSize{800, 400};
-            break;
-        case Core::AirPods::Model::AirPods_2:
-            media = "qrc:/Resource/Video/AirPods_2.avi";
-            videoSize = QSize{800, 400};
-            break;
-        case Core::AirPods::Model::AirPods_3:
-            media = "qrc:/Resource/Video/AirPods_3.avi";
-            videoSize = QSize{900, 450};
-            break;
-        case Core::AirPods::Model::AirPods_4:
-        case Core::AirPods::Model::AirPods_4_ANC:
-            media = "qrc:/Resource/Video/AirPods_3.avi";
-            videoSize = QSize{900, 450};
-            break;
-        case Core::AirPods::Model::AirPods_Pro:
-            media = "qrc:/Resource/Video/AirPods_Pro.avi";
-            videoSize = QSize{900, 450};
-            break;
-        case Core::AirPods::Model::AirPods_Pro_2:
-        case Core::AirPods::Model::AirPods_Pro_2_USB_C:
-            media = "qrc:/Resource/Video/AirPods_Pro_2.avi";
-            videoSize = QSize{900, 450};
-            break;
-        case Core::AirPods::Model::AirPods_Pro_3:
-            media = "qrc:/Resource/Video/AirPods_Pro_3.avi";
-            videoSize = QSize{900, 450};
-            break;
-        case Core::AirPods::Model::AirPods_Max:
-        case Core::AirPods::Model::AirPods_Max_USB_C:
-            media = "qrc:/Resource/Video/AirPods_Max.avi";
-            videoSize = QSize{600, 650};
-            break;
-        case Core::AirPods::Model::Beats_Fit_Pro:
-        case Core::AirPods::Model::Powerbeats_Pro_2:
-            media = "qrc:/Resource/Video/Beats_Fit_Pro.avi";
-            videoSize = QSize{900, 450};
-            break;
-        case Core::AirPods::Model::Powerbeats_3:
-        case Core::AirPods::Model::Beats_X:
-        case Core::AirPods::Model::Beats_Solo3:
-        default:
-            media = "qrc:/Resource/Video/AirPods_1.avi";
-            videoSize = QSize{800, 400};
-            break;
-        }
-
-        auto aspectRatio = (float)videoSize.width() / (float)videoSize.height();
-        auto widgetWidth = _videoWidget->height() * aspectRatio;
-        _videoWidget->setFixedWidth(widgetWidth);
-
-        _mediaPlayer->setMedia(QUrl{media});
-
-        // Only play animation if window is visible, otherwise showEvent will handle it
         if (_isVisible) {
             PlayAnimation();
+        }
+        else {
+            StopAnimation();
         }
     }
 
@@ -471,37 +354,48 @@ void MainWindow::SetAnimation(std::optional<Core::AirPods::Model> model)
 
 void MainWindow::PlayAnimation()
 {
-    _isAnimationPlaying = true;
-    // Stop player and reset position for clean replay
-    _mediaPlayer->stop();
-    _mediaPlayer->setPosition(0);
-    
-    // Ensure video widget is visible - critical for x64 builds
-    // The widget must be visible and have its video output set before playing
-    if (!_videoWidget->isVisible()) {
-        _videoWidget->show();
-        // On x64, we need to ensure the video output is properly connected after showing
-        _mediaPlayer->setVideoOutput(static_cast<QVideoWidget*>(nullptr));
-        _mediaPlayer->setVideoOutput(_videoWidget);
-    }
-    
-    _mediaPlayer->play();
+    _playback->SetActive(true);
+    _animationView->show();
 }
 
 void MainWindow::StopAnimation()
 {
-    // Stop the player but keep widget visible to avoid x64 rendering issues
-    // The widget will be black when stopped, but this is better than becoming
-    // transparent/hollow on x64 builds
-    _isAnimationPlaying = false;
-    _mediaPlayer->stop();
+    _animationView->hide();
+    _playback->SetActive(false);
 }
 
 void MainWindow::BindDevice()
 {
     LOG(Info, "BindDevice");
 
-    const auto devices = Core::AirPods::GetDevices();
+    if (_deviceQueryRunning.exchange(true)) {
+        LOG(Info, "Ignore duplicate device query while one is already running.");
+        return;
+    }
+
+    if (_deviceQueryThread.joinable()) {
+        _deviceQueryThread.join();
+    }
+
+    _deviceQueryThread = std::jthread{[this](std::stop_token stopToken) {
+        Core::OS::Windows::Winrt::Initialize();
+        auto devices = Core::AirPods::GetDevices();
+        if (stopToken.stop_requested()) {
+            return;
+        }
+
+        QMetaObject::invokeMethod(
+            this,
+            [this, devices = std::move(devices)]() mutable {
+                _deviceQueryRunning = false;
+                ShowDeviceSelector(std::move(devices));
+            },
+            Qt::QueuedConnection);
+    }};
+}
+
+void MainWindow::ShowDeviceSelector(std::vector<Core::Bluetooth::Device> devices)
+{
     if (devices.empty()) {
         QMessageBox::warning(
             this, Config::ProgramName,
@@ -566,93 +460,98 @@ void MainWindow::VersionUpdateAvailable(const Core::Update::ReleaseInfo &release
         AskUserUpdate(releaseInfo);
     }
     else {
-        ApdApp->GetTrayIcon()->VersionUpdateAvailable(releaseInfo);
+        emit SilentUpdateAvailable(releaseInfo);
     }
 }
 
 void MainWindow::Repaint()
 {
-    const auto &noState = [this] {
-        SetAnimation(std::nullopt);
-        _leftBattery->hide();
-        _rightBattery->hide();
-        _caseBattery->hide();
+    const auto presentation = _viewModel.Present();
+    FitDeviceLabelFont(presentation.title);
+    ChangeButtonAction(presentation.buttonAction);
+    SetAnimation(presentation.animationModel);
+
+    const auto applyBattery = [](Widget::Battery *widget, const BatteryPresentation &battery) {
+        if (!battery.visible) {
+            widget->hide();
+            return;
+        }
+
+        widget->setCharging(battery.charging);
+        widget->setValue(battery.value);
+        widget->show();
     };
 
-    QString title;
+    applyBattery(_leftBattery, presentation.leftBattery);
+    applyBattery(_rightBattery, presentation.rightBattery);
+    applyBattery(_caseBattery, presentation.caseBattery);
+}
 
-    switch (_status) {
-    case Status::Unavailable:
-    case Status::Disconnected:
-    case Status::Unbind:
-        title = DisplayableStatus(_status);
-        noState();
-        break;
-    default:
-        break;
+void MainWindow::ApplyTheme()
+{
+    const auto &colors = Theme::Manager::Instance().Colors();
+
+    Utils::Qt::SetPaletteColor(this, QPalette::Window, colors.mainSurface);
+    Utils::Qt::SetPaletteColor(_ui.deviceLabel, QPalette::WindowText, colors.mainText);
+
+    for (auto *battery : {_leftBattery, _rightBattery, _caseBattery}) {
+        battery->setNormalColor(colors.batteryNormal);
+        battery->setAlarmColor(colors.batteryAlarm);
+        battery->setBorderColor(colors.batteryBorder);
+        battery->setChargingIconColor(colors.mainText);
+        battery->setBorderRadius(4);
+        battery->setBackgroundRadius(2.5);
+        battery->setHeadRadius(1.5);
+        Utils::Qt::SetPaletteColor(battery, QPalette::WindowText, colors.mainText);
     }
 
-    _ui.deviceLabel->setText(title);
+    _closeButton->update();
+    update();
+}
 
-    if (_status == Status::Unavailable || _status == Status::Disconnected) {
-        ChangeButtonAction(ButtonAction::NoButton);
-    }
-    else if (_status == Status::Unbind) {
-        ChangeButtonAction(ButtonAction::Bind);
-    }
+void MainWindow::paintEvent(QPaintEvent *event)
+{
+    Q_UNUSED(event);
 
-    //////////////////////////////////////////////////
+    QPainter painter{this};
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(Theme::Manager::Instance().Colors().mainSurface);
+    painter.drawRoundedRect(QRectF{rect()}, _windowCornerRadius, _windowCornerRadius);
+}
 
-    if (!_cachedState.has_value()) {
-        noState();
-        return;
-    }
+void MainWindow::FitDeviceLabelFont(const QString &text)
+{
+    auto font = _ui.deviceLabel->font();
+    font.setPointSize(_deviceLabelMaximumPointSize);
 
-    const auto &state = _cachedState.value();
-
-    _ui.deviceLabel->setText(state.displayName);
-
-    SetAnimation(state.model);
-
-    if (!state.pods.left.battery.Available()) {
-        _leftBattery->hide();
-    }
-    else {
-        _leftBattery->setCharging(state.pods.left.isCharging);
-        _leftBattery->setValue(state.pods.left.battery.Value());
-        _leftBattery->show();
+    const auto availableWidth = _ui.deviceLabel->contentsRect().width();
+    while (font.pointSize() > _deviceLabelMinimumPointSize &&
+           QFontMetrics{font}.horizontalAdvance(text) > availableWidth)
+    {
+        font.setPointSize(font.pointSize() - 1);
     }
 
-    if (!state.pods.right.battery.Available()) {
-        _rightBattery->hide();
-    }
-    else {
-        _rightBattery->setCharging(state.pods.right.isCharging);
-        _rightBattery->setValue(state.pods.right.battery.Value());
-        _rightBattery->show();
-    }
-
-    if (!state.caseBox.battery.Available()) {
-        _caseBattery->hide();
-    }
-    else {
-        _caseBattery->setCharging(state.caseBox.isCharging);
-        _caseBattery->setValue(state.caseBox.battery.Value());
-        _caseBattery->show();
-    }
+    _ui.deviceLabel->setFont(font);
+    const QFontMetrics metrics{font};
+    const auto displayText = metrics.horizontalAdvance(text) > availableWidth
+                                 ? metrics.elidedText(text, Qt::ElideMiddle, availableWidth)
+                                 : text;
+    _ui.deviceLabel->setText(displayText);
+    _ui.deviceLabel->setAccessibleName(text);
+    _ui.deviceLabel->setToolTip(displayText == text ? QString{} : text);
 }
 
 void MainWindow::OnAppStateChanged(Qt::ApplicationState state)
 {
     LOG(Trace, "OnAppStateChanged: '{}'", Helper::ToString(state));
-    ControlAutoHideTimer(state != Qt::ApplicationActive);
+    ControlAutoHideTimer(_isVisible && state != Qt::ApplicationActive);
 }
 
 void MainWindow::OnPosMoveFinished()
 {
     if (!_isVisible) {
         hide();
-        StopAnimation();
     }
 }
 
@@ -687,14 +586,6 @@ void MainWindow::OnButtonClicked()
     }
 }
 
-// for loop play
-void MainWindow::OnPlayerStateChanged(QMediaPlayer::State newState)
-{
-    if (newState == QMediaPlayer::StoppedState && _isAnimationPlaying) {
-        _mediaPlayer->play();
-    }
-}
-
 void MainWindow::DoHide()
 {
     LOG(Trace, "MainWindow: Hide");
@@ -706,37 +597,89 @@ void MainWindow::DoHide()
 
     ControlAutoHideTimer(false);
 
-    auto screenSize = ApdApplication::primaryScreen()->size();
+    const auto screenGeometry = screen()->geometry();
 
     _posAnimation.stop();
     _posAnimation.setEasingCurve(QEasingCurve::InExpo);
     _posAnimation.setStartValue(pos());
-    _posAnimation.setEndValue(QPoint{x(), screenSize.height()});
+    _posAnimation.setEndValue(QPoint{x(), screenGeometry.bottom() + 1});
     _posAnimation.start();
 }
 
 void MainWindow::showEvent(QShowEvent *event)
 {
+    QDialog::showEvent(event);
+    BeginShow(true);
+}
+
+void MainWindow::Show()
+{
+    if (isVisible()) {
+        BeginShow(false);
+    }
+    else {
+        QDialog::show();
+    }
+}
+
+void MainWindow::BeginShow(bool fromHidden)
+{
     LOG(Trace, "MainWindow: Show");
 
-    if (_isVisible) {
+    auto targetScreen = QGuiApplication::screenAt(QCursor::pos());
+    if (targetScreen == nullptr) {
+        targetScreen = screen();
+    }
+
+    const auto availableGeometry = targetScreen->availableGeometry();
+    const auto screenGeometry = targetScreen->geometry();
+    const auto target = PopupPosition(availableGeometry, size(), _screenMargin);
+    const bool changingScreen = screen() != targetScreen;
+
+    if (changingScreen && !fromHidden) {
+        // Hide before the native DPI transition so an intermediate resize is never painted.
+        hide();
+        QDialog::show();
+        return;
+    }
+
+    if (_isVisible && !changingScreen &&
+        (pos() == target || (_posAnimation.state() == QAbstractAnimation::Running &&
+                             _posAnimation.endValue().toPoint() == target)))
+    {
+        ControlAutoHideTimer(true);
         return;
     }
     _isVisible = true;
-
     PlayAnimation();
     ControlAutoHideTimer(true);
 
-    auto screenSize = ApdApplication::primaryScreen()->size();
-
-    move(screenSize.width() - size().width() - _screenMargin.width(), screenSize.height());
-
     _posAnimation.stop();
+    if (fromHidden || changingScreen) {
+        // Resolve the native monitor and its DPI inside the destination screen before
+        // positioning the slide origin outside it.
+        move(target);
+        move(target.x(), screenGeometry.bottom() + 1);
+    }
     _posAnimation.setEasingCurve(QEasingCurve::OutExpo);
     _posAnimation.setStartValue(pos());
-    _posAnimation.setEndValue(
-        QPoint{x(), screenSize.height() - size().height() - _screenMargin.height()});
+    _posAnimation.setEndValue(target);
     _posAnimation.start();
+}
+
+void MainWindow::hideEvent(QHideEvent *event)
+{
+    _isVisible = false;
+    _posAnimation.stop();
+    ControlAutoHideTimer(false);
+    StopAnimation();
+    QDialog::hideEvent(event);
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    event->ignore();
+    DoHide();
 }
 } // namespace Gui
 

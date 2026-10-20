@@ -18,13 +18,17 @@
 
 #pragma once
 
+#include <functional>
+
 #include <QLabel>
 #include <QDialog>
 #include <QSlider>
 #include <QCheckBox>
+#include <QTimer>
 
+#include "../Core/QuickConnect.h"
 #include "../Core/Settings.h"
-#include "../Utils.h"
+#include "Utils.h"
 
 #include "ui_SettingsWindow.h"
 
@@ -37,7 +41,10 @@ class SettingsWindow : public QDialog
     Q_OBJECT
 
 public:
-    SettingsWindow(QWidget *parent = nullptr);
+    explicit SettingsWindow(
+        std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect,
+        QWidget *parent = nullptr);
+    void SetLowAudioLatencyChecked(bool checked);
 
     int GetTabCount() const;
     int GetTabCurrentIndex() const;
@@ -48,10 +55,16 @@ private:
     Ui::SettingsWindow _ui;
     bool _trigger{true};
     int _lastLanguageIndex{0};
+    QString _aboutTextTemplate;
+    std::function<int()> _getCurrentLocaleIndex;
+    Core::QuickConnect::Controller &_quickConnect;
 
     void InitCreditsText();
     void RestoreDefaults();
     void Update(const Fields &fields, bool trigger);
+    void UpdateQuickConnectDevices(const Fields &fields);
+    void UpdateDescriptions();
+    void UpdateStandardButtonTexts();
     void UpdateAdvOverride();
 
     void showEvent(QShowEvent *event) override;
@@ -62,11 +75,14 @@ private:
     void On_pbUnbind_clicked();
 
     // Visual
+    void On_cbAppearanceMode_currentIndexChanged(int index);
     void On_cbDisplayBatteryOnTrayIcon_toggled(TrayIconBatteryBehavior behavior);
     void On_cbDisplayBatteryOnTaskbar_toggled(TaskbarStatusBehavior behavior);
 
     // Features
     void On_cbLowAudioLatency_toggled(bool checked);
+    void On_cbTrayQuickConnectEnabled_toggled(bool checked);
+    void On_cbTrayQuickConnectDevice_currentIndexChanged(int index);
     void On_cbAutoEarDetection_toggled(bool checked);
     void On_cbConversationalAwareness_toggled(bool checked);
     void On_sliderConversationalAwarenessVolume_valueChanged(int value);
@@ -86,7 +102,16 @@ private:
     UTILS_QT_DISABLE_ESC_QUIT(QDialog);
     UTILS_QT_REGISTER_LANGUAGECHANGE(QDialog, [this] {
         _ui.retranslateUi(this);
+        _ui.cbLowAudioLatency->setAccessibleName(_ui.lbLowAudioLatency->text());
+        _ui.cbAutoEarDetection->setAccessibleName(_ui.lbAutoEarDetection->text());
+        _ui.cbTrayQuickConnectEnabled->setAccessibleName(_ui.lbTrayQuickConnect->text());
+        _ui.cbAppearanceMode->setAccessibleName(_ui.lbAppearance->text());
+        _aboutTextTemplate = _ui.label->text();
         InitCreditsText();
+        UpdateDescriptions();
+        // QDialogButtonBox handles LanguageChange after its parent and resets standard-button
+        // labels to Qt's platform text. Apply our app translations once propagation ends.
+        QTimer::singleShot(0, this, [this] { UpdateStandardButtonTexts(); });
     });
 };
 } // namespace Gui

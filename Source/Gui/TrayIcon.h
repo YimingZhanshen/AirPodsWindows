@@ -18,15 +18,20 @@
 
 #pragma once
 
+#include <functional>
+
 #include <QSystemTrayIcon>
+#include <QTimer>
 #include <QMenu>
 #include <QAction>
 #include <QActionGroup>
 
 #include "../Core/AirPods.h"
 #include "../Core/AAP.h"
+#include "../Core/QuickConnect.h"
 #include "../Core/Update.h"
 #include "Base.h"
+#include "TrayActivation.h"
 #include "SettingsWindow.h"
 
 namespace Gui {
@@ -36,22 +41,13 @@ class TrayIcon : public QWidget
     Q_OBJECT
 
 public:
-    TrayIcon();
+    explicit TrayIcon(
+        std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect);
 
     template <class... ArgsT>
     inline void ShowMessage(ArgsT &&...args)
     {
         _tray->showMessage(std::forward<ArgsT>(args)...);
-    }
-
-    inline QMenu *GetContextMenu()
-    {
-        return _menu;
-    }
-
-    inline QString GetToolTip()
-    {
-        return _tray->toolTip();
     }
 
     void UpdateState(const Core::AirPods::State &state);
@@ -60,15 +56,27 @@ public:
     void Unbind();
     void VersionUpdateAvailable(const Core::Update::ReleaseInfo &releaseInfo);
     void UpdateNoiseControlMode(Core::AAP::NoiseControlMode mode);
+    void ShowContextMenu(const QPoint &position);
 
 Q_SIGNALS:
     void OnTrayIconBatteryChangedSafely(Core::Settings::TrayIconBatteryBehavior value);
+    void OnLowAudioLatencyChangedSafely(bool enabled);
+    void ShowMainWindowRequested();
+    void UserUpdateRequested(const Core::Update::ReleaseInfo &releaseInfo);
+    void ToolTipChanged(const QString &text);
 
 private:
+    struct IconRenderState {
+        std::optional<QString> text;
+        bool showUpdateDot{false};
+
+        bool operator==(const IconRenderState &rhs) const = default;
+    };
+
     QSystemTrayIcon *_tray = new QSystemTrayIcon{this};
     QMenu *_menu = new QMenu{this};
     QAction *_actionNewVersion = new QAction{tr("New version available!"), this};
-    
+
     // Noise Control Menu
     QMenu *_noiseControlMenu = new QMenu{tr("Noise Control"), this};
     QActionGroup *_noiseControlGroup = new QActionGroup{this};
@@ -76,7 +84,7 @@ private:
     QAction *_actionNoiseCancellation = new QAction{tr("Noise Cancellation"), this};
     QAction *_actionTransparency = new QAction{tr("Transparency"), this};
     QAction *_actionAdaptive = new QAction{tr("Adaptive"), this};
-    
+    QAction *_actionLowAudioLatency = new QAction{tr("Low audio latency (may cause hiss)"), this};
     QAction *_actionSettings = new QAction{tr("Settings"), this};
     QAction *_actionAbout = new QAction{tr("About"), this};
     QAction *_actionQuit = new QAction{tr("Quit"), this};
@@ -87,11 +95,16 @@ private:
     std::optional<QString> _displayName;
     std::optional<Core::Update::ReleaseInfo> _updateReleaseInfo;
     std::optional<Core::AAP::NoiseControlMode> _currentNoiseMode;
+    std::optional<IconRenderState> _lastIconRenderState;
+    Core::QuickConnect::Controller &_quickConnect;
+    TrayActivationState _trayActivationState;
+    QTimer _singleClickTimer{this};
 
     void ShowMainWindow();
     void Repaint();
     void SetupNoiseControlMenu();
     void UpdateNoiseControlMenuState();
+    void ExecuteTrayActivation(TrayActivationAction action);
 
     static std::optional<QImage>
     GenerateIcon(int size, const std::optional<QString> &optText, const std::optional<QColor> &dot);
@@ -100,8 +113,10 @@ private:
     void OnSettingsClicked();
     void OnAboutClicked();
     void OnIconClicked(QSystemTrayIcon::ActivationReason reason);
+    void OnQuickConnectOutcome(Core::QuickConnect::Outcome outcome, const QString &deviceName);
     void OnTrayIconBatteryChanged(Core::Settings::TrayIconBatteryBehavior value);
     void OnNoiseControlModeSelected(Core::AAP::NoiseControlMode mode);
+    void OnLowAudioLatencyChanged(bool enabled);
 
 protected:
     SettingsWindow _settingsWindow;

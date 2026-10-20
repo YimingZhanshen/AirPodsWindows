@@ -24,30 +24,33 @@
 <p align="center">🌎 <a href="/README.md">English</a> | 🌏 简体中文 | 🌏 <a href="/README-TW.md">繁體中文</a></p>
 
 ## 🔍 预览
-![Preview Image](/Assets/Preview.gif)
+
+| 浅色主题 | 深色主题 |
+| :---: | :---: |
+| <img src="/Assets/Preview-Light.gif" alt="浅色主题弹窗动画" width="360"> | <img src="/Assets/Preview-Dark.gif" alt="深色主题弹窗动画" width="360"> |
 
 ## ✨ 特性
 
-### 基础功能
-* 🔋 **电池信息显示** - 实时显示左/右耳机和充电盒电量
-* 👂 **自动人耳检测** - 取下耳机自动暂停，戴上自动恢复
-* 🚀 **低音频延迟模式** - 修复短音频播放问题
-* 🌈 **精美动画** - 优雅的用户界面体验
+* 🔋 通知区域电池信息。
+* 👂 自动入耳检测与媒体播放控制。
+* 🚀 低延迟音频模式。
+* 🌈 设备弹出窗口动画，以及浅色、深色或系统主题。
 
 ### ANC 高级功能（需要 MagicAAP 驱动）
-* 🎧 **降噪控制** - 支持关闭/降噪/通透/自适应四种模式切换
-* 🗣️ **对话感知** - 说话时自动降低媒体音量（AirPods Pro/Max）
-* 🔊 **个性化音量** - 根据环境和聆听习惯自动调整音量
-* 👂 **入耳检测状态** - 实时检测左右耳机佩戴状态
-* 🔇 **响亮声音降低** - 保护听力，自动降低过响的声音
-* 📊 **自适应通透级别** - 精细控制环境声音透过量（0-50）
 
-## ⚙️ 系统要求
+* 🎧 降噪控制 - 在关闭/降噪/通透/自适应之间切换。
+* 🗣️ 对话感知 - 说话时自动降低媒体音量（AirPods Pro/Max），并可调节说话时的音量降低幅度。
+* 🔊 个性化音量 - 根据环境和聆听习惯自动调整音量。
+* 👂 入耳检测状态 - 实时检测左右耳机佩戴状态。
+* 🔇 响亮声音降低 - 降低过响的声音以保护听力。
+* 📊 自适应通透级别 - 精细控制环境声音透过量（0-50）。
 
-- **操作系统**: Windows 10/11
-- **蓝牙**: 需要蓝牙 4.0+ 适配器
-- **AirPods**: 支持所有 AirPods 型号
-- **ANC 功能**: 需要安装 [MagicAAP 驱动](https://magicpods.app/magicaap/)（仅 AirPods Pro/Max/AirPods 4 ANC）
+## 💻 系统要求
+
+正式版本支持 Windows 10 1809 以上或 Windows 11 x64，不支持 32 位 Windows 与 ARM64。
+现有 Qt 5／Win32 用户可直接使用程序内更新器迁移至 Qt 6／x64，现有用户设置会保留。
+
+ANC 控制另外需要 [MagicAAP 驱动](https://magicpods.app/magicaap/)，且仅适用于 AirPods Pro / Max / AirPods 4（ANC）。
 
 ## 📦 安装
 
@@ -55,17 +58,23 @@
 2. 运行安装程序或解压便携版
 3. （可选）安装 MagicAAP 驱动以启用 ANC 控制功能
 
-## 🛠️ 构建
-查看 [构建说明](/Docs/Build.md)。
+## 🛠️ 构建与测试
+
+Windows 环境要求、构建命令与测试方式请参阅[构建说明](/Docs/Build.md)。
 
 ## 🤝 贡献
+
 *AirPodsWindows* 是一个开源项目，您可以通过以下方式贡献：
+
 * [打开问题](https://github.com/YimingZhanshen/AirPodsWindows/issues/new/choose) 来报告错误或建议新功能。
-* [提交 PR](https://github.com/YimingZhanshen/AirPodsWindows/compare) 来修复已知 BUG 或尝试 TODO 列表中的事项。
+* [提交 PR](https://github.com/YimingZhanshen/AirPodsWindows/compare) 来修复错误、改进文档或添加功能。
 * [翻译到其他语言](/CONTRIBUTING.md#-translation-guide) 或 [改进现有的翻译](/CONTRIBUTING.md#-translation-guide)。
 
-## 💎 第三方库
-* [Qt 5.15.2](https://www.qt.io/download-qt-installer) ([LGPLv3 License](https://doc.qt.io/qt-5/lgpl.html))
+更新项目文档时，请保持 `README.md`、`README-CN.md` 与 `README-TW.md` 的章节顺序、功能、命令、链接及致谢内容一致。
+
+## 💎 第三方依赖项
+
+* [Qt 6.8.3](https://www.qt.io/download-qt-installer) ([LGPLv3 License](https://doc.qt.io/qt-6/lgpl.html))
 * [spdlog](https://github.com/gabime/spdlog) ([MIT License](https://github.com/gabime/spdlog/blob/v1.x/LICENSE))
 * [cxxopts](https://github.com/jarro2783/cxxopts) ([MIT License](https://github.com/jarro2783/cxxopts/blob/master/LICENSE))
 * [cpr](https://github.com/whoshuu/cpr) ([MIT License](https://github.com/whoshuu/cpr/blob/master/LICENSE))
@@ -74,6 +83,8 @@
 * [pfr](https://github.com/boostorg/pfr) ([BSL-1.0 License](https://github.com/boostorg/pfr/blob/develop/LICENSE_1_0.txt))
 * [magic_enum](https://github.com/Neargye/magic_enum) ([MIT License](https://github.com/Neargye/magic_enum/blob/master/LICENSE))
 * [stacktrace](https://github.com/boostorg/stacktrace) ([BSL-1.0 License](https://www.boost.org/LICENSE_1_0.txt))
+* [Inter](/Source/Resource/Font/Inter/LICENSE.txt) (SIL Open Font License 1.1)
+* [Noto Sans TC](/Source/Resource/Font/NotoSansTC/LICENSE.txt) (SIL Open Font License 1.1)
 
 ## 🍺 致谢与参考项目
 

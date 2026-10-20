@@ -51,53 +51,29 @@ Enjoy it all.</source>
     </message>
 </context>
 <context>
-    <name>DownloadWindow</name>
-    <message>
-        <source>Download new version</source>
-        <translation>新しいバージョンをダウンロード</translation>
-    </message>
-    <message>
-        <source>Download Manually</source>
-        <translation>自分でダウンロード</translation>
-    </message>
-    <message>
-        <source>If the download is slow or fails, you can:</source>
-        <translation>ダウンロードが遅かったり失敗する場合、以下のことをお試しください:</translation>
-    </message>
-</context>
-<context>
-    <name>Gui::DownloadWindow</name>
-    <message>
-        <source>Oops, an error occurred during the automatic update.
-Please download and install the new version manually.</source>
-        <translation>おっと！自動更新中にエラーが起きてしまいました。
-お手数をおかけしますが、新しいバージョンを手動でダウンロードして、インストールしてください。</translation>
-    </message>
-</context>
-<context>
     <name>Gui::MainWindow</name>
     <message>
-        <source>Change log:</source>
-        <translation>変更履歴:</translation>
-    </message>
-    <message>
-        <source>Hey! I found a new version available!
-
-Current version: %1
-Latest version: %2%3</source>
-        <translation>新しいバージョンが利用可能です。
-
-現在のバージョン: %1
-新しいバージョン: %2%3</translation>
-    </message>
-    <message>
         <source>Bind to AirPods</source>
-        <translation>AirPodsに結びつける</translation>
+        <translation>AirPodsに接続</translation>
     </message>
     <message>
         <source>Please select your AirPods device below.</source>
         <translation>AirPodsを以下から選んでください。</translation>
     </message>
+    <message>
+            <source>Change log:</source>
+            <translation>変更履歴:</translation>
+        </message>
+    <message>
+            <source>Hey! I found a new version available!
+
+    Current version: %1
+    Latest version: %2%3</source>
+            <translation>新しいバージョンが利用可能です。
+
+    現在のバージョン: %1
+    新しいバージョン: %2%3</translation>
+        </message>
 </context>
 <context>
     <name>Gui::SettingsWindow</name>
@@ -108,28 +84,40 @@ Latest version: %2%3</source>
     </message>
     <message>
         <source>Translation Contributors:</source>
-        <translation type="unfinished"></translation>
+        <translation>翻訳協力者：</translation>
     </message>
     <message>
         <source>Third-Party Libraries:</source>
-        <translation type="unfinished"></translation>
+        <translation>サードパーティ製ライブラリ：</translation>
     </message>
     <message>
-        <source>Off</source>
-        <translation type="unfinished"></translation>
+        <source>Saved device (not available)</source>
+        <translation>保存済みのデバイス（利用不可）</translation>
     </message>
     <message>
-        <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <source>Restore Defaults</source>
+        <translation>既定値に戻す</translation>
     </message>
     <message>
-        <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <source>Close</source>
+        <translation>閉じる</translation>
     </message>
     <message>
-        <source>Adaptive</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Off</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Adaptive</source>
+            <translation type="unfinished"></translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -166,64 +154,167 @@ Latest version: %2%3</source>
         <translation>終了</translation>
     </message>
     <message>
-        <source>Noise Control</source>
+        <source>Low audio latency (may cause hiss)</source>
+        <translation>低遅延モード（ノイズが発生する場合があります）</translation>
+    </message>
+    <message>
+        <source>Quick connection is disabled.</source>
+        <translation>クイック接続は無効です。</translation>
+    </message>
+    <message>
+        <source>Choose a Bluetooth audio device in Settings first.</source>
+        <translation>まず設定で Bluetooth オーディオデバイスを選択してください。</translation>
+    </message>
+    <message>
+        <source>The selected device is not available. Turn it on or bring it into range.</source>
+        <translation>選択したデバイスは利用できません。電源を入れるか、通信範囲内に移動してください。</translation>
+    </message>
+    <message>
+        <source>%1 is already connected.</source>
+        <translation>%1 はすでに接続されています。</translation>
+    </message>
+    <message>
+        <source>Connecting to %1...</source>
+        <translation>%1 に接続しています...</translation>
+    </message>
+    <message>
+        <source>%1 connected.</source>
+        <translation>%1 に接続しました。</translation>
+    </message>
+    <message>
+        <source>Connection to %1 timed out.</source>
+        <translation>%1 への接続がタイムアウトしました。</translation>
+    </message>
+    <message>
+        <source>Windows could not connect to %1.</source>
+        <translation>Windows は %1 に接続できませんでした。</translation>
+    </message>
+    <message>
+        <source>Quick connect</source>
+        <translation>クイック接続</translation>
+    </message>
+    <message>
+            <source>Noise Control</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Adaptive</source>
+            <translation type="unfinished"></translation>
+        </message>
+</context>
+<context>
+    <name>Gui::UpdateWindow</name>
+    <message>
+        <source>Ready to install. You are using %1.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Off</source>
+        <source>Downloading update</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Noise Cancellation</source>
+        <source>Unable to update</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Transparency</source>
+        <source>The automatic update was stopped</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Adaptive</source>
+        <source>Release type</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>New version</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Preview release</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stable release</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No release notes for this version</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The automatic update could not be completed. Please download and install the new version manually, or close this window to continue using AirPodsDesktop.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Waiting for download size...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1 downloaded</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Preparing to install...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Downloading...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1% - %2 of %3</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>MainWindow</name>
     <message>
-        <source>AirPodsWindows information</source>
-        <translation>AirPodsWindows について</translation>
+        <source>AirPodsDesktop information</source>
+        <translation>AirPodsDesktop について</translation>
     </message>
+    <message>
+            <source>AirPodsWindows information</source>
+            <translation>AirPodsWindows について</translation>
+        </message>
 </context>
 <context>
     <name>QMessageBox</name>
     <message>
-        <source>Update now</source>
-        <translation>今すぐアップデート</translation>
-    </message>
-    <message>
-        <source>Skip this version</source>
-        <translation>このバージョンをスキップ</translation>
-    </message>
-    <message>
-        <source>View release</source>
-        <translation>リリースを見る</translation>
-    </message>
-    <message>
-        <source>Remind me later</source>
-        <translation>後で通知</translation>
-    </message>
-    <message>
         <source>No paired device found.
 You need to pair your AirPods in Windows Bluetooth Settings first.</source>
-        <translation>ペアリングされたデバイスが見つかりません。
-先にWindowsのBluetooth設定からAirPodsとペアリングする必要があります。</translation>
+        <translation>ペアリング済みのデバイスが見つかりません。
+先に Windows の Bluetooth 設定で AirPods をペアリングしてください。</translation>
     </message>
+    <message>
+            <source>Update now</source>
+            <translation>今すぐアップデート</translation>
+        </message>
+    <message>
+            <source>Skip this version</source>
+            <translation>このバージョンをスキップ</translation>
+        </message>
+    <message>
+            <source>View release</source>
+            <translation>リリースを見る</translation>
+        </message>
+    <message>
+            <source>Remind me later</source>
+            <translation>後で通知</translation>
+        </message>
 </context>
 <context>
     <name>QObject</name>
-    <message>
-        <source>It fixes short audio playback problems, but may increase battery consumption.</source>
-        <translation>音声の遅延を改善しますが、電池消費が増加する場合があります。</translation>
-    </message>
     <message>
         <source>It automatically pauses or resumes media when your AirPods are taken out or put in your ears.</source>
         <translation>AirPodsを外すと自動的に一時停止し、着けると再生を再開します。</translation>
@@ -238,56 +329,68 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>Waiting for Binding</source>
-        <translation>結びつけられるのを待っています</translation>
+        <translation>接続待機中</translation>
     </message>
     <message>
-        <source>Off</source>
-        <translation type="unfinished"></translation>
+        <source>Keeps the audio device awake while your AirPods are connected so short sounds start immediately. This may produce audible hiss and use more battery.</source>
+        <translation>AirPodsが接続されている間、オーディオデバイスを起動状態に保ち、短い音声をすぐに再生できるようにします。聞こえる程度のノイズが発生したり、バッテリー消費が増えたりする場合があります。</translation>
     </message>
     <message>
-        <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <source>A click on the tray icon connects the selected device instead of opening the main window. Double-click still opens it.</source>
+        <translation>通知領域のアイコンをクリックすると、メインウィンドウを開かずに選択したデバイスへ接続します。ダブルクリックすると、引き続きメインウィンドウが開きます。</translation>
     </message>
     <message>
-        <source>Transparency</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>It fixes short audio playback problems, but may increase battery consumption.</source>
+            <translation>音声の遅延を改善しますが、電池消費が増加する場合があります。</translation>
+        </message>
     <message>
-        <source>Adaptive</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Off</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Unknown</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Noise Cancellation</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Enabled</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Transparency</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Disabled</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Adaptive</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Automatically lowers media volume when you start speaking (AirPods Pro/Max only).</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Unknown</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Adjusts media volume based on your environment and listening habits.</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Enabled</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Protects your hearing by reducing loud sounds.</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Disabled</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Controls the amount of environmental sound in Adaptive mode (0-50).</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Automatically lowers media volume when you start speaking (AirPods Pro/Max only).</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
-        <source>Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).</source>
-        <translation type="unfinished"></translation>
-    </message>
+            <source>Adjusts media volume based on your environment and listening habits.</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Protects your hearing by reducing loud sounds.</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Controls the amount of environmental sound in Adaptive mode (0-50).</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).</source>
+            <translation type="unfinished"></translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -299,8 +402,8 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
 <context>
     <name>SettingsWindow</name>
     <message>
-        <source>AirPodsWindows Settings</source>
-        <translation>AirPodsWindows の設定</translation>
+        <source>AirPodsDesktop Settings</source>
+        <translation>AirPodsDesktop の設定</translation>
     </message>
     <message>
         <source>General</source>
@@ -316,7 +419,7 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>Unbind AirPods</source>
-        <translation>AirPodsとの結びつけを解除する</translation>
+        <translation>AirPods の登録を解除</translation>
     </message>
     <message>
         <source>Launch when system starts</source>
@@ -328,7 +431,7 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>Visual</source>
-        <translation>見た目</translation>
+        <translation>表示</translation>
     </message>
     <message>
         <source>Display battery on tray icon</source>
@@ -362,44 +465,127 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>About</source>
         <translation>情報</translation>
     </message>
+        <message>
+            <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+            <translation type="unfinished"></translation>
+        </message>
+        <message>
+            <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
+            <translation type="unfinished"></translation>
+        </message>
     <message>
         <source>Display battery on taskbar</source>
-        <translation type="unfinished">タスクバーに電池残量を表示</translation>
+        <translation>タスクバーにバッテリー残量を表示</translation>
     </message>
     <message>
         <source>As text</source>
-        <translation type="unfinished">文字で表示</translation>
+        <translation>テキストで表示</translation>
     </message>
     <message>
         <source>As icon</source>
-        <translation type="unfinished">アイコンで表示</translation>
+        <translation>アイコンで表示</translation>
     </message>
     <message>
-        <source>Conversational awareness</source>
+        <source>Connect the selected device on a tray icon click</source>
+        <translation>通知領域のアイコンをクリックして選択したデバイスに接続</translation>
+    </message>
+    <message>
+        <source>Device</source>
+        <translation>デバイス</translation>
+    </message>
+    <message>
+        <source>The paired Bluetooth audio device a tray icon click connects.</source>
+        <translation>通知領域のアイコンをクリックしたときに接続する、ペアリング済みの Bluetooth オーディオデバイスです。</translation>
+    </message>
+    <message>
+        <source>Forget the bound AirPods so that another pair can be bound.</source>
+        <translation>別の AirPods をバインドできるよう、現在の AirPods のバインドを解除します。</translation>
+    </message>
+    <message>
+        <source>Diagnostics</source>
+        <translation>診断</translation>
+    </message>
+    <message>
+        <source>Log files help when reporting an issue.</source>
+        <translation>問題を報告する際にログファイルが役立ちます。</translation>
+    </message>
+    <message>
+        <source>Appearance</source>
+        <translation>外観</translation>
+    </message>
+    <message>
+        <source>Use system setting</source>
+        <translation>システム設定を使用</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>ライト</translation>
+    </message>
+    <message>
+        <source>Dark</source>
+        <translation>ダーク</translation>
+    </message>
+    <message>
+            <source>AirPodsWindows Settings</source>
+            <translation>AirPodsWindows の設定</translation>
+        </message>
+    <message>
+            <source>Conversational awareness</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Personalized volume</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Reduce loud sounds</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Noise control mode</source>
+            <translation type="unfinished"></translation>
+        </message>
+    <message>
+            <source>Adaptive transparency level</source>
+            <translation type="unfinished"></translation>
+        </message>
+</context>
+<context>
+    <name>UpdateWindow</name>
+    <message>
+        <source>Software Update</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Personalized volume</source>
+        <source>View release</source>
+        <translation>リリースを見る</translation>
+    </message>
+    <message>
+        <source>Skip this version</source>
+        <translation>このバージョンをスキップ</translation>
+    </message>
+    <message>
+        <source>Remind me later</source>
+        <translation>後で通知</translation>
+    </message>
+    <message>
+        <source>Update now</source>
+        <translation>今すぐアップデート</translation>
+    </message>
+    <message>
+        <source>Download Manually</source>
+        <translation>手動でダウンロード</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>閉じる</translation>
+    </message>
+    <message>
+        <source>If the download is slow, you can download the update manually. AirPodsDesktop will close when you switch to manual download.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Reduce loud sounds</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Noise control mode</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Adaptive transparency level</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
+        <source>What&apos;s new</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
