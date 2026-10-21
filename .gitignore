@@ -50,5 +50,6 @@ Docs/Performance.md
 # Internal planning and competitor research (maintained locally, not open-sourced)
 Docs/UpgradeBlueprint.md
 Docs/MagicPods-RE-Notes.md
+Docs/ReleaseNotes/
 
 build_release.ps1
