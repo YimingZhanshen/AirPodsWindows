@@ -47,4 +47,8 @@ Tools/__pycache__/
 Docs/ReleaseNotes/0.6.0.md
 Docs/Performance.md
 
+# Internal planning and competitor research (maintained locally, not open-sourced)
+Docs/UpgradeBlueprint.md
+Docs/MagicPods-RE-Notes.md
+
 build_release.ps1

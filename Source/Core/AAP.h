@@ -229,7 +229,8 @@ inline std::vector<uint8_t> BuildPersonalizedVolumePacket(bool enable) {
 // the AAP channel (PSM 0x1001) that the MagicAAP driver exposes. Whether the earbuds accept this
 // ATT frame written straight into the AAP pipe (what Manager::SendPacket does today) is
 // UNVERIFIED; if hardware testing shows it is ignored, the fallback is a second L2CAP connection
-// to PSM 0x001F (or WinRT GATT over BR/EDR). See Docs/UpgradeBlueprint.md §4 item 0.3.
+// to PSM 0x001F (or WinRT GATT over BR/EDR). Note that no third-party Windows implementation
+// (MagicPods, PodBridge, librepods-windows) sends ATT at all; all rely on the driver pipe.
 inline std::vector<uint8_t> BuildLoudSoundReductionPacket(bool enable) {
     return {
         0x12, 0x1B, 0x00,
