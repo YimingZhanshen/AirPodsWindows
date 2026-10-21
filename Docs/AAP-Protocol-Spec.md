@@ -150,6 +150,7 @@ Stop（28B）：`04 00 04 00 17 00 | 00 00 10 00 11 00 08 7E 10 02 42 0B 08 4E 1
 **出处**：`AAP Definitions.md:21-27`（抓包 `…4d 00 ff 00×7`，称其开启"播放音频时的对话感知"+Adaptive Transparency）；Android `AACPManager.kt:634-638`（D7）；Linux `airpods_packets.h:152`（D7），握手 ACK 后发送（`linux/main.cpp:666-669`）。
 **分歧/风险**：文档 FF vs 实现 D7，差异位 0x28（bit3/0x08、bit5/0x20）。**各位语义源材料均未说明（文档未给出）**；只能推断 D7 已覆盖文档所述两项功能，0x08/0x20 为未知（或 Apple 专属）功能。移植用 D7，必要时再试 FF。另注：不发此包时 0x0D=0x04 会被回以别的模式（`AAP Definitions.md:208`）。
 **第三实现（MagicPods 逆向）**：模板 `04 00 04 00 4D 00 0E 00 00 00 00 00 00 00`（FieldRVA @ 0x5CF1CB，14B 同长），工厂仅 `newarr 14`+`InitializeArray` 原样拷贝、分发器 `calli` 直返，**全链路无补丁**——byte 6 实为 `0E`，与 D7/FF 均不同（bit 语义仍无源材料，维持 D7，详见 `Docs/MagicPods-RE-Notes.md` §5.2）。
+**实现取值并存（2026-10-22 横评补证）**：活跃开源实现中 **D7**（LibrePods Android+Linux+Windows 移植 `AacpPackets.cs:14-15`）与 **FF**（PodBridge `AapProtocol.cs:47-61` `4D 00 FF 00…`、文档抓包）并存且各自可用 → 推断固件对掩码宽容；`0E` 仅见 MagicPods 一家。
 
 ## 9. 通知订阅 0x000F
 
@@ -161,6 +162,7 @@ Stop（28B）：`04 00 04 00 17 00 | 00 00 10 00 11 00 08 7E 10 02 42 0B 08 4E 1
 
 **出处**：`AAP Definitions.md:29-42`；`AACPManager.kt:622-628`（注释 625-626：第三字节 FD=禁用耳检、可随时发送）；`airpods_packets.h:153`（`040004000f00ffffffffff`）；时机 `linux/main.cpp:670-678`。
 **分歧/风险**：Linux 发 5×FF（11B）、文档/Android 4×FF（10B）——建议 4×FF。
+**实现变体（2026-10-22 横评）**：PodBridge 实发 `0F 00 FF FF FE FF`（`NoiseControlController.cs:99-104`，与文档抓包 FE 变体一致）；MagicPods 模板 `0F 00 FF FF 00 FF`（FieldRVA @ 0x5CF16D，无补丁痕迹）；librepods-windows 与本项目同为 4×FF（`AacpPackets.cs:17-18`）。四实现三种掩码，固件均接受 → 掩码宽容，维持 4×FF。
 
 ## 10. 音频源 0x000D / 0x000E
 

@@ -151,6 +151,94 @@ KMDF 1.15、demand-start、**仅 x64**（`NTamd64.10.0.1..16299`）、23.9 KB。
 
 ---
 
+### 2.6 同类项目横评（2026-10-22，`_research\` 三仓库 + GitHub API 检索）
+
+**① lyzbcy/AirPods-Buddy（AirPods 小助手）** — AutoHotkey v2 + WebView2，单文件 3.4MB，**MIT**，
+日更活跃，v1.9.21 已发布（`_research\lyzbcy-AirPods-Windows`）。
+
+- 定位：连接便利（一键连/断、设备优先级、三态托盘），不做协议控制。
+- **用户态 L2CAP 死路的第三方实证（对本蓝图最有价值的发现）**：`tools\noise_mode.ps1:27-37` 用
+  PowerShell + Winsock 完整实现了 AF_BTH/BTHPROTO_L2CAP 连接（PSM 0x1001 + SDP UUID 兜底、
+  AAP 握手 + 0x0D），结论是 **Windows 用户态 L2CAP provider 不可用——本地 bind() 即报
+  WSAENETDOWN(10050)**；`CHANGELOG.md:313-316` 如实降级并指路 MagicPods 驱动路线。
+  → 与 §2.5 驱动路线互证：`AAPManager.cpp:69-140` 四路连接中的 L2CAP×2 在 Windows 属死路，
+  「驱动是唯一传输路径」再获独立证据。
+- KS 音频后端（`scripts\KsBluetooth.cs`，拓扑方案源自 ToothTray/BTAudioSysTrayTool）：
+  免驱动音频端点路由 + **切换前无声预检**（`GetMixFormat → IsFormatSupported → Initialize(shared)`，
+  阴性不改默认输出；`CHANGELOG.md:87`）；`BluetoothLink.Read` 用 bthprops 精确查链路，
+  不把 MMDevice 端点存活当连接证据。
+- 连接诊断逐步落盘（noise_debug.log 分步记录）；发布采用「已知问题接受路径」并保留失败事实
+  （verification/ 目录存 ORIGINAL/MODIFIED 快照与远端读回证据）。
+- AirPods 5：仅口头反馈、无真机，曾提出的 LE Audio 嫌疑**自我撤回** → 印证本蓝图对 AirPods 5
+  只进型号表、不做协议行为改动的保守策略（阶段 2）。
+- 借鉴落点：阶段 1 连接诊断步骤化（**高**）；阶段 2 音质管理=强制 A2DP/HFP 服务切换（中）；
+  阶段 3 发布证据分层（中）；桌宠/WebUI/StreamDeck 不借鉴（技术栈不同）。
+
+**② bhemsen/PodBridge** — 现代 .NET 三层（Core/Windows/App）+ 双测试工程，**Apache-2.0**，
+v1.3.0（2026-10-06）（`_research\PodBridge`）。
+
+- 双层能力模型：Tier-1 免驱动=**纯被动监听 BLE Continuity 广播**（10% 粒度电量+入耳/充电位，
+  `ContinuityParser.cs:23-59`），不发任何包；Tier-2 可选 KMDF 驱动 `driver\PodBridgeAAP\`——
+  `PodBridgeAAP.inf:34-39` 绑 `BTHENUM\{74ec2172-…}` 靠 BthEnum 服务 PDO 的 **PnP 到达**，
+  `L2cap.c:69-99` 以 `BRB_L2CA_OPEN_CHANNEL` 开 PSM 0x1001，用户态经 inverted-call RECEIVE
+  IOCTL（`AapDriverInterop.cs:158-175`）→ **MagicAAP 的 Apache-2.0 开源同构实现**。
+- 连接序列：握手 16B → SetSpecificFeatures `4D 00 FF 00…` → RequestNotifications
+  `0F 00 FF FF FE FF`（`AapProtocol.cs:47-61`、`NoiseControlController.cs:99-104`）；
+  命令：ANC `09 00 0D`（`AapProtocol.cs:112-126`）、茎按手势 `09 00 16 right left`（:177-197）。
+- **下发可靠性样板（可直接借鉴思想）**：「乐观置位 + 2s echo 确认 + 超时回滚」
+  （`NoiseControlController.cs:127-178`）+ 断线重连必重推手势配置（`GestureRepushController.cs:6-22`）。
+- 独有功能：**麦克风 profile 策略引擎**（通话会话自动提权 Communications 角色并恢复，
+  `Audio\MicPolicyEngine.cs:5-14`）、音频栈塌缩检测+恢复引导（`AudioCollapseDetector.cs`）、
+  诊断快照导出；未知型号走能力降级矩阵（`Capabilities\CapabilityMatrix.cs`）。
+- 工程标杆：Actions 全 pin SHA、release 产 SBOM+provenance attestation+checksums、
+  60+ 测试文件成套 Fake transport、docs/ 含 constitution/逐阶段 QA/threat-model。
+- 借鉴落点：驱动备份路线研究（P2；GPL-3.0 吸收 Apache-2.0 保留署名链）；**echo 确认/重推
+  下发模式**（阶段 2，**高**）；**麦克风策略引擎**（阶段 2 候选新功能，**高**）；
+  `IAapTransport` 抽象+Fake 测试矩阵（阶段 3，**高**）；威胁建模文档（阶段 3，**高**）；
+  能力矩阵/未知型号降级（阶段 2 型号表，中）。
+
+**③ ivLis-Studio/librepods-windows** — C# 分层（App/Core/Platform.Windows）+ 原生桥 DLL +
+KMDF（stub/loopback/bthl2cap 三模式），GPL-3.0，仅 4 commits（`_research\librepods-windows`）。
+
+- 传输：驱动 IOCTL 优先（`IOCTL_OPEN_AACP_CHANNEL`，`librepods_native_bridge.cpp:500`），
+  失败回退 Winsock `AF_BTH/SOCK_SEQPACKET` 并明示多数 Windows 用户态栈不支持（:692-701）；
+  驱动为 profile driver，`EvtDevicePrepareHardware` QI `GUID_BTHDDI_PROFILE_DRIVER_INTERFACE` +
+  `IOCTL_INTERNAL_BTHENUM_GET_DEVINFO` 取远端地址（`driver.c:212-222`），绑定
+  `BTHENUM\{4715650b-…}_VID&0001004c_PID&2014` 与 `{74ec2172-…}`（INF:19-24）；
+  设备未就绪时 capability 报 **TRANSPORT_BLOCKED** 优雅降级（`transport_bth_l2cap.c:196-218`）。
+- **命令 identifier 表最宽（我们协议层的缺口清单）**：EarDetection 0x0A、OwnsConnection 0x06、
+  OneBudAnc 0x1B、ConversationDetect 0x28、HearingAid 0x2C、AutoAncStrength 0x2E、
+  AllowOffOption 0x34、StemConfig 0x39、proximity keys 0x30（`ControlCommandIdentifier.cs:5-13`）。
+- 广播层支持手填 IRK 对加密尾块 AES 解密（`BluetoothCryptography.cs:7-19`）取 fit/连接/颜色/精确电量。
+- 状态：真机可重复 AACP 控制与长驻通知**仍未完成**（README.md:36-44）；仓库卫生差
+  （提交 >10MB 构建日志与 .obj），工程方式不借鉴。
+- 借鉴落点：identifier 表补全阶段 2 命令覆盖（**高**，与规格交叉核对）；TRANSPORT_BLOCKED
+  降级模式（阶段 1 驱动状态卡，中）；其 `bthl2cap` 驱动模式成熟后可作对照，暂不投入。
+
+**④ bho3538/Airpods-Windows-Control** — C，微软 BthEcho 示例改造的 KMDF 驱动 + 极简控制台，
+MIT（模板占位未填），2024 年后停滞（`_research\Airpods-Windows-Control`）。
+
+- 驱动绑 `BTHENUM\{c07508f2-…}`；**PSM 从远端 SDP 动态取**而非硬编码 0x1001
+  （`client.c:413-428、535-547`）；用户态 CreateFile+WriteFile/ReadFile 原始帧透传。
+- **1% 精度电量解析**：22 字节 AAP 状态回包 offset 9/14/19、入盒位 10/15/20（`main.cpp:146-149`）——
+  我们电量目前只有 BLE nibble 的 10% 粒度，这是最直接的电量精度补强路径。
+- 本质是协议 PoC（无测试/无 CI/README 27 行），仅取证两点。
+- 借鉴落点：1% 电量请求与解析（阶段 2，**高**）；SDP 动态取 PSM（阶段 0 RFCOMM/AAP 面核实时参考，低）。
+
+**⑤ 其它候选（GitHub API 检索，未克隆）**：sinanovicanes/winpods（Rust/MIT，42★）、
+arctumn/ntpods（Rust/GPL，23★）、steam3d/MagicPods-Windows（878★，商业，驱动路线源头）
+——信息增量不超上述四者，留档不展开。
+
+**横评总结论**：「Windows 上做 AAP 控制必须内核驱动」已由五个独立实现共同确证
+（MagicAAP、PodBridgeAAP、librepods-windows、Airpods-Windows-Control、lyzbcy 实测放弃），
+且三家驱动**同解设备到达**：靠 BthEnum 对 vendor service 的 PnP 枚举，不自行轮询。
+协议面新证据：`0x4D` 掩码 D7 与 FF 在活跃实现中并存（固件宽容，维持 D7）；`0x0F` 订阅掩码
+四实现三种写法（维持 4×FF）。我们的短板排序：① 命令覆盖（identifier 缺口清单已列）、
+② 下发可靠性（echo 确认/重推模式）、③ 发布可追溯与协议测试矩阵、④ 电量精度（1%）。
+传输路线（BLE 电量 + 驱动控制）方向正确，无需动摇。
+
+---
+
 ## 3. 设计原则（Design Principles）
 
 1. **正确性优先于功能**：协议语义未验证前，不新增依赖该语义的功能。
@@ -259,6 +347,9 @@ KMDF 1.15、demand-start、**仅 x64**（`NTamd64.10.0.1..16299`）、23.9 KB。
 | 5 | 多设备 | **不列为 v2.0.0 主打**，降为 P3 实验项 | UI 改动大、收益存疑；§2.5 已确认驱动侧无阻碍，等待用户需求信号 |
 | 6 | 蓝板存放与语言 | **提交进仓库** `Docs/UpgradeBlueprint.md`，暂不做英文全译 | 公开面（README）已三语；蓝图以中文为主、术语带英文；实施到各阶段时按需补英文摘要 |
 | 7 | 驱动评估 | **已完成（§2.5）** | 结论：驱动不构成任何协议功能的瓶颈；唯二硬缺口＝宿主伪装（仅特定 ATT 场景可能需要）与「固件接受度需实测」 |
+| 8 | 用户态 L2CAP 路线 | **排除**（2026-10-22 第三实证，§2.6①） | lyzbcy `noise_mode.ps1` 实测 Windows 用户态 L2CAP provider 不可用（本地 bind 即 WSAENETDOWN 10050）；`AAPManager` 的 L2CAP×2 路径定性为非 Windows 遗留，阶段 3 死代码清理时统一处理 |
+| 9 | 驱动备份路线 | **跟踪 PodBridgeAAP**（§2.6②） | 不立即切换：MagicAAP 分发风险（签名/策略更新）恶化时，以 Apache-2.0 的 PodBridgeAAP 为研究底本自建或切换；吸收代码须保留 THIRD_PARTY_NOTICES 署名链 |
+| 10 | 横评借鉴原则 | **思路优先、代码谨慎** | 跨 License 借鉴以「学思路+自研实现」为主；凡引用片段入 THIRD_PARTY_NOTICES；桌宠/WebUI 等异栈功能不入蓝图 |
 
 ---
 
@@ -277,6 +368,11 @@ KMDF 1.15、demand-start、**仅 x64**（`NTamd64.10.0.1..16299`）、23.9 KB。
 | OpenPods 1.11 | `_research\OpenPods`（HEAD `9cd8008`） | BLE 广播解析交叉核对 |
 | MagicAAP 驱动 | https://magicpods.app/magicaap/ 、`help.magicpods.app` | 驱动安装与限制 |
 | 上游 AirPodsDesktop | https://github.com/SpriteOvO/AirPodsDesktop | 同步基线（v0.6.1） |
+| MagicPods 逆向笔记 | `Docs\MagicPods-RE-Notes.md`（2026-10-22） | 第三实现字节级交叉验证（模板表/字符串/0x4D=0E 分歧） |
+| lyzbcy/AirPods-Buddy | `_research\lyzbcy-AirPods-Windows`（MIT） | 用户态 L2CAP 死路实证、连接诊断、发布证据分层 |
+| bhemsen/PodBridge | `_research\PodBridge`（Apache-2.0） | 开源 AAP 驱动 PodBridgeAAP、IAapTransport 抽象、威胁建模 |
+| librepods-windows | `_research\librepods-windows`（GPL-3.0） | Windows 移植难点实录（真机 AACP 尚不可重复）、identifier 命令表 |
+| Airpods-Windows-Control | `_research\Airpods-Windows-Control`（MIT） | 1% 精度电量解析、SDP 动态 PSM 取法 |
 | 本项目 v1.3.0 发布 | https://github.com/YimingZhanshen/AirPodsWindows/releases/tag/v1.3.0 | 现状基线 |
 
 ### 附录 C · 关键证据索引（本仓库）
