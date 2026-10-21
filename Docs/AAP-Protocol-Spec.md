@@ -144,11 +144,12 @@ Stop（28B）：`04 00 04 00 17 00 | 00 00 10 00 11 00 08 7E 10 02 42 0B 08 4E 1
 | offset | bytes | 含义 |
 |---|---|---|
 | 0-3 / 4-5 | `04 00 04 00` / `4D 00` | 包头/opcode |
-| 6 | `D7`（实现）/`FF`（文档抓包） | 功能位掩码 |
+| 6 | `D7`（实现）/`FF`（文档抓包）/`0E`（MagicPods 静态模板） | 功能位掩码 |
 | 7-13 | `00 ×7` | 保留 |
 
 **出处**：`AAP Definitions.md:21-27`（抓包 `…4d 00 ff 00×7`，称其开启"播放音频时的对话感知"+Adaptive Transparency）；Android `AACPManager.kt:634-638`（D7）；Linux `airpods_packets.h:152`（D7），握手 ACK 后发送（`linux/main.cpp:666-669`）。
 **分歧/风险**：文档 FF vs 实现 D7，差异位 0x28（bit3/0x08、bit5/0x20）。**各位语义源材料均未说明（文档未给出）**；只能推断 D7 已覆盖文档所述两项功能，0x08/0x20 为未知（或 Apple 专属）功能。移植用 D7，必要时再试 FF。另注：不发此包时 0x0D=0x04 会被回以别的模式（`AAP Definitions.md:208`）。
+**第三实现（MagicPods 逆向）**：模板 `04 00 04 00 4D 00 0E 00 00 00 00 00 00 00`（FieldRVA @ 0x5CF1CB，14B 同长），工厂仅 `newarr 14`+`InitializeArray` 原样拷贝、分发器 `calli` 直返，**全链路无补丁**——byte 6 实为 `0E`，与 D7/FF 均不同（bit 语义仍无源材料，维持 D7，详见 `Docs/MagicPods-RE-Notes.md` §5.2）。
 
 ## 9. 通知订阅 0x000F
 
@@ -193,6 +194,7 @@ PDU：读 `0A [handle] 00`→`0B [value…]`；写 `12 [handle] 00 [value…]`�
 助听写 `12 2A 00 [104B]`：头 `02 02 60 00` + 左 EQ×8@4-35 + 左 Amp/Tone/Conv/Ambient@36/40/44/48 + 右 EQ×8@52-83 + 右四项@84/88/92/96 + ownVoice@100；写前把 offset2 改 `64`（`HearingAid.kt:88-187`）。
 大声压写 `12 1B 00 [01/00]`（01=开、00=关，**非** 01/02 惯例；`AccessibilitySettingsScreen.kt:264-268`、`HearingProtectionScreen.kt:91-95`）。
 **到达前提（VendorID spoof）**：本机 DID VendorID=Apple `0x004C`、source=0x0001。Linux `/etc/bluetooth/main.conf` `DeviceID = bluetooth:004C:0000:0000`（`README.md:107-111`）；Android Xposed `fake_BTA_DmSetLocalDiRecord`（`l2c_fcr_hook.cpp:58-79`），ATT socket 仅在 hook 开启时建（`AirPodsService.kt:2655-2670`）。README ⚪ 项=需 spoof（`README.md:42-59`）。
+**MagicPods 逆向补充（Windows 第三实现）**：全程序集无任何 ATT PDU 模板、无独立 socket/RFCOMM API，仅经 MagicAAP 驱动管道收发 AAP 帧；VendorID spoof 在 Windows 路径不存在（bthprops 仅用于启用远端 AAP 服务）。即 ATT 是 LibrePods 自建 PSM 0x001F socket 的专有路径，**本项目经驱动管道发 `12 1B 00` 属未验证路径**（驱动仅绑 AAP PSM 0x1001），见 `Docs/MagicPods-RE-Notes.md` §5.1。
 **分歧/风险**：0x1B CCCD 坏（只能写后读）；文档透明度表 "Ambient Noise Reduction" 列了两遍（`AAP Definitions.md:294-303`），第二行疑为 ownVoice/笔误（文档未给出）；助听 0x60→0x64 原因未解释（照抄）；0x1B 用 00/01 易错。
 
 ## 13. 多设备/智能路由
