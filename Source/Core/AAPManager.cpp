@@ -383,16 +383,19 @@ bool Manager::SetAdaptiveTransparencyLevel(uint8_t level)
         return false;
     }
 
-    if (level > 50) {
-        level = 50;
+    // Control command 0x38 is PPE (hearing-protection) cap level, range 0-100 per
+    // Docs/AAP-Protocol-Spec.md §7. The name and the UI label ("adaptive transparency") are
+    // corrected in the terminology sweep; the wire format here is already per spec.
+    if (level > 100) {
+        level = 100;
     }
 
-    auto packet = Packets::BuildAdaptiveTransparencyLevelPacket(level);
+    auto packet = Packets::BuildPpeCapLevelPacket(level);
     if (!SendPacket(packet)) {
         return false;
     }
 
-    LOG(Info, "AAP: Set adaptive transparency level to {}", level);
+    LOG(Info, "AAP: Set PPE cap level (UI: adaptive transparency) to {}", level);
     return true;
 }
 

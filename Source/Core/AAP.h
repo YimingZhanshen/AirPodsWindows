@@ -152,10 +152,14 @@ inline const std::vector<uint8_t> Handshake = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-// Enable features packet - Enables Conversational Awareness and Adaptive Transparency
-// This is needed for CA to work when audio is playing
+// Feature flags packet (opcode 0x004D) - enables conversational awareness while audio is
+// playing and adaptive transparency. Byte 6 is a capability mask: both LibrePods platforms send
+// `D7` (Android createSetFeatureFlagsPacket, Linux SET_SPECIFIC_FEATURES); a protocol-doc capture
+// showed `FF`, i.e. `D7 | 0x28` — the extra bits (0x08/0x20) are undocumented. Send `D7` to match
+// the reference implementations; without this packet the earbuds answer a request for Adaptive
+// mode (0x0D = 0x04) with a different mode. See Docs/AAP-Protocol-Spec.md §8.
 inline const std::vector<uint8_t> EnableFeatures = {
-    0x04, 0x00, 0x04, 0x00, 0x4D, 0x00, 0xFF, 0x00,
+    0x04, 0x00, 0x04, 0x00, 0x4D, 0x00, 0xD7, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
@@ -215,37 +219,45 @@ inline std::vector<uint8_t> BuildPersonalizedVolumePacket(bool enable) {
 }
 
 // Loud Sound Reduction toggle packet builder (Headphone Safety)
+// This is an ATT write request (PDU 0x12) to GATT handle 0x1B — NOT an L2CAP control command:
+// `12 1B 00 [01|00]`, where 0x01 = on, 0x00 = off. Note this feature alone uses 0x01/0x00 while
+// the control commands use 0x01/0x02, and its CCCD (0x1C) does not work so the current state can
+// only be read back, never subscribed to. Previously sent as control command 0x25, which is
+// actually VolumeSwipeMode. See Docs/AAP-Protocol-Spec.md §7/§12.
+//
+// TRANSPORT CAVEAT: LibrePods sends ATT PDUs on a *separate* L2CAP socket (PSM 0x001F), not on
+// the AAP channel (PSM 0x1001) that the MagicAAP driver exposes. Whether the earbuds accept this
+// ATT frame written straight into the AAP pipe (what Manager::SendPacket does today) is
+// UNVERIFIED; if hardware testing shows it is ignored, the fallback is a second L2CAP connection
+// to PSM 0x001F (or WinRT GATT over BR/EDR). See Docs/UpgradeBlueprint.md §4 item 0.3.
 inline std::vector<uint8_t> BuildLoudSoundReductionPacket(bool enable) {
     return {
-        0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x25,
-        enable ? static_cast<uint8_t>(0x01) : static_cast<uint8_t>(0x00),
-        0x00, 0x00, 0x00
+        0x12, 0x1B, 0x00,
+        static_cast<uint8_t>(enable ? 0x01 : 0x00)
     };
 }
 
 // Off-Ear Auto Pause toggle packet builder (Automatic Ear Detection)
+// Control command 0x0A = EarDetectionConfig: 0x01 = on, 0x02 = off. Previously sent as 0x1B,
+// which is OneBudANCMode (single-bud ANC) — a different feature entirely.
 inline std::vector<uint8_t> BuildAutomaticEarDetectionPacket(bool enable) {
     return {
-        0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x1B,
+        0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0A,
         enable ? static_cast<uint8_t>(0x01) : static_cast<uint8_t>(0x02),
         0x00, 0x00, 0x00
     };
 }
 
-// Adaptive Transparency level packet builder (0x00-0x32 = 0-50)
-inline std::vector<uint8_t> BuildAdaptiveTransparencyLevelPacket(uint8_t level) {
-    // Clamp level to 0-50
-    if (level > 50) level = 50;
+// Hearing-protection (PPE) cap level packet builder (0-100)
+// Control command 0x38 = PPE Cap Level (a hearing-protection cap, not a transparency control;
+// the reference capture uses 0x52 = 82, so the range is 0-100). The UI still labels this
+// "Adaptive transparency level (0-50)" — that label is corrected in the terminology sweep.
+inline std::vector<uint8_t> BuildPpeCapLevelPacket(uint8_t level) {
     return {
         0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38,
         level, 0x00, 0x00, 0x00
     };
 }
-
-// Request current settings packet
-inline const std::vector<uint8_t> RequestSettings = {
-    0x04, 0x00, 0x04, 0x00, 0x0D, 0x00, 0xFF, 0xFF, 0xFF, 0xFF
-};
 
 } // namespace Packets
 
@@ -363,20 +375,28 @@ inline std::optional<PersonalizedVolumeState> ParsePersonalizedVolumeState(const
 }
 
 // Parse automatic ear detection (off-ear pause) state from notification
-// Packet format: 04 00 04 00 09 00 1B [status] 00 00 00
+// Control command 0x0A = EarDetectionConfig; the state echo follows the same identifier:
+// 04 00 04 00 09 00 0A [status] 00 00 00, 0x01 = enabled, 0x02 = disabled.
+// (This used to match 0x1B, which is OneBudANCMode — wrong feature.) See spec §7.
 inline std::optional<bool> ParseAutomaticEarDetectionState(const std::vector<uint8_t>& data) {
     if (data.size() < 8) {
         return std::nullopt;
     }
     
     if (data[0] != 0x04 || data[1] != 0x00 || data[2] != 0x04 || data[3] != 0x00 ||
-        data[4] != 0x09 || data[5] != 0x00 || data[6] != 0x1B) {
+        data[4] != 0x09 || data[5] != 0x00 || data[6] != 0x0A) {
         return std::nullopt;
     }
     
     // 0x01 = Enabled (pause on ear removal), 0x02 = Disabled
     return data[7] == 0x01;
 }
+
+// LEGACY / NO SENDER: Loud sound reduction is now an ATT write (handle 0x1B), so its state comes
+// back over ATT (read response 0x0B / notification `1B 1B 00 …`), not as a control reply. The
+// control id 0x25 seen below is VolumeSwipeMode, not LSR — this parser and
+// IsLoudSoundReductionNotification never match anything real anymore and are kept only until the
+// ATT read path lands (blueprint item 0.3). See spec §7/§12.
 
 // Parse loud sound reduction (headphone safety) state
 // Packet format: 04 00 04 00 09 00 25 [status] 00 00 00
@@ -487,7 +507,7 @@ inline bool IsPersonalizedVolumeNotification(const std::vector<uint8_t>& data) {
 inline bool IsAutomaticEarDetectionNotification(const std::vector<uint8_t>& data) {
     return data.size() >= 7 &&
            data[0] == 0x04 && data[1] == 0x00 && data[2] == 0x04 && data[3] == 0x00 &&
-           data[4] == 0x09 && data[5] == 0x00 && data[6] == 0x1B;
+           data[4] == 0x09 && data[5] == 0x00 && data[6] == 0x0A;
 }
 
 inline bool IsLoudSoundReductionNotification(const std::vector<uint8_t>& data) {
