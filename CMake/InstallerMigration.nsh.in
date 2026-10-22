@@ -104,20 +104,21 @@ RMDir /r "$R6"
 apd_verify_cleanup:
 ; Only FILES inside count as failure - see the header note on why the directory shell survives.
 ; FindFirst wraps FindFirstFile, which lists "." and ".." as the first two entries; skip them.
+; NSIS general-purpose registers stop at $R9 - use $R4 (the dead ExecWait exit code) for names.
 ClearErrors
-FindFirst $R9 $RA "$R6\*.*"
+FindFirst $R9 $R4 "$R6\*.*"
 
 apd_dots_skip:
-  StrCmp $RA "" apd_dir_clean
-  StrCmp $RA "." apd_dots_next
-  StrCmp $RA ".." apd_dots_next
+  StrCmp $R4 "" apd_dir_clean
+  StrCmp $R4 "." apd_dots_next
+  StrCmp $R4 ".." apd_dots_next
   FindClose $R9
   StrCmp $R7 "1" apd_uninstall_failed
   StrCpy $R7 1
   Goto apd_retry_cleanup
 
 apd_dots_next:
-  FindNext $R9 $RA
+  FindNext $R9 $R4
   Goto apd_dots_skip
 
 apd_dir_clean:
