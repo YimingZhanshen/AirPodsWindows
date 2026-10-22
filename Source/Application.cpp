@@ -31,6 +31,7 @@
 #include "Gui/TaskbarStatus.h"
 #include "Gui/TrayIcon.h"
 #include "Gui/Theme.h"
+#include "Gui/Widget/DriverStatusCard.h"
 #include "Core/AirPods.h"
 #include "Core/AAP.h"
 #include "Core/AutoStart.h"
@@ -284,6 +285,18 @@ void ApdApplication::ConnectAirPodsManager()
             emit mainWindow->HideSafely();
         }
     });
+    // Blueprint 1.3: surface AAP connection failures as a tray balloon with an
+    // actionable hint instead of a silent feature blackout.
+    connect(
+        manager, &Core::AirPods::Manager::AapConnectionFailedSafely, _trayIcon.get(),
+        [this](int failure) {
+            const auto hint = Gui::DriverStatusCard::FailureHint(
+                static_cast<Core::AAP::ConnectFailure>(failure));
+            if (!hint.isEmpty()) {
+                _trayIcon->ShowMessage(tr("ANC connection failed"), hint);
+            }
+        },
+        Qt::QueuedConnection);
 }
 
 void ApdApplication::ConnectGuiComponents()
