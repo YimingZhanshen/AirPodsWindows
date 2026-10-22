@@ -44,11 +44,19 @@ jobs:
       run:
         shell: pwsh
 
+    env:
+      # sccache uses the Actions cache backend without extra credentials; the
+      # compiler launchers below route every translation unit through it.
+      SCCACHE_GHA_ENABLED: "true"
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           submodules: recursive
+
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Check release version
         id: version
@@ -84,9 +92,19 @@ jobs:
           modules: qtmultimedia
           cache: true
 
+      # The whole vcpkg checkout (including the bootstrapped vcpkg.exe) is
+      # reused across runs; runners are same-platform so the tool stays valid.
+      - name: Cache vcpkg
+        id: vcpkg-cache
+        uses: actions/cache@v4
+        with:
+          path: Build/vcpkg
+          key: vcpkg-${{ hashFiles('vcpkg.json') }}
+
       - name: Clone and bootstrap vcpkg
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         run: |
-          git clone https://github.com/microsoft/vcpkg.git Build/vcpkg
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git Build/vcpkg
           & Build/vcpkg/bootstrap-vcpkg.bat -disableMetrics
 
       - name: Configure
@@ -96,6 +114,10 @@ jobs:
             -A x64 `
             -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/Build/vcpkg/scripts/buildsystems/vcpkg.cmake `
             -DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_EXE_LINKER_LAUNCHER=sccache `
+            -DCMAKE_SHARED_LINKER_LAUNCHER=sccache `
             -DAPD_BUILD_TESTS=ON `
             -DAPD_GENERATE_INSTALLER=ON `
             -DAPD_GITHUB_OWNER=${{ github.repository_owner }} `
@@ -104,6 +126,10 @@ jobs:
 
       - name: Build
         run: cmake --build Build/Release --config $env:BUILD_TYPE --parallel 2
+
+      - name: Show sccache stats
+        if: always()
+        run: sccache --show-stats
 
       - name: Test
         run: |
