@@ -173,8 +173,9 @@ private:
     // ATT path probe (blueprint 0.3): deadline in steady_clock milliseconds,
     // 0 when no probe is outstanding. GetAttPathState flips Pending to
     // Unconfirmed lazily once the deadline passes — no probe thread needed.
-    std::atomic<AttPathState> _attPathState{AttPathState::Unknown};
-    std::atomic<int64_t> _attProbeDeadlineMs{0};
+    // mutable: the lazy flip happens inside the const getter.
+    mutable std::atomic<AttPathState> _attPathState{AttPathState::Unknown};
+    mutable std::atomic<int64_t> _attProbeDeadlineMs{0};
 
     // Why the last Connect() attempt failed; reset to None on success.
     std::atomic<ConnectFailure> _lastConnectFailure{ConnectFailure::None};
