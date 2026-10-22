@@ -19,6 +19,8 @@
 #include "AAPManager.h"
 #include "../Logger.h"
 
+#include <chrono>
+
 #if defined APD_OS_WIN
 
 #include <WinSock2.h>
@@ -251,6 +253,9 @@ void Manager::Disconnect()
         std::lock_guard<std::mutex> lock{_mutex};
         _noiseControlMode.reset();
         _conversationalAwarenessState.reset();
+        _loudSoundReductionState.reset();
+        _attPathState.store(AttPathState::Unknown);
+        _attProbeDeadlineMs.store(0);
     }
 
     LOG(Info, "AAP: Disconnected");
@@ -366,6 +371,14 @@ bool Manager::SetLoudSoundReduction(bool enable)
         return false;
     }
 
+    // Optimistic local echo: the CCCD (0x1C) does not work, so the firmware
+    // state can only be read back. Follow the write with a read request — when
+    // the ATT path is confirmed the response refreshes the cached state; when
+    // it is not, this frame is simply ignored by the firmware.
+    if (GetAttPathState() == AttPathState::Confirmed) {
+        SendPacket(Att::BuildReadRequest(Att::kLoudSoundReductionHandle));
+    }
+
     LOG(Info, "AAP: Set loud sound reduction to {}", enable ? "enabled" : "disabled");
     return true;
 }
@@ -476,6 +489,120 @@ void Manager::SetCallbacks(Callbacks callbacks)
     _callbacks = std::move(callbacks);
 }
 
+//////////////////////////////////////////////////
+// ATT path probe (blueprint 0.3)
+//
+
+AttPathState Manager::GetAttPathState() const
+{
+    auto state = _attPathState.load();
+    if (state == AttPathState::Pending) {
+        // Lazily resolve the probe outcome once its 500ms window has passed;
+        // no probe thread, no timers — whoever asks gets the final answer.
+        auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::steady_clock::now().time_since_epoch())
+                         .count();
+        if (nowMs >= _attProbeDeadlineMs.load()) {
+            _attPathState.store(AttPathState::Unconfirmed);
+            state = AttPathState::Unconfirmed;
+        }
+    }
+    return state;
+}
+
+void Manager::StartAttProbe()
+{
+    // One-shot probe: ask for the loud-sound-reduction value. Any ATT answer
+    // (even an error response) proves the firmware accepts ATT on this pipe;
+    // no answer within the window marks the path unconfirmed. Never retried.
+    auto packet = Att::BuildReadRequest(Att::kLoudSoundReductionHandle);
+    if (!SendPacket(packet)) {
+        _attPathState.store(AttPathState::Unconfirmed);
+        return;
+    }
+
+    auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now().time_since_epoch())
+                     .count();
+    _attProbeDeadlineMs.store(nowMs + 500);
+    _attPathState.store(AttPathState::Pending);
+    LOG(Info, "AAP: Sent ATT probe (read handle 0x{:02X}), waiting up to 500ms",
+        Att::kLoudSoundReductionHandle);
+}
+
+void Manager::ProcessAttFrame(const std::vector<uint8_t>& packet)
+{
+    // Read response (0x0B): we only ever issue one kind of read — handle 0x1B —
+    // so the value belongs to loud sound reduction.
+    if (Att::IsReadResponse(packet)) {
+        auto previous = _attPathState.exchange(AttPathState::Confirmed);
+        if (previous != AttPathState::Confirmed && _callbacks.onAttProbeResult) {
+            _callbacks.onAttProbeResult(AttPathState::Confirmed);
+        }
+        LOG(Info, "AAP: ATT path confirmed (read response, {} value bytes)",
+            packet.size() - 1);
+
+        auto value = Att::ParseReadResponse(packet);
+        if (value.has_value() && !value->empty()) {
+            std::optional<LoudSoundReductionState> state;
+            if ((*value)[0] == 0x01) {
+                state = LoudSoundReductionState::Enabled;
+            } else if ((*value)[0] == 0x00) {
+                state = LoudSoundReductionState::Disabled;
+            }
+            if (state.has_value()) {
+                {
+                    std::lock_guard<std::mutex> lock{_mutex};
+                    _loudSoundReductionState = state;
+                }
+                if (_callbacks.onLoudSoundReductionChanged) {
+                    _callbacks.onLoudSoundReductionChanged(state.value());
+                }
+            }
+        }
+        return;
+    }
+
+    // Error response (0x01): the ATT stack answered, so the path itself is
+    // alive even though the value is unavailable.
+    if (Att::IsErrorResponse(packet)) {
+        auto previous = _attPathState.exchange(AttPathState::Confirmed);
+        if (previous != AttPathState::Confirmed && _callbacks.onAttProbeResult) {
+            _callbacks.onAttProbeResult(AttPathState::Confirmed);
+        }
+        LOG(Info, "AAP: ATT path confirmed (error response, opcode 0x{:02X}, code 0x{:02X})",
+            packet.size() > 1 ? packet[1] : 0, packet.size() > 4 ? packet[4] : 0);
+        return;
+    }
+
+    // Handle Value Notification (0x1B) for the loud-sound-reduction handle.
+    if (Att::IsNotification(packet)) {
+        auto notification = Att::ParseNotification(packet);
+        if (notification.has_value() &&
+            notification->first == Att::kLoudSoundReductionHandle &&
+            !notification->second.empty()) {
+            std::optional<LoudSoundReductionState> state;
+            if (notification->second[0] == 0x01) {
+                state = LoudSoundReductionState::Enabled;
+            } else if (notification->second[0] == 0x00) {
+                state = LoudSoundReductionState::Disabled;
+            }
+            if (state.has_value()) {
+                {
+                    std::lock_guard<std::mutex> lock{_mutex};
+                    _loudSoundReductionState = state;
+                }
+                LOG(Info, "AAP: Loud sound reduction (ATT notify): {}",
+                    static_cast<int>(state.value()));
+                if (_callbacks.onLoudSoundReductionChanged) {
+                    _callbacks.onLoudSoundReductionChanged(state.value());
+                }
+            }
+        }
+        return;
+    }
+}
+
 bool Manager::SendPacket(const std::vector<uint8_t>& packet)
 {
     if (!_connected) {
@@ -511,6 +638,15 @@ bool Manager::SendPacket(const std::vector<uint8_t>& packet)
 
 void Manager::ProcessPacket(const std::vector<uint8_t>& packet)
 {
+    // ATT frames on the AAP pipe (blueprint 0.3): anything that is not an
+    // L2CAP AAP frame (`04 00 04 00` header) and matches a known ATT opcode is
+    // routed to the ATT handlers first, so ATT responses can never be
+    // misparsed as settings notifications.
+    if (Att::IsAttFrame(packet)) {
+        ProcessAttFrame(packet);
+        return;
+    }
+
     // Noise control notification
     if (IsNoiseControlNotification(packet)) {
         auto mode = ParseNoiseControlNotification(packet);
@@ -736,6 +872,11 @@ bool Manager::InitializeConnection()
     }
     LOG(Info, "AAP: Sent request notifications");
 
+    // Blueprint 0.3: probe whether the firmware answers ATT frames on this
+    // pipe. Fire-and-forget; the outcome lands in _attPathState and is
+    // surfaced through onAttProbeResult.
+    StartAttProbe();
+
     return true;
 }
 
@@ -860,6 +1001,9 @@ bool Manager::StopHeadTracking() { return false; }
 bool Manager::IsHeadTrackingActive() const { return false; }
 void Manager::SetCallbacks(Callbacks) {}
 bool Manager::IsMagicAAPDriverAvailable() { return false; }
+AttPathState Manager::GetAttPathState() const { return AttPathState::Unconfirmed; }
+void Manager::StartAttProbe() {}
+void Manager::ProcessAttFrame(const std::vector<uint8_t>&) {}
 bool Manager::SendPacket(const std::vector<uint8_t>&) { return false; }
 void Manager::ProcessPacket(const std::vector<uint8_t>&) {}
 void Manager::ReaderLoop() {}

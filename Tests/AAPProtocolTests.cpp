@@ -22,6 +22,7 @@
 #include <QtTest>
 
 #include "Source/Core/AAP.h"
+#include "Source/Core/AAPAtt.h"
 
 // Table-driven coverage for the AAP protocol layer (blueprint items 0.1 / 0.2 / 0.5):
 // every packet builder emits exactly the documented bytes, every parser accepts the
@@ -387,6 +388,72 @@ private slots:
         QVERIFY(!ParseSpeakingLevel(
                      Hex({0x04, 0x00, 0x04, 0x00, 0x4B, 0x00, 0x02, 0x00, 0x01}))
                      .has_value());
+    }
+
+    //////////////////////////////////////////////////
+    // ATT frames (blueprint 0.3)
+    //
+
+    void AttWriteCommandUsesLittleEndianHandle()
+    {
+        QCOMPARE(
+            Att::BuildWriteCommand(0x1B, 0x01), Hex({0x12, 0x1B, 0x00, 0x01}));
+        QCOMPARE(
+            Att::BuildWriteCommand(0x0102, 0xAA), Hex({0x12, 0x02, 0x01, 0xAA}));
+        QCOMPARE(
+            Att::BuildLoudSoundReductionWrite(true), Hex({0x12, 0x1B, 0x00, 0x01}));
+        QCOMPARE(
+            Att::BuildLoudSoundReductionWrite(false), Hex({0x12, 0x1B, 0x00, 0x00}));
+    }
+
+    void AttReadRequestCoversHandle()
+    {
+        QCOMPARE(Att::BuildReadRequest(Att::kLoudSoundReductionHandle),
+                 Hex({0x0A, 0x1B, 0x00}));
+    }
+
+    void AttReadResponseParserStripsOpcode()
+    {
+        QVERIFY(Att::IsReadResponse(Hex({0x0B, 0x01})));
+        auto value = Att::ParseReadResponse(Hex({0x0B, 0x01}));
+        QVERIFY(value.has_value());
+        QCOMPARE(*value, Hex({0x01}));
+
+        QVERIFY(!Att::IsReadResponse(Hex({0x0B})));
+        QVERIFY(!Att::ParseReadResponse(Hex({0x12, 0x1B, 0x00, 0x01})).has_value());
+    }
+
+    void AttNotificationCarriesHandle()
+    {
+        auto notification = Att::ParseNotification(Hex({0x1B, 0x1B, 0x00, 0x00}));
+        QVERIFY(notification.has_value());
+        QCOMPARE(notification->first, uint16_t(0x1B));
+        QCOMPARE(notification->second, Hex({0x00}));
+
+        QVERIFY(!Att::IsNotification(Hex({0x1B})));
+        QVERIFY(!Att::ParseNotification(Hex({0x0A, 0x1B, 0x00})).has_value());
+    }
+
+    void AttErrorResponseIsRecognized()
+    {
+        // opcode 0x01, requested opcode 0x0A, handle 0x001B, error 0x0A (attr not found)
+        QVERIFY(Att::IsErrorResponse(Hex({0x01, 0x0A, 0x1B, 0x00, 0x0A})));
+        QVERIFY(!Att::IsErrorResponse(Hex({0x01, 0x0A})));
+    }
+
+    // L2CAP AAP frames must never be classified as ATT, and vice versa — this
+    // is the routing rule that keeps ATT responses out of the AAP parsers.
+    void AttFrameRoutingSeparatesL2capAndAtt()
+    {
+        QVERIFY(!Att::IsAttFrame(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02})));
+        QVERIFY(!Att::IsAttFrame(Packets::Handshake));
+        QVERIFY(!Att::IsAttFrame(Packets::BuildNoiseControlPacket(NoiseControlMode::Off)));
+        QVERIFY(!Att::IsAttFrame(Packets::BuildLoudSoundReductionPacket(true)));
+
+        QVERIFY(Att::IsAttFrame(Hex({0x0B, 0x01})));
+        QVERIFY(Att::IsAttFrame(Hex({0x1B, 0x1B, 0x00, 0x00})));
+        QVERIFY(Att::IsAttFrame(Hex({0x01, 0x0A, 0x1B, 0x00, 0x0A})));
+        QVERIFY(!Att::IsAttFrame({}));
     }
 };
 
