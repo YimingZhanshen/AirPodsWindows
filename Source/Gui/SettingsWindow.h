@@ -29,14 +29,16 @@
 #include "../Core/QuickConnect.h"
 #include "../Core/Settings.h"
 #include "Utils.h"
+// Full definition needed: the language-change lambda below calls
+// DriverStatusCard::Refresh(), and the constructor signature names
+// Core::AirPods::Manager.
+#include "Widget/DriverStatusCard.h"
 
 #include "ui_SettingsWindow.h"
 
 namespace Gui {
 
 using namespace Core::Settings;
-
-class DriverStatusCard;
 
 class SettingsWindow : public QDialog
 {
