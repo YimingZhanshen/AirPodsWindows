@@ -6,7 +6,10 @@
 ; the 32-bit and the 64-bit registry views — so the 64-bit install starts from a clean state.
 ;
 ; Failure handling: a stale entry (uninstaller missing) is dropped and skipped, leftover files are
-; removed with `RMDir /r`, and only a directory that survives that cleanup aborts the install.
+; removed with `RMDir /r`, and only real FILES still inside the directory after one retry abort the
+; install. An empty surviving directory does NOT abort: CPack sets SetOutPath "$INSTDIR" before this
+; hook runs, so the installer's own working directory is the old install directory and Windows
+; forbids deleting it - the empty shell is a clean state the installer can write into.
 
 SetRegView 64
 ReadRegStr $R0 HKLM \
@@ -71,10 +74,11 @@ Goto apd_scan
 
 apd_ask_remove:
 MessageBox MB_YESNO|MB_ICONEXCLAMATION \
-  "$R2 must be removed before installing the 64-bit version. Continue?" \
+  "$R2 must be removed before installing this version. Continue?" \
   /SD IDYES IDYES apd_run_uninstaller IDNO apd_migration_abort
 
 apd_run_uninstaller:
+StrCpy $R7 0
 ClearErrors
 StrLen $R5 "\Uninstall.exe"
 StrCpy $R6 $R3 -$R5
@@ -86,10 +90,39 @@ ClearErrors
 ; Delete the uninstaller and force-remove the old install directory, then verify.
 Delete "$R3"
 RMDir /r "$R6"
-IfFileExists "$R6\*.*" 0 apd_rescan
+Goto apd_verify_cleanup
+
+apd_retry_cleanup:
+; Second attempt after a pause: transient holders (antivirus scans, an instance that raced the
+; prompt) usually release within a moment.
 Sleep 500
+nsExec::ExecToStack 'taskkill /F /IM AirPodsWindows.exe'
+Pop $R9
+Pop $R9
 RMDir /r "$R6"
-IfFileExists "$R6\*.*" apd_uninstall_failed 0
+
+apd_verify_cleanup:
+; Only FILES inside count as failure - see the header note on why the directory shell survives.
+; FindFirst wraps FindFirstFile, which lists "." and ".." as the first two entries; skip them.
+ClearErrors
+FindFirst $R9 $RA "$R6\*.*"
+
+apd_dots_skip:
+  StrCmp $RA "" apd_dir_clean
+  StrCmp $RA "." apd_dots_next
+  StrCmp $RA ".." apd_dots_next
+  FindClose $R9
+  StrCmp $R7 "1" apd_uninstall_failed
+  StrCpy $R7 1
+  Goto apd_retry_cleanup
+
+apd_dots_next:
+  FindNext $R9 $RA
+  Goto apd_dots_skip
+
+apd_dir_clean:
+  FindClose $R9
+  ClearErrors
 
 apd_rescan:
 ; Restart the enumeration: removing a key shifts the remaining indexes.
@@ -108,7 +141,7 @@ Goto apd_scan_view
 
 apd_uninstall_failed:
 MessageBox MB_OK|MB_ICONSTOP \
-  "The existing AirPodsWindows installation could not be removed. Close every AirPodsWindows window, remove it from Settings > Apps, then run this installer again." \
+  "The existing AirPodsWindows installation could not be fully removed because some files are still in use. Close every AirPodsWindows window (check the notification area), remove it from Settings > Apps, then run this installer again." \
   /SD IDOK
 Abort
 
