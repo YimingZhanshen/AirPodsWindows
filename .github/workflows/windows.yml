@@ -24,6 +24,13 @@ on:
 permissions:
   contents: read
 
+# Superseded branch pushes cancel the in-flight run instead of burning a full
+# Windows build on a commit that is already obsolete. Tag refs each get their
+# own group, so release builds are never cancelled by unrelated pushes.
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 env:
   BUILD_TYPE: RelWithDebInfo
 
