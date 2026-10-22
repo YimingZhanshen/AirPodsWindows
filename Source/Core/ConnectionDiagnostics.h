@@ -61,6 +61,8 @@ class Recorder
 public:
     static Recorder &Instance();
 
+    Recorder();
+
     // Records one step. `detail` must already be redacted by the caller.
     void Record(Step step, bool ok, std::string detail = {});
 
