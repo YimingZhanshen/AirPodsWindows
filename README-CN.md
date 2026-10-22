@@ -79,7 +79,7 @@ ANC 控制另外需要 [MagicAAP 驱动](https://magicpods.app/magicaap/)，且�
 
 1. 从 [Releases](https://github.com/YimingZhanshen/AirPodsWindows/releases) 下载最新版本
 2. 运行安装程序或解压便携版
-3. （可选）安装 MagicAAP 驱动以启用 ANC 控制功能
+3. （可选）安装 MagicAAP 驱动以启用 ANC 控制功能 —— [完整安装步骤见 Docs/Driver.md](/Docs/Driver.md)
 
 ## 🛠️ 构建与测试
 

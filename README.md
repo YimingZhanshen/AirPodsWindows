@@ -83,7 +83,7 @@ applies to AirPods Pro / Max / AirPods 4 (ANC).
 
 1. Download the latest version from [Releases](https://github.com/YimingZhanshen/AirPodsWindows/releases)
 2. Run the installer or extract the portable version
-3. (Optional) Install the MagicAAP driver to enable ANC control features
+3. (Optional) Install the MagicAAP driver to enable ANC control features — [see Docs/Driver.md for full installation instructions](/Docs/Driver.md)
 
 ## 🛠️ Build and test
 
