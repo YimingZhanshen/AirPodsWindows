@@ -66,10 +66,12 @@ public:
     static QString FailureHint(Core::AAP::ConnectFailure failure);
 
 Q_SIGNALS:
-    // Emitted when the user asks for the install command or the docs; the
-    // settings window owns the clipboard/system integration.
+    // Emitted when the user asks for the install command, the docs, or a
+    // diagnostics export; the settings window owns the clipboard/system
+    // integration.
     void CopyInstallCommandRequested();
     void OpenDriverDocsRequested();
+    void ExportDiagnosticsRequested();
 
 private:
     QLabel *_titleLabel = new QLabel{this};
@@ -77,6 +79,7 @@ private:
     QLabel *_detailLabel = new QLabel{this};
     QPushButton *_copyButton = new QPushButton{tr("Copy install command"), this};
     QPushButton *_docsButton = new QPushButton{tr("Open documentation"), this};
+    QPushButton *_exportButton = new QPushButton{tr("Export diagnostics"), this};
 
     std::function<Core::AirPods::Manager &()> _getManager;
     LinkStatus _status{LinkStatus::NotInstalled};

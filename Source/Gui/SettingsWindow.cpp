@@ -19,11 +19,15 @@
 #include "SettingsWindow.h"
 
 #include <QAbstractItemView>
+#include <QDateTime>
+#include <QFileDialog>
+#include <QFile>
 #include <QPainter>
 #include <QLabel>
 #include <QListWidget>
 #include <QStackedWidget>
 #include <QStyledItemDelegate>
+#include <QSysInfo>
 
 #include "Theme.h"
 #include <QCheckBox>
@@ -34,6 +38,7 @@
 #include <Config.h>
 
 #include "../Core/Debug.h"
+#include "../Core/ConnectionDiagnostics.h"
 #include "Widget/DriverStatusCard.h"
 
 using namespace std::chrono_literals;
@@ -405,6 +410,42 @@ void SettingsWindow::SetupDriverStatusCard()
     connect(_driverStatusCard, &DriverStatusCard::OpenDriverDocsRequested, this, [] {
         QDesktopServices::openUrl(QUrl{
             QStringLiteral("https://github.com/YimingZhanshen/AirPodsWindows/blob/main/Docs/Driver.md")});
+    });
+    // Blueprint 1.4: one-click export of the connection step log. The report is
+    // built from the recorder's redacted entries and written wherever the user
+    // picks — it never leaves the machine by itself (data sovereignty).
+    connect(_driverStatusCard, &DriverStatusCard::ExportDiagnosticsRequested, this, [this] {
+        const auto defaultName = QString{"AirPodsWindows-diagnostics-%1.txt"}.arg(
+            QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss"));
+        const auto path = QFileDialog::getSaveFileName(
+            this, tr("Export diagnostics"), defaultName, tr("Text files (*.txt)"));
+        if (path.isEmpty()) {
+            return;
+        }
+
+        QFile file{path};
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QMessageBox::warning(this, tr("Export diagnostics"),
+                                 tr("Could not write the diagnostics file."));
+            return;
+        }
+
+        const auto aapConnected =
+            _getAirPodsManager && _getAirPodsManager().IsAAPConnected();
+        const auto viaDriver =
+            _getAirPodsManager && _getAirPodsManager().IsAAPConnectedViaMagicAAP();
+        const auto header =
+            QString{"AirPodsWindows %1\nOS: %2\ndriver: %3\naap connected: %4 (via driver: %5)"}
+                .arg(
+                    QStringLiteral(CONFIG_VERSION_STRING),
+                    QSysInfo::prettyProductName(),
+                    Core::AAP::Manager::IsMagicAAPDriverAvailable() ? tr("installed")
+                                                                    : tr("not installed"),
+                    aapConnected ? QStringLiteral("yes") : QStringLiteral("no"),
+                    viaDriver ? QStringLiteral("yes") : QStringLiteral("no"))
+                .toStdString();
+        const auto report = Core::Diagnostics::Recorder::Instance().BuildReport(header);
+        file.write(report.data(), static_cast<qint64>(report.size()));
     });
 
     if (_getAirPodsManager) {

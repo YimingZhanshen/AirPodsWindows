@@ -30,6 +30,7 @@
 #include <QVector>
 #include <QMetaObject>
 
+#include "ConnectionDiagnostics.h"
 #include "GlobalMedia.h"
 #include "../Error.h"
 #include "../Helper.h"
@@ -391,6 +392,11 @@ void Manager::ConnectAAP()
     if (SupportsANC(modelToCheck)) {
         uint64_t address = _boundDevice->GetAddress();
         LOG(Info, "Attempting AAP connection for ANC-capable device, address={:016X}", address);
+        Diagnostics::Recorder::Instance().Record(
+            Diagnostics::Step::AdvertisementMatched, true,
+            std::string{"model="} +
+                std::to_string(static_cast<int>(modelToCheck)) +
+                " address=" + Diagnostics::Recorder::MaskAddress(address));
         
         // Connect in a separate thread to avoid blocking the main thread
         // Note: AAPManager::Connect() is thread-safe and handles its own locking
@@ -520,12 +526,16 @@ void Manager::OnAdvWatcherStateChanged(
     case Bluetooth::AdvertisementWatcher::State::Started:
         emit ScannerAvailabilityChanged(true);
         LOG(Info, "Bluetooth AdvWatcher started.");
+        Diagnostics::Recorder::Instance().Record(Diagnostics::Step::ScannerStarted, true);
         break;
 
     case Bluetooth::AdvertisementWatcher::State::Stopped:
         if (_scannerWanted) {
             emit ScannerAvailabilityChanged(false);
             LOG(Warn, "Bluetooth AdvWatcher stopped. Error: '{}'.", optError.value_or("nullopt"));
+            Diagnostics::Recorder::Instance().Record(
+                Diagnostics::Step::ScannerStarted, false,
+                optError.value_or("stopped unexpectedly"));
         }
         else {
             LOG(Info, "Bluetooth AdvWatcher stopped intentionally.");

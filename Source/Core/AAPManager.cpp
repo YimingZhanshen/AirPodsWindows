@@ -17,6 +17,7 @@
 //
 
 #include "AAPManager.h"
+#include "ConnectionDiagnostics.h"
 #include "../Logger.h"
 
 #include <chrono>
@@ -66,6 +67,10 @@ bool Manager::Connect(uint64_t deviceAddress)
     std::lock_guard<std::mutex> lock{_mutex};
 
     _lastConnectFailure.store(ConnectFailure::None);
+    // A fresh attempt starts a fresh step log (blueprint 1.4).
+    Diagnostics::Recorder::Instance().Reset();
+    Diagnostics::Recorder::Instance().Record(
+        Diagnostics::Step::TransportConnect, true, "connect attempt started");
 
     SOCKET sock = INVALID_SOCKET;
     bool connected = false;
@@ -273,6 +278,7 @@ void Manager::Disconnect()
     }
 
     LOG(Info, "AAP: Disconnected");
+    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::Disconnect, true);
 
     // Invoke callback outside lock
     if (callback) {
@@ -518,6 +524,8 @@ AttPathState Manager::GetAttPathState() const
                          .count();
         if (nowMs >= _attProbeDeadlineMs.load()) {
             _attPathState.store(AttPathState::Unconfirmed);
+            Diagnostics::Recorder::Instance().Record(
+                Diagnostics::Step::AttProbe, false, "no ATT answer within 500ms");
             state = AttPathState::Unconfirmed;
         }
     }
@@ -532,6 +540,7 @@ void Manager::StartAttProbe()
     auto packet = Att::BuildReadRequest(Att::kLoudSoundReductionHandle);
     if (!SendPacket(packet)) {
         _attPathState.store(AttPathState::Unconfirmed);
+        Diagnostics::Recorder::Instance().Record(Diagnostics::Step::AttProbe, false, "send failed");
         return;
     }
 
@@ -540,6 +549,7 @@ void Manager::StartAttProbe()
                      .count();
     _attProbeDeadlineMs.store(nowMs + 500);
     _attPathState.store(AttPathState::Pending);
+    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::AttProbe, true, "probe sent");
     LOG(Info, "AAP: Sent ATT probe (read handle 0x{:02X}), waiting up to 500ms",
         Att::kLoudSoundReductionHandle);
 }
@@ -553,6 +563,7 @@ void Manager::ProcessAttFrame(const std::vector<uint8_t>& packet)
         if (previous != AttPathState::Confirmed && _callbacks.onAttProbeResult) {
             _callbacks.onAttProbeResult(AttPathState::Confirmed);
         }
+        Diagnostics::Recorder::Instance().Record(Diagnostics::Step::AttProbe, true, "confirmed");
         LOG(Info, "AAP: ATT path confirmed (read response, {} value bytes)",
             packet.size() - 1);
 
@@ -863,9 +874,11 @@ bool Manager::InitializeConnection()
     // Send handshake
     if (!SendPacket(Packets::Handshake)) {
         LOG(Error, "AAP: Failed to send handshake");
+        Diagnostics::Recorder::Instance().Record(Diagnostics::Step::Handshake, false, "send failed");
         return false;
     }
     LOG(Info, "AAP: Sent handshake");
+    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::Handshake, true);
 
     // Small delay to allow handshake to be processed
     std::this_thread::sleep_for(kPacketProcessingDelay);
@@ -876,15 +889,19 @@ bool Manager::InitializeConnection()
         // Continue anyway - some features may still work
     }
     LOG(Info, "AAP: Sent enable features");
+    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::FeatureFlags, true);
 
     std::this_thread::sleep_for(kPacketProcessingDelay);
 
     // Request notifications (battery, ear detection, noise control, etc.)
     if (!SendPacket(Packets::RequestNotifications)) {
         LOG(Error, "AAP: Failed to send request notifications");
+        Diagnostics::Recorder::Instance().Record(
+            Diagnostics::Step::NotificationSubscribe, false, "send failed");
         return false;
     }
     LOG(Info, "AAP: Sent request notifications");
+    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::NotificationSubscribe, true);
 
     // Blueprint 0.3: probe whether the firmware answers ATT frames on this
     // pipe. Fire-and-forget; the outcome lands in _attPathState and is
@@ -906,14 +923,20 @@ bool Manager::ConnectViaMagicAAP(uint64_t deviceAddress)
     if (!MagicAAPWinRT::MagicAAPWinRTClient::IsDriverInstalled()) {
         LOG(Info, "AAP: MagicAAP driver not installed");
         _lastConnectFailure.store(ConnectFailure::DriverMissing);
+        Diagnostics::Recorder::Instance().Record(
+            Diagnostics::Step::DriverOpen, false, "driver not installed");
         return false;
     }
     
     if (!MagicAAPWinRT::MagicAAPWinRTClient::IsDriverRunning()) {
         LOG(Warn, "AAP: MagicAAP driver installed but not running");
         _lastConnectFailure.store(ConnectFailure::DriverMissing);
+        Diagnostics::Recorder::Instance().Record(
+            Diagnostics::Step::DriverOpen, false, "driver not running");
         return false;
     }
+
+    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::DriverOpen, true);
     
     LOG(Info, "AAP: MagicAAP driver is available, attempting connection...");
     

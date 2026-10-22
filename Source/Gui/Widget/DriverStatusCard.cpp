@@ -52,6 +52,7 @@ DriverStatusCard::DriverStatusCard(QWidget *parent) : QFrame{parent}
 
     _copyButton->setAutoDefault(false);
     _docsButton->setAutoDefault(false);
+    _exportButton->setAutoDefault(false);
 
     auto *textLayout = new QVBoxLayout;
     textLayout->setSpacing(2);
@@ -63,6 +64,7 @@ DriverStatusCard::DriverStatusCard(QWidget *parent) : QFrame{parent}
     buttonLayout->setSpacing(8);
     buttonLayout->addWidget(_copyButton);
     buttonLayout->addWidget(_docsButton);
+    buttonLayout->addWidget(_exportButton);
 
     auto *layout = new QHBoxLayout;
     layout->setSpacing(16);
@@ -79,6 +81,8 @@ DriverStatusCard::DriverStatusCard(QWidget *parent) : QFrame{parent}
     });
     connect(_docsButton, &QPushButton::clicked, this,
             [this] { emit OpenDriverDocsRequested(); });
+    connect(_exportButton, &QPushButton::clicked, this,
+            [this] { emit ExportDiagnosticsRequested(); });
 
     ApplyTheme();
     Refresh();

@@ -23,6 +23,7 @@
 
 #include "Source/Core/AAP.h"
 #include "Source/Core/AAPAtt.h"
+#include "Source/Core/ConnectionDiagnostics.h"
 
 // Table-driven coverage for the AAP protocol layer (blueprint items 0.1 / 0.2 / 0.5):
 // every packet builder emits exactly the documented bytes, every parser accepts the
@@ -454,6 +455,62 @@ private slots:
         QVERIFY(Att::IsAttFrame(Hex({0x1B, 0x1B, 0x00, 0x00})));
         QVERIFY(Att::IsAttFrame(Hex({0x01, 0x0A, 0x1B, 0x00, 0x0A})));
         QVERIFY(!Att::IsAttFrame({}));
+    }
+
+    //////////////////////////////////////////////////
+    // Connection diagnostics (blueprint 1.4)
+    //
+
+    void DiagnosticsStepNamesAreStable()
+    {
+        // The exported report is matched against these names in bug reports;
+        // renaming one silently breaks every past report.
+        using Core::Diagnostics::Step;
+        QCOMPARE(QString{Core::Diagnostics::StepName(Step::ScannerStarted)},
+                 QStringLiteral("scanner_started"));
+        QCOMPARE(QString{Core::Diagnostics::StepName(Step::TransportConnect)},
+                 QStringLiteral("transport_connect"));
+        QCOMPARE(QString{Core::Diagnostics::StepName(Step::Handshake)},
+                 QStringLiteral("handshake"));
+        QCOMPARE(QString{Core::Diagnostics::StepName(Step::AttProbe)},
+                 QStringLiteral("att_probe"));
+        QCOMPARE(QString{Core::Diagnostics::StepName(Step::Disconnect)},
+                 QStringLiteral("disconnect"));
+    }
+
+    void DiagnosticsMasksDeviceAddress()
+    {
+        using Core::Diagnostics::Recorder;
+        const auto masked = Recorder::MaskAddress(0x1122334455667788ULL);
+        // Last byte kept for distinguishability, everything else hidden.
+        QVERIFY(masked.find("88") != std::string::npos);
+        QVERIFY(masked.find("1122") == std::string::npos);
+        QVERIFY(masked.find("77665544332211") == std::string::npos);
+    }
+
+    void DiagnosticsRecorderBuildsReport()
+    {
+        using Core::Diagnostics::Recorder;
+        using Core::Diagnostics::Step;
+
+        auto &recorder = Recorder::Instance();
+        recorder.Reset();
+        QCOMPARE(recorder.StepCount(), size_t{0});
+
+        recorder.Record(Step::Handshake, true);
+        recorder.Record(Step::AttProbe, false, "no ATT answer within 500ms");
+        QCOMPARE(recorder.StepCount(), size_t{2});
+
+        const auto report = recorder.BuildReport("header-line");
+        const auto asString = QString::fromStdString(report);
+        QVERIFY(asString.contains("header-line"));
+        QVERIFY(asString.contains("handshake"));
+        QVERIFY(asString.contains("att_probe"));
+        QVERIFY(asString.contains("FAILED"));
+        QVERIFY(asString.contains("no ATT answer within 500ms"));
+
+        recorder.Reset();
+        QCOMPARE(recorder.StepCount(), size_t{0});
     }
 };
 
