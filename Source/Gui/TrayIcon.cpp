@@ -85,6 +85,12 @@ TrayIcon::TrayIcon(
     _tray->show();
 }
 
+void TrayIcon::SetAirPodsManagerProvider(
+    std::function<Core::AirPods::Manager &()> getAirPodsManager)
+{
+    _settingsWindow.SetAirPodsManagerProvider(std::move(getAirPodsManager));
+}
+
 void TrayIcon::SetupNoiseControlMenu()
 {
     // Make actions checkable

@@ -216,6 +216,11 @@ bool ApdApplication::Prepare(int argc, char *argv[])
     _autoStartService = Core::AutoStart::CreateAutoStartService();
     _airPodsManager = std::make_unique<Core::AirPods::Manager>(this);
 
+    // The tray icon built the settings window (and its driver status card)
+    // before the manager existed; hand the provider over now that it does.
+    _trayIcon->SetAirPodsManagerProvider(
+        [this]() -> Core::AirPods::Manager & { return GetAirPodsManager(); });
+
     qRegisterMetaType<Core::AirPods::State>("Core::AirPods::State");
 
     ConnectGuiComponents();

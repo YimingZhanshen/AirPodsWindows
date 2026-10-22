@@ -50,6 +50,13 @@ public:
         std::function<Core::AirPods::Manager &()> getAirPodsManager = {}, QWidget *parent = nullptr);
     void SetLowAudioLatencyChecked(bool checked);
 
+    // Installs the application's AirPods manager into the driver status card.
+    // MUST run after the manager is created: the tray icon builds this window
+    // before ApdApplication creates the manager, so resolving it during
+    // construction dereferences a null pointer (hardware-found startup crash;
+    // unit tests pass no provider and never hit the path).
+    void SetAirPodsManagerProvider(std::function<Core::AirPods::Manager &()> getAirPodsManager);
+
     int GetTabCount() const;
     int GetTabCurrentIndex() const;
     int GetTabLastVisibleIndex() const;

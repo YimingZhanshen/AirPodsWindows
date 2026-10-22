@@ -55,6 +55,9 @@ public:
     void Unavailable();
     void Disconnect();
     void Unbind();
+    // Forwards the application's AirPods manager to the settings window's
+    // driver status card; the application calls this after the manager exists.
+    void SetAirPodsManagerProvider(std::function<Core::AirPods::Manager &()> getAirPodsManager);
     void VersionUpdateAvailable(const Core::Update::ReleaseInfo &releaseInfo);
     void UpdateNoiseControlMode(Core::AAP::NoiseControlMode mode);
     void ShowContextMenu(const QPoint &position);

@@ -93,8 +93,14 @@ SettingsWindow::SettingsWindow(
     std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect,
     std::function<Core::AirPods::Manager &()> getAirPodsManager, QWidget *parent)
     : QDialog{parent}, _getCurrentLocaleIndex{std::move(getCurrentLocaleIndex)},
-      _quickConnect{quickConnect}, _getAirPodsManager{std::move(getAirPodsManager)}
+      _quickConnect{quickConnect}
 {
+    // getAirPodsManager is deliberately NOT stored here: this window is built
+    // by the tray icon before the application's AirPods manager exists, so any
+    // resolution during construction dereferences a null pointer. The provider
+    // is installed later via SetAirPodsManagerProvider().
+    static_cast<void>(getAirPodsManager);
+
     _ui.setupUi(this);
 
     // Navigation pane + stacked pages replace the former tab widget. The last page is Debug.
@@ -404,8 +410,10 @@ void SettingsWindow::SetupDriverStatusCard()
     const auto deviceCardIndex = _ui.generalLayout->indexOf(_ui.cardDevice);
     _ui.generalLayout->insertWidget(deviceCardIndex + 1, _driverStatusCard);
 
-    _driverStatusCard->SetManagerProvider(_getAirPodsManager);
-    _driverStatusCard->setVisible(static_cast<bool>(_getAirPodsManager));
+    // No manager yet: the card stays hidden until SetAirPodsManagerProvider()
+    // runs. Resolving the manager here would dereference the not-yet-created
+    // application manager (the tray icon builds this window before it exists).
+    _driverStatusCard->setVisible(false);
 
     connect(_driverStatusCard, &DriverStatusCard::OpenDriverDocsRequested, this, [] {
         QDesktopServices::openUrl(QUrl{
@@ -447,8 +455,22 @@ void SettingsWindow::SetupDriverStatusCard()
         const auto report = Core::Diagnostics::Recorder::Instance().BuildReport(header);
         file.write(report.data(), static_cast<qint64>(report.size()));
     });
+}
 
-    if (_getAirPodsManager) {
+// Called by the application layer once the AirPods manager exists; see the
+// header for why this cannot happen during construction.
+void SettingsWindow::SetAirPodsManagerProvider(
+    std::function<Core::AirPods::Manager &()> getAirPodsManager)
+{
+    _getAirPodsManager = std::move(getAirPodsManager);
+    if (_driverStatusCard == nullptr || !_getAirPodsManager) {
+        return;
+    }
+
+    _driverStatusCard->setVisible(true);
+    _driverStatusCard->SetManagerProvider(_getAirPodsManager);
+
+    if (!_driverCardSignalConnected) {
         auto &manager = _getAirPodsManager();
         connect(
             &manager, &Core::AirPods::Manager::AapConnectionStateChangedSafely, _driverStatusCard,
