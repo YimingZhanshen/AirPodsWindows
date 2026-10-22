@@ -44,19 +44,11 @@ jobs:
       run:
         shell: pwsh
 
-    env:
-      # sccache uses the Actions cache backend without extra credentials; the
-      # compiler launchers below route every translation unit through it.
-      SCCACHE_GHA_ENABLED: "true"
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           submodules: recursive
-
-      - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Check release version
         id: version
@@ -114,16 +106,16 @@ jobs:
           & Build/vcpkg/bootstrap-vcpkg.bat -disableMetrics
 
       - name: Configure
+        # NOTE: no CMAKE_<LANG>_COMPILER_LAUNCHER (sccache) here — the Visual
+        # Studio generator ignores the launcher property entirely (verified:
+        # a fake launcher is never invoked, and sccache reported 0 compile
+        # requests). Only Makefile/Ninja generators honor it.
         run: |
           cmake -S . -B Build/Release `
             -G 'Visual Studio 17 2022' `
             -A x64 `
             -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/Build/vcpkg/scripts/buildsystems/vcpkg.cmake `
             -DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR `
-            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
-            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
-            -DCMAKE_EXE_LINKER_LAUNCHER=sccache `
-            -DCMAKE_SHARED_LINKER_LAUNCHER=sccache `
             -DAPD_BUILD_TESTS=ON `
             -DAPD_GENERATE_INSTALLER=ON `
             -DAPD_GITHUB_OWNER=${{ github.repository_owner }} `
@@ -132,10 +124,6 @@ jobs:
 
       - name: Build
         run: cmake --build Build/Release --config $env:BUILD_TYPE --parallel 2
-
-      - name: Show sccache stats
-        if: always()
-        run: sccache --show-stats
 
       - name: Test
         run: |
