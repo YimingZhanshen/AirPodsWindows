@@ -94,12 +94,14 @@ jobs:
 
       # The whole vcpkg checkout (including the bootstrapped vcpkg.exe) is
       # reused across runs; runners are same-platform so the tool stays valid.
+      # v2: the v1 entry may hold a --depth 1 checkout saved by a failed run
+      # (actions/cache saves on failure too), which cannot serve the baseline.
       - name: Cache vcpkg
         id: vcpkg-cache
         uses: actions/cache@v4
         with:
           path: Build/vcpkg
-          key: vcpkg-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-v2-${{ hashFiles('vcpkg.json') }}
 
       # Full history required: vcpkg.json pins builtin-baseline to a specific
       # commit and vcpkg `git show`s it, which a --depth 1 clone cannot serve.
