@@ -197,6 +197,7 @@ PDU：读 `0A [handle] 00`→`0B [value…]`；写 `12 [handle] 00 [value…]`�
 大声压写 `12 1B 00 [01/00]`（01=开、00=关，**非** 01/02 惯例；`AccessibilitySettingsScreen.kt:264-268`、`HearingProtectionScreen.kt:91-95`）。
 **到达前提（VendorID spoof）**：本机 DID VendorID=Apple `0x004C`、source=0x0001。Linux `/etc/bluetooth/main.conf` `DeviceID = bluetooth:004C:0000:0000`（`README.md:107-111`）；Android Xposed `fake_BTA_DmSetLocalDiRecord`（`l2c_fcr_hook.cpp:58-79`），ATT socket 仅在 hook 开启时建（`AirPodsService.kt:2655-2670`）。README ⚪ 项=需 spoof（`README.md:42-59`）。
 **MagicPods 逆向补充（Windows 第三实现）**：全程序集无任何 ATT PDU 模板、无独立 socket/RFCOMM API，仅经 MagicAAP 驱动管道收发 AAP 帧；VendorID spoof 在 Windows 路径不存在（bthprops 仅用于启用远端 AAP 服务）。即 ATT 是 LibrePods 自建 PSM 0x001F socket 的专有路径，**本项目经驱动管道发 `12 1B 00` 属未验证路径**（驱动仅绑 AAP PSM 0x1001）；逆向细节见维护者内部笔记（未入库）。
+本仓库曾有第二驱动客户端实现 `MagicAAPClient.{h,cpp}`（CreateFile/ReadFile 直连设备接口，355 行，从未进 CMake 源列表、从未编译），v1.3.1 已删除；现行实现为 `MagicAAPWinRT.{h,cpp}`。
 **分歧/风险**：0x1B CCCD 坏（只能写后读）；文档透明度表 "Ambient Noise Reduction" 列了两遍（`AAP Definitions.md:294-303`），第二行疑为 ownVoice/笔误（文档未给出）；助听 0x60→0x64 原因未解释（照抄）；0x1B 用 00/01 易错。
 
 ## 13. 多设备/智能路由
