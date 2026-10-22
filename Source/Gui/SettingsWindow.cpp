@@ -34,6 +34,7 @@
 #include <Config.h>
 
 #include "../Core/Debug.h"
+#include "Widget/DriverStatusCard.h"
 
 using namespace std::chrono_literals;
 
@@ -85,9 +86,9 @@ void ConfigureComboBoxPopup(QComboBox *comboBox)
 
 SettingsWindow::SettingsWindow(
     std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect,
-    QWidget *parent)
+    std::function<Core::AirPods::Manager &()> getAirPodsManager, QWidget *parent)
     : QDialog{parent}, _getCurrentLocaleIndex{std::move(getCurrentLocaleIndex)},
-      _quickConnect{quickConnect}
+      _quickConnect{quickConnect}, _getAirPodsManager{std::move(getAirPodsManager)}
 {
     _ui.setupUi(this);
 
@@ -329,6 +330,8 @@ SettingsWindow::SettingsWindow(
             On_pbOpenLogsDirectory_clicked();
         }
     });
+
+    SetupDriverStatusCard();
 }
 
 int SettingsWindow::GetTabCount() const
@@ -386,6 +389,34 @@ void SettingsWindow::UpdateStandardButtonTexts()
 {
     _ui.buttonBox->button(QDialogButtonBox::RestoreDefaults)->setText(tr("Restore Defaults"));
     _ui.buttonBox->button(QDialogButtonBox::Close)->setText(tr("Close"));
+}
+
+// Inserts the driver status card after the device card on the General page and
+// wires its refresh to the AAP connection state (blueprint 1.1).
+void SettingsWindow::SetupDriverStatusCard()
+{
+    _driverStatusCard = new DriverStatusCard{_ui.general};
+    const auto deviceCardIndex = _ui.generalLayout->indexOf(_ui.cardDevice);
+    _ui.generalLayout->insertWidget(deviceCardIndex + 1, _driverStatusCard);
+
+    _driverStatusCard->SetManagerProvider(_getAirPodsManager);
+    _driverStatusCard->setVisible(static_cast<bool>(_getAirPodsManager));
+
+    connect(_driverStatusCard, &DriverStatusCard::OpenDriverDocsRequested, this, [] {
+        QDesktopServices::openUrl(QUrl{
+            QStringLiteral("https://github.com/YimingZhanshen/AirPodsWindows/blob/main/Docs/Driver.md")});
+    });
+
+    if (_getAirPodsManager) {
+        auto &manager = _getAirPodsManager();
+        connect(
+            &manager, &Core::AirPods::Manager::AapConnectionStateChangedSafely, _driverStatusCard,
+            [this](bool) { _driverStatusCard->Refresh(); });
+        connect(
+            &manager, &Core::AirPods::Manager::AapConnectionFailedSafely, _driverStatusCard,
+            [this](int) { _driverStatusCard->Refresh(); });
+        _driverCardSignalConnected = true;
+    }
 }
 
 void SettingsWindow::InitCreditsText()
@@ -595,6 +626,12 @@ void SettingsWindow::showEvent(QShowEvent *event)
     // Enumerating paired Bluetooth devices and every audio endpoint is not free, so it happens
     // when the dialog is opened rather than on every application start.
     _quickConnect.RefreshDevices();
+
+    // The driver can be installed (or broken by a Windows update) while the app runs;
+    // re-probe the link state each time the dialog opens.
+    if (_driverStatusCard != nullptr) {
+        _driverStatusCard->Refresh();
+    }
 }
 
 void SettingsWindow::On_cbLanguages_currentIndexChanged(int index)

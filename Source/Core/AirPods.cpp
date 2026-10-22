@@ -399,6 +399,8 @@ void Manager::ConnectAAP()
                 LOG(Info, "AAP connection established successfully");
             } else {
                 LOG(Warn, "AAP connection failed - ANC features will not be available");
+                emit AapConnectionFailedSafely(
+                    static_cast<int>(_aapMgr.GetLastConnectFailure()));
             }
         }).detach();
     } else {
@@ -597,6 +599,21 @@ bool Manager::IsAAPConnected() const
     return _aapMgr.IsConnected();
 }
 
+bool Manager::IsAAPConnectedViaMagicAAP() const
+{
+    return _aapMgr.IsConnectedViaMagicAAP();
+}
+
+AAP::AttPathState Manager::GetAAPAttPathState() const
+{
+    return _aapMgr.GetAttPathState();
+}
+
+AAP::ConnectFailure Manager::GetLastAAPConnectFailure() const
+{
+    return _aapMgr.GetLastConnectFailure();
+}
+
 bool Manager::StartHeadTracking()
 {
     return _aapMgr.StartHeadTracking();
@@ -783,6 +800,8 @@ void Manager::OnAAPConnected()
 {
     LOG(Info, "AAP connection established - ANC features available");
     
+    emit AapConnectionStateChangedSafely(true);
+
     // Apply user's conversational awareness preference
     if (_conversationalAwarenessEnabled) {
         _aapMgr.SetConversationalAwareness(true);
@@ -792,6 +811,7 @@ void Manager::OnAAPConnected()
 void Manager::OnAAPDisconnected()
 {
     LOG(Info, "AAP connection lost - ANC features unavailable");
+    emit AapConnectionStateChangedSafely(false);
 }
 
 std::vector<Bluetooth::Device> GetDevices()

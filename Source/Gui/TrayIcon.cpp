@@ -33,7 +33,8 @@ namespace Gui {
 TrayIcon::TrayIcon(
     std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect,
     std::function<Core::AirPods::Manager &()> getAirPodsManager)
-    : _quickConnect{quickConnect}, _settingsWindow{std::move(getCurrentLocaleIndex), quickConnect}
+    : _quickConnect{quickConnect},
+      _settingsWindow{std::move(getCurrentLocaleIndex), quickConnect, getAirPodsManager}
 {
     _getAirPodsManager = std::move(getAirPodsManager);
     Theme::ConfigurePopupSurface(_menu);

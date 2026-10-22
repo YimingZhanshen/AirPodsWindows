@@ -347,6 +347,7 @@ set(
     "Source/Gui/SettingsWindow.cpp"
     "Source/Gui/Widget/Battery.cpp"
     "Source/Gui/Widget/AnimationView.cpp"
+    "Source/Gui/Widget/DriverStatusCard.cpp"
     "Source/Gui/Theme.cpp"
 )
 

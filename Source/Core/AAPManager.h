@@ -52,6 +52,16 @@ enum class AttPathState : uint8_t {
     Unconfirmed // no ATT answer within the probe window
 };
 
+// Why the last Connect() attempt failed (blueprint 1.3): surfaced to the UI so
+// users see an actionable reason instead of a silent feature blackout.
+enum class ConnectFailure : uint8_t {
+    None,              // no failure recorded (connected, or never attempted)
+    DriverMissing,     // MagicAAP driver not installed or not running
+    ServiceUnavailable,// device reachable but does not expose the AAP service
+    TransportError,    // socket/driver transport could not be created or failed
+    HandshakeFailure,  // transport up, but the AAP handshake did not complete
+};
+
 //////////////////////////////////////////////////
 // Callbacks for AAP events
 //
@@ -143,6 +153,9 @@ public:
     // Lazily flips a pending probe to Unconfirmed once its 500ms window passes.
     AttPathState GetAttPathState() const;
 
+    // Reason the most recent Connect() attempt failed (blueprint 1.3).
+    ConnectFailure GetLastConnectFailure() const { return _lastConnectFailure.load(); }
+
 private:
     mutable std::mutex _mutex;
     std::atomic<bool> _connected{false};
@@ -162,6 +175,9 @@ private:
     // Unconfirmed lazily once the deadline passes — no probe thread needed.
     std::atomic<AttPathState> _attPathState{AttPathState::Unknown};
     std::atomic<int64_t> _attProbeDeadlineMs{0};
+
+    // Why the last Connect() attempt failed; reset to None on success.
+    std::atomic<ConnectFailure> _lastConnectFailure{ConnectFailure::None};
     
     // Callbacks
     Callbacks _callbacks;

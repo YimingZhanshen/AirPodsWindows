@@ -65,13 +65,17 @@ bool Manager::Connect(uint64_t deviceAddress)
 
     std::lock_guard<std::mutex> lock{_mutex};
 
+    _lastConnectFailure.store(ConnectFailure::None);
+
     SOCKET sock = INVALID_SOCKET;
     bool connected = false;
+    bool anySocketCreated = false;
 
     // Method 1: Try L2CAP with SOCK_SEQPACKET (datagram-oriented, more native for L2CAP)
     LOG(Info, "AAP: Attempting L2CAP SEQPACKET connection to {:016X} on PSM {}", deviceAddress, kPSM);
     sock = socket(AF_BTH, SOCK_SEQPACKET, BTHPROTO_L2CAP);
     if (sock != INVALID_SOCKET) {
+        anySocketCreated = true;
         SOCKADDR_BTH addr{};
         addr.addressFamily = AF_BTH;
         addr.btAddr = deviceAddress;
@@ -95,6 +99,7 @@ bool Manager::Connect(uint64_t deviceAddress)
         LOG(Info, "AAP: Attempting L2CAP STREAM connection");
         sock = socket(AF_BTH, SOCK_STREAM, BTHPROTO_L2CAP);
         if (sock != INVALID_SOCKET) {
+            anySocketCreated = true;
             SOCKADDR_BTH addr{};
             addr.addressFamily = AF_BTH;
             addr.btAddr = deviceAddress;
@@ -117,6 +122,7 @@ bool Manager::Connect(uint64_t deviceAddress)
         LOG(Info, "AAP: Attempting RFCOMM with AAP UUID");
         sock = socket(AF_BTH, SOCK_STREAM, BTHPROTO_RFCOMM);
         if (sock != INVALID_SOCKET) {
+            anySocketCreated = true;
             SOCKADDR_BTH addr{};
             addr.addressFamily = AF_BTH;
             addr.btAddr = deviceAddress;
@@ -137,13 +143,18 @@ bool Manager::Connect(uint64_t deviceAddress)
 
     if (!connected || sock == INVALID_SOCKET) {
         LOG(Info, "AAP: Traditional socket methods failed, trying MagicAAP WinRT...");
-        
+
+        // Record the socket verdict first; ConnectViaMagicAAP overrides it with
+        // a more precise driver-side reason when it fails.
+        _lastConnectFailure.store(
+            anySocketCreated ? ConnectFailure::ServiceUnavailable : ConnectFailure::TransportError);
+
         // Method 4: Try MagicAAP WinRT (requires MagicAAP driver)
         if (ConnectViaMagicAAP(deviceAddress)) {
             // MagicAAP connection successful - don't need socket-based logic
             return true;
         }
-        
+
         LOG(Error, "AAP: All connection methods failed");
         return false;
     }
@@ -157,6 +168,7 @@ bool Manager::Connect(uint64_t deviceAddress)
     if (!InitializeConnection()) {
         LOG(Error, "AAP: Failed to initialize connection");
         // Clean up without calling Disconnect to avoid lock issues
+        _lastConnectFailure.store(ConnectFailure::HandshakeFailure);
         _connected = false;
         closesocket(sock);
         _socket = nullptr;
@@ -167,6 +179,8 @@ bool Manager::Connect(uint64_t deviceAddress)
     _stopReader = false;
     _readerExited = false;
     _readerThread = std::thread(&Manager::ReaderLoop, this);
+
+    _lastConnectFailure.store(ConnectFailure::None);
 
     if (_callbacks.onConnected) {
         _callbacks.onConnected();
@@ -891,11 +905,13 @@ bool Manager::ConnectViaMagicAAP(uint64_t deviceAddress)
     // Check if MagicAAP driver is available
     if (!MagicAAPWinRT::MagicAAPWinRTClient::IsDriverInstalled()) {
         LOG(Info, "AAP: MagicAAP driver not installed");
+        _lastConnectFailure.store(ConnectFailure::DriverMissing);
         return false;
     }
     
     if (!MagicAAPWinRT::MagicAAPWinRTClient::IsDriverRunning()) {
         LOG(Warn, "AAP: MagicAAP driver installed but not running");
+        _lastConnectFailure.store(ConnectFailure::DriverMissing);
         return false;
     }
     
@@ -934,6 +950,7 @@ bool Manager::ConnectViaMagicAAP(uint64_t deviceAddress)
         // Initialize the AAP protocol
         if (!InitializeConnection()) {
             LOG(Error, "AAP: Failed to initialize MagicAAP connection");
+            _lastConnectFailure.store(ConnectFailure::HandshakeFailure);
             _magicAAPClient->Disconnect();
             _magicAAPClient.reset();
             _connected = false;
@@ -941,6 +958,7 @@ bool Manager::ConnectViaMagicAAP(uint64_t deviceAddress)
             return false;
         }
         
+        _lastConnectFailure.store(ConnectFailure::None);
         if (_callbacks.onConnected) {
             _callbacks.onConnected();
         }
@@ -954,6 +972,7 @@ bool Manager::ConnectViaMagicAAP(uint64_t deviceAddress)
         std::wstring errorW = _magicAAPClient->GetLastError();
         std::string error(errorW.begin(), errorW.end());
         LOG(Warn, "AAP: MagicAAP WinRT connection failed: {}", error);
+        _lastConnectFailure.store(ConnectFailure::TransportError);
         _magicAAPClient.reset();
         return false;
     }
@@ -966,6 +985,7 @@ bool Manager::ConnectViaMagicAAP(uint64_t deviceAddress)
     // Initialize the AAP protocol
     if (!InitializeConnection()) {
         LOG(Error, "AAP: Failed to initialize MagicAAP connection");
+        _lastConnectFailure.store(ConnectFailure::HandshakeFailure);
         _magicAAPClient->Disconnect();
         _magicAAPClient.reset();
         _connected = false;
@@ -973,6 +993,7 @@ bool Manager::ConnectViaMagicAAP(uint64_t deviceAddress)
         return false;
     }
     
+    _lastConnectFailure.store(ConnectFailure::None);
     if (_callbacks.onConnected) {
         _callbacks.onConnected();
     }

@@ -36,6 +36,8 @@ namespace Gui {
 
 using namespace Core::Settings;
 
+class DriverStatusCard;
+
 class SettingsWindow : public QDialog
 {
     Q_OBJECT
@@ -43,7 +45,7 @@ class SettingsWindow : public QDialog
 public:
     explicit SettingsWindow(
         std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect,
-        QWidget *parent = nullptr);
+        std::function<Core::AirPods::Manager &()> getAirPodsManager = {}, QWidget *parent = nullptr);
     void SetLowAudioLatencyChecked(bool checked);
 
     int GetTabCount() const;
@@ -58,8 +60,12 @@ private:
     QString _aboutTextTemplate;
     std::function<int()> _getCurrentLocaleIndex;
     Core::QuickConnect::Controller &_quickConnect;
+    std::function<Core::AirPods::Manager &()> _getAirPodsManager;
+    DriverStatusCard *_driverStatusCard{nullptr};
+    bool _driverCardSignalConnected{false};
 
     void InitCreditsText();
+    void SetupDriverStatusCard();
     void RestoreDefaults();
     void Update(const Fields &fields, bool trigger);
     void UpdateQuickConnectDevices(const Fields &fields);
@@ -109,6 +115,9 @@ private:
         _aboutTextTemplate = _ui.label->text();
         InitCreditsText();
         UpdateDescriptions();
+        if (_driverStatusCard != nullptr) {
+            _driverStatusCard->Refresh();
+        }
         // QDialogButtonBox handles LanguageChange after its parent and resets standard-button
         // labels to Qt's platform text. Apply our app translations once propagation ends.
         QTimer::singleShot(0, this, [this] { UpdateStandardButtonTexts(); });

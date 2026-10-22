@@ -204,6 +204,11 @@ public:
     bool SetAdaptiveNoiseLevel(uint8_t level);
     bool IsAAPConnected() const;
 
+    // AAP link introspection (blueprint 1.1/1.3)
+    bool IsAAPConnectedViaMagicAAP() const;
+    AAP::AttPathState GetAAPAttPathState() const;
+    AAP::ConnectFailure GetLastAAPConnectFailure() const;
+
     // Head tracking
     bool StartHeadTracking();
     bool StopHeadTracking();
@@ -268,6 +273,12 @@ Q_SIGNALS:
     void LidToggled(bool opened);
     void ScannerAvailabilityChanged(bool available);
     void DeviceConnectionChanged(bool connected);
+    // Emitted from AAP callback threads; cross-thread receivers get the queued
+    // delivery Qt applies automatically.
+    void AapConnectionStateChangedSafely(bool connected);
+    // Payload is Core::AAP::ConnectFailure cast to int (registered metatypes
+    // stay free of AAP enums).
+    void AapConnectionFailedSafely(int failure);
 };
 
 std::vector<Core::Bluetooth::Device> GetDevices();
