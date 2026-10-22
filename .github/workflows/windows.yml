@@ -101,10 +101,14 @@ jobs:
           path: Build/vcpkg
           key: vcpkg-${{ hashFiles('vcpkg.json') }}
 
+      # Full history required: vcpkg.json pins builtin-baseline to a specific
+      # commit and vcpkg `git show`s it, which a --depth 1 clone cannot serve.
+      # The cache above keeps the full checkout warm so this only runs when the
+      # baseline (vcpkg.json) changes.
       - name: Clone and bootstrap vcpkg
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git Build/vcpkg
+          git clone https://github.com/microsoft/vcpkg.git Build/vcpkg
           & Build/vcpkg/bootstrap-vcpkg.bat -disableMetrics
 
       - name: Configure
