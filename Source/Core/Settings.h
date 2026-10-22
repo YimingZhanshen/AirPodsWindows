@@ -95,7 +95,7 @@ void SetRepository(std::unique_ptr<Repository> repository);
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Protects your hearing by reducing loud sounds.")})                 \
     callback(uint8_t, adaptive_transparency_level, {25},                                           \
         Impl::OnApply(&OnApply_adaptive_transparency_level),                                       \
-        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Controls the amount of environmental sound in Adaptive mode (0-50).")}) \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Caps how loud loud sounds get, for hearing protection (0-100).")}) \
     callback(uint32_t, noise_control_mode, {1},                                                    \
         Impl::OnApply(&OnApply_noise_control_mode),                                                \
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).")}) \

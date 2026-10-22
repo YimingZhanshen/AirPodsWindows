@@ -1291,7 +1291,7 @@
               <item>
                <widget class="QLabel" name="lbAdaptiveTransparencyLevel">
                 <property name="text">
-                 <string>Adaptive transparency level</string>
+                 <string>Hearing protection cap (PPE)</string>
                 </property>
                 <property name="cssClass" stdset="0">
                  <string notr="true">cardTitle</string>
