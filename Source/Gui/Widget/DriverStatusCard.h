@@ -24,7 +24,7 @@
 #include <QLabel>
 #include <QPushButton>
 
-#include "../Core/AirPods.h"
+#include "../../Core/AirPods.h"
 
 namespace Gui {
 
