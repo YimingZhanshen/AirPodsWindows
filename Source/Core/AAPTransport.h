@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <condition_variable>
 #include <cstddef>
@@ -28,6 +29,12 @@
 #include <span>
 #include <stop_token>
 #include <vector>
+
+class AAPTransportTests;
+
+namespace Core::MagicAAPWinRT {
+class MagicAAPWinRTClient;
+} // namespace Core::MagicAAPWinRT
 
 namespace Core::AAP {
 
@@ -63,17 +70,28 @@ public:
     }
 
 private:
-    void *_socket{nullptr};
+    // Receive and Send pin the socket state while using its handle. Close shuts
+    // it down immediately, but the descriptor is physically closed only after
+    // the last pin is released, so Windows cannot reuse its handle underneath
+    // an active reader or writer.
+    struct SocketState {
+        explicit SocketState(void *socketHandle);
+        ~SocketState();
+        void Shutdown();
+
+        void *handle;
+        std::atomic<bool> closed{false};
+    };
+
+    std::shared_ptr<SocketState> _socket;
     std::mutex _ioMutex;
     bool _closed{false};
     bool _winsockInitialized{false};
+
+    friend class ::AAPTransportTests;
 };
 
 std::unique_ptr<AAPTransport> CreateSeqPacketTransport();
-
-namespace MagicAAPWinRT {
-class MagicAAPWinRTClient;
-}
 
 // P1 keeps the existing device-interface receiver thread. Its callback only
 // enqueues complete ReadFile records; synchronous Receive owns the queue wait.
@@ -97,7 +115,7 @@ private:
     void SignalEof();
 
     mutable std::mutex _clientMutex;
-    std::unique_ptr<MagicAAPWinRT::MagicAAPWinRTClient> _client;
+    std::unique_ptr<Core::MagicAAPWinRT::MagicAAPWinRTClient> _client;
     std::mutex _queueMutex;
     std::condition_variable_any _queueCondition;
     std::deque<std::vector<uint8_t>> _records;

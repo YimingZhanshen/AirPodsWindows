@@ -67,7 +67,7 @@ AAPMessage::ValidationResult ValidateAtt(std::span<const uint8_t> record)
         minimumSize = 2;
         break;
     case Att::kOpcodeWriteCommand:
-        minimumSize = 3;
+        minimumSize = 4;
         break;
     case Att::kOpcodeHandleValueNotification:
         minimumSize = 3;

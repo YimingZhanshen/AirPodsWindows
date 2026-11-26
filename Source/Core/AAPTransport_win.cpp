@@ -58,6 +58,20 @@ bool ValidateRecord(std::span<const uint8_t> record, AAPTransportKind kind)
 
 } // namespace
 
+SeqPacketTransport::SocketState::SocketState(void *socketHandle) : handle(socketHandle) {}
+
+SeqPacketTransport::SocketState::~SocketState()
+{
+    closesocket(reinterpret_cast<SOCKET>(handle));
+}
+
+void SeqPacketTransport::SocketState::Shutdown()
+{
+    if (!closed.exchange(true)) {
+        shutdown(reinterpret_cast<SOCKET>(handle), SD_BOTH);
+    }
+}
+
 SeqPacketTransport::SeqPacketTransport()
 {
     WSADATA data{};
@@ -72,6 +86,10 @@ SeqPacketTransport::SeqPacketTransport()
 SeqPacketTransport::~SeqPacketTransport()
 {
     Close();
+    if (_winsockInitialized) {
+        WSACleanup();
+        _winsockInitialized = false;
+    }
 }
 
 bool SeqPacketTransport::Connect(uint64_t address, std::stop_token stop)
@@ -112,7 +130,7 @@ bool SeqPacketTransport::Connect(uint64_t address, std::stop_token stop)
         return false;
     }
 
-    _socket = reinterpret_cast<void *>(socketHandle);
+    _socket = std::make_shared<SocketState>(reinterpret_cast<void *>(socketHandle));
     _closed = false;
     spdlog::info("[AAPTransport] Connected with L2CAP SEQPACKET");
     return true;
@@ -124,16 +142,26 @@ bool SeqPacketTransport::Send(std::span<const uint8_t> data, std::stop_token sto
         return false;
     }
 
-    std::lock_guard<std::mutex> lock{_ioMutex};
-    if (_closed || _socket == nullptr) {
+    std::shared_ptr<SocketState> socket;
+    {
+        std::lock_guard<std::mutex> lock{_ioMutex};
+        if (_closed || _socket == nullptr) {
+            return false;
+        }
+        socket = _socket;
+    }
+    if (stop.stop_requested() || socket->closed.load()) {
         return false;
     }
 
     const int sent = send(
-        reinterpret_cast<SOCKET>(_socket), reinterpret_cast<const char *>(data.data()),
+        reinterpret_cast<SOCKET>(socket->handle), reinterpret_cast<const char *>(data.data()),
         static_cast<int>(data.size()), 0);
     if (sent == SOCKET_ERROR) {
-        spdlog::error("[AAPTransport] SEQPACKET send failed: {}", WSAGetLastError());
+        const int error = WSAGetLastError();
+        if (!socket->closed.load() && !stop.stop_requested()) {
+            spdlog::error("[AAPTransport] SEQPACKET send failed: {}", error);
+        }
         return false;
     }
     if (static_cast<size_t>(sent) != data.size()) {
@@ -147,12 +175,19 @@ bool SeqPacketTransport::Send(std::span<const uint8_t> data, std::stop_token sto
 std::optional<std::vector<uint8_t>> SeqPacketTransport::Receive(std::stop_token stop)
 {
     std::array<uint8_t, AAPMessage::kMaxRecordSize + 1> buffer{};
-    std::lock_guard<std::mutex> lock{_ioMutex};
+    std::shared_ptr<SocketState> socket;
+    {
+        std::lock_guard<std::mutex> lock{_ioMutex};
+        if (_closed || _socket == nullptr) {
+            return std::nullopt;
+        }
+        socket = _socket;
+    }
 
-    while (!stop.stop_requested() && !_closed && _socket != nullptr) {
+    while (!stop.stop_requested() && !socket->closed.load()) {
         fd_set readSet;
         FD_ZERO(&readSet);
-        FD_SET(reinterpret_cast<SOCKET>(_socket), &readSet);
+        FD_SET(reinterpret_cast<SOCKET>(socket->handle), &readSet);
         timeval timeout{};
         timeout.tv_sec = 0;
         timeout.tv_usec = static_cast<long>(kReceivePollInterval.count() * 1000);
@@ -160,21 +195,27 @@ std::optional<std::vector<uint8_t>> SeqPacketTransport::Receive(std::stop_token 
         const int selected = select(0, &readSet, nullptr, nullptr, &timeout);
         if (selected == SOCKET_ERROR) {
             const int error = WSAGetLastError();
+            if (stop.stop_requested() || socket->closed.load()) {
+                return std::nullopt;
+            }
             if (error == WSAEINTR) {
                 continue;
             }
             spdlog::error("[AAPTransport] SEQPACKET select failed: {}", error);
             return std::nullopt;
         }
-        if (selected == 0) {
+        if (selected == 0 || stop.stop_requested() || socket->closed.load()) {
             continue;
         }
 
         const int received = recv(
-            reinterpret_cast<SOCKET>(_socket), reinterpret_cast<char *>(buffer.data()),
+            reinterpret_cast<SOCKET>(socket->handle), reinterpret_cast<char *>(buffer.data()),
             static_cast<int>(buffer.size()), 0);
         if (received == SOCKET_ERROR) {
             const int error = WSAGetLastError();
+            if (stop.stop_requested() || socket->closed.load()) {
+                return std::nullopt;
+            }
             if (error == WSAEWOULDBLOCK || error == WSAEINTR) {
                 continue;
             }
@@ -187,6 +228,9 @@ std::optional<std::vector<uint8_t>> SeqPacketTransport::Receive(std::stop_token 
         }
         if (received == 0) {
             spdlog::info("[AAPTransport] SEQPACKET peer closed the connection");
+            return std::nullopt;
+        }
+        if (stop.stop_requested() || socket->closed.load()) {
             return std::nullopt;
         }
 
@@ -206,17 +250,14 @@ std::optional<std::vector<uint8_t>> SeqPacketTransport::Receive(std::stop_token 
 
 void SeqPacketTransport::Close()
 {
-    std::lock_guard<std::mutex> lock{_ioMutex};
-    _closed = true;
-    if (_socket != nullptr) {
-        const SOCKET socketHandle = reinterpret_cast<SOCKET>(_socket);
-        shutdown(socketHandle, SD_BOTH);
-        closesocket(socketHandle);
-        _socket = nullptr;
+    std::shared_ptr<SocketState> socket;
+    {
+        std::lock_guard<std::mutex> lock{_ioMutex};
+        _closed = true;
+        socket = std::move(_socket);
     }
-    if (_winsockInitialized) {
-        WSACleanup();
-        _winsockInitialized = false;
+    if (socket) {
+        socket->Shutdown();
     }
 }
 

@@ -18,16 +18,144 @@
 
 #include <chrono>
 #include <future>
+#include <memory>
+#include <optional>
 #include <stop_token>
 #include <vector>
+
+#if defined(APD_OS_WIN)
+    #include <WinSock2.h>
+    #include <ws2tcpip.h>
+#endif
 
 #include <QtTest>
 
 #include "AAPTestSupport.h"
 #include "Source/Core/AAPMessage.h"
+#include "Source/Core/AAPTransport.h"
 
 #if defined(APD_OS_WIN)
     #include "Source/Core/AAPManager.h"
+    #pragma comment(lib, "Ws2_32.lib")
+#endif
+
+#if defined(APD_OS_WIN)
+// Connected UDP loopback sockets exercise the production select/recv/send path
+// without Bluetooth hardware. Datagrams retain the same whole-record boundaries
+// required from SOCK_SEQPACKET.
+class LoopbackDatagramPair
+{
+public:
+    LoopbackDatagramPair()
+    {
+        WSADATA data{};
+        if (WSAStartup(MAKEWORD(2, 2), &data) != 0) {
+            return;
+        }
+        _initialized = true;
+        _transportSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        _peerSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (_transportSocket == INVALID_SOCKET || _peerSocket == INVALID_SOCKET) {
+            CleanupSockets();
+            return;
+        }
+
+        sockaddr_in loopback{};
+        loopback.sin_family = AF_INET;
+        loopback.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        if (bind(_transportSocket, reinterpret_cast<sockaddr *>(&loopback), sizeof(loopback)) ==
+                SOCKET_ERROR ||
+            bind(_peerSocket, reinterpret_cast<sockaddr *>(&loopback), sizeof(loopback)) ==
+                SOCKET_ERROR)
+        {
+            CleanupSockets();
+            return;
+        }
+
+        sockaddr_in transportAddress{};
+        sockaddr_in peerAddress{};
+        int transportSize = sizeof(transportAddress);
+        int peerSize = sizeof(peerAddress);
+        if (getsockname(
+                _transportSocket, reinterpret_cast<sockaddr *>(&transportAddress),
+                &transportSize) == SOCKET_ERROR ||
+            getsockname(_peerSocket, reinterpret_cast<sockaddr *>(&peerAddress), &peerSize) ==
+                SOCKET_ERROR ||
+            connect(_transportSocket, reinterpret_cast<sockaddr *>(&peerAddress), peerSize) ==
+                SOCKET_ERROR ||
+            connect(_peerSocket, reinterpret_cast<sockaddr *>(&transportAddress), transportSize) ==
+                SOCKET_ERROR)
+        {
+            CleanupSockets();
+            return;
+        }
+
+        DWORD timeout = 1000;
+        setsockopt(
+            _peerSocket, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&timeout),
+            sizeof(timeout));
+    }
+
+    ~LoopbackDatagramPair()
+    {
+        CleanupSockets();
+        if (_initialized) {
+            WSACleanup();
+        }
+    }
+
+    LoopbackDatagramPair(const LoopbackDatagramPair &) = delete;
+    LoopbackDatagramPair &operator=(const LoopbackDatagramPair &) = delete;
+
+    bool IsValid() const
+    {
+        return _transportSocket != INVALID_SOCKET && _peerSocket != INVALID_SOCKET;
+    }
+
+    SOCKET ReleaseTransportSocket()
+    {
+        const SOCKET result = _transportSocket;
+        _transportSocket = INVALID_SOCKET;
+        return result;
+    }
+
+    bool SendFromPeer(const std::vector<uint8_t> &record)
+    {
+        return send(
+                   _peerSocket, reinterpret_cast<const char *>(record.data()),
+                   static_cast<int>(record.size()), 0) == static_cast<int>(record.size());
+    }
+
+    std::optional<std::vector<uint8_t>> ReceiveOnPeer()
+    {
+        std::vector<uint8_t> record(4097);
+        const int received = recv(
+            _peerSocket, reinterpret_cast<char *>(record.data()), static_cast<int>(record.size()),
+            0);
+        if (received == SOCKET_ERROR) {
+            return std::nullopt;
+        }
+        record.resize(static_cast<size_t>(received));
+        return record;
+    }
+
+private:
+    void CleanupSockets()
+    {
+        if (_transportSocket != INVALID_SOCKET) {
+            closesocket(_transportSocket);
+            _transportSocket = INVALID_SOCKET;
+        }
+        if (_peerSocket != INVALID_SOCKET) {
+            closesocket(_peerSocket);
+            _peerSocket = INVALID_SOCKET;
+        }
+    }
+
+    SOCKET _transportSocket{INVALID_SOCKET};
+    SOCKET _peerSocket{INVALID_SOCKET};
+    bool _initialized{false};
+};
 #endif
 
 class AAPTransportTests : public QObject
@@ -230,7 +358,7 @@ private slots:
         QTest::newRow("error-response") << 0x01 << 5;
         QTest::newRow("read-request") << 0x0A << 3;
         QTest::newRow("read-response") << 0x0B << 2;
-        QTest::newRow("write-command") << 0x12 << 3;
+        QTest::newRow("write-command") << 0x12 << 4;
         QTest::newRow("notification") << 0x1B << 3;
     }
 
@@ -247,6 +375,17 @@ private slots:
             record.resize(minimumSize - 1);
             QCOMPARE(AAPMessage::Validate(record), AAPMessage::ValidationResult::TruncatedAtt);
         }
+    }
+
+    void AttWriteCommandRejectsMissingValueByte()
+    {
+        using Core::AAP::AAPMessage;
+        QCOMPARE(
+            AAPMessage::Validate(std::vector<uint8_t>{0x12, 0x1B, 0x00}),
+            AAPMessage::ValidationResult::TruncatedAtt);
+        QCOMPARE(
+            AAPMessage::Validate(std::vector<uint8_t>{0x12, 0x1B, 0x00, 0x01}),
+            AAPMessage::ValidationResult::Valid);
     }
 
     void MessageValidationAcceptsOnlyCompleteSupportedRecords()
@@ -319,6 +458,140 @@ private slots:
     }
 
 #if defined(APD_OS_WIN)
+    void SeqPacketSendDoesNotWaitForReceivePolling()
+    {
+        using Core::AAP::SeqPacketTransport;
+        LoopbackDatagramPair pair;
+        QVERIFY(pair.IsValid());
+        SeqPacketTransport transport;
+        transport._socket = std::make_shared<SeqPacketTransport::SocketState>(
+            reinterpret_cast<void *>(pair.ReleaseTransportSocket()));
+        transport._closed = false;
+
+        const std::vector<uint8_t> record{0x04, 0x00, 0x04, 0x00, 0x2B, 0x00};
+        std::stop_source stop;
+        auto receive =
+            std::async(std::launch::async, [&] { return transport.Receive(stop.get_token()); });
+        const bool receiveBlocked =
+            receive.wait_for(std::chrono::milliseconds(50)) == std::future_status::timeout;
+        auto send = std::async(std::launch::async, [&] { return transport.Send(record, {}); });
+        const bool sendReady = send.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+
+        stop.request_stop();
+        const bool receiveReady =
+            receive.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+        QVERIFY(receiveReady);
+        QVERIFY(!receive.get().has_value());
+        if (!sendReady) {
+            QVERIFY(send.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+        }
+        QVERIFY(receiveBlocked);
+        QVERIFY(sendReady);
+        QVERIFY(send.get());
+        QCOMPARE(pair.ReceiveOnPeer(), std::optional(record));
+    }
+
+    void SeqPacketCloseInterruptsReceivePolling()
+    {
+        using Core::AAP::SeqPacketTransport;
+        LoopbackDatagramPair pair;
+        QVERIFY(pair.IsValid());
+        SeqPacketTransport transport;
+        transport._socket = std::make_shared<SeqPacketTransport::SocketState>(
+            reinterpret_cast<void *>(pair.ReleaseTransportSocket()));
+        transport._closed = false;
+
+        std::stop_source stop;
+        auto receive =
+            std::async(std::launch::async, [&] { return transport.Receive(stop.get_token()); });
+        const bool receiveBlocked =
+            receive.wait_for(std::chrono::milliseconds(50)) == std::future_status::timeout;
+        auto close = std::async(std::launch::async, [&] { transport.Close(); });
+        const bool closeReady =
+            close.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+
+        const bool receiveClosed =
+            receive.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+        if (!receiveClosed) {
+            stop.request_stop();
+        }
+        const bool receiveReady =
+            receive.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+        QVERIFY(receiveReady);
+        QVERIFY(!receive.get().has_value());
+        close.wait();
+        transport.Close();
+        QVERIFY(receiveBlocked);
+        QVERIFY(closeReady);
+        QVERIFY(receiveClosed);
+    }
+
+    void SeqPacketCloseKeepsPinnedDescriptorOpen()
+    {
+        using Core::AAP::SeqPacketTransport;
+        SeqPacketTransport transport;
+        const SOCKET pinned = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        QVERIFY(pinned != INVALID_SOCKET);
+        sockaddr_in loopback{};
+        loopback.sin_family = AF_INET;
+        loopback.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        QVERIFY(bind(pinned, reinterpret_cast<sockaddr *>(&loopback), sizeof(loopback)) == 0);
+        auto state =
+            std::make_shared<SeqPacketTransport::SocketState>(reinterpret_cast<void *>(pinned));
+        transport._socket = state;
+        transport._closed = false;
+
+        transport.Close();
+        sockaddr_in address{};
+        int addressSize = sizeof(address);
+        QVERIFY(getsockname(pinned, reinterpret_cast<sockaddr *>(&address), &addressSize) == 0);
+        const SOCKET replacement = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        QVERIFY(replacement != INVALID_SOCKET);
+        QVERIFY(replacement != pinned);
+        closesocket(replacement);
+        state.reset();
+    }
+
+    void SeqPacketReceiveHonorsStopToken()
+    {
+        using Core::AAP::SeqPacketTransport;
+        LoopbackDatagramPair pair;
+        QVERIFY(pair.IsValid());
+        SeqPacketTransport transport;
+        transport._socket = std::make_shared<SeqPacketTransport::SocketState>(
+            reinterpret_cast<void *>(pair.ReleaseTransportSocket()));
+        transport._closed = false;
+
+        std::stop_source stop;
+        auto receive =
+            std::async(std::launch::async, [&] { return transport.Receive(stop.get_token()); });
+        const bool receiveBlocked =
+            receive.wait_for(std::chrono::milliseconds(50)) == std::future_status::timeout;
+        stop.request_stop();
+        QVERIFY(receive.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+        QVERIFY(!receive.get().has_value());
+        QVERIFY(receiveBlocked);
+        QVERIFY(!transport.Receive(stop.get_token()).has_value());
+    }
+
+    void SeqPacketReceivePreservesRecordBoundaries()
+    {
+        using Core::AAP::SeqPacketTransport;
+        LoopbackDatagramPair pair;
+        QVERIFY(pair.IsValid());
+        SeqPacketTransport transport;
+        transport._socket = std::make_shared<SeqPacketTransport::SocketState>(
+            reinterpret_cast<void *>(pair.ReleaseTransportSocket()));
+        transport._closed = false;
+
+        const std::vector<uint8_t> first{0x04, 0x00, 0x04, 0x00, 0x2B, 0x00};
+        const std::vector<uint8_t> second{0x0B, 0x01};
+        QVERIFY(pair.SendFromPeer(first));
+        QVERIFY(pair.SendFromPeer(second));
+        QCOMPARE(transport.Receive({}), std::optional(first));
+        QCOMPARE(transport.Receive({}), std::optional(second));
+    }
+
     void MalformedHeadTrackingNeverReachesManagerCallback()
     {
         Core::AAP::Manager manager;
