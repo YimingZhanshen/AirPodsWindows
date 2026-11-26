@@ -586,6 +586,19 @@ void Manager::ScheduleAAPConnection(uint64_t address)
 
 void Manager::DisconnectAAP()
 {
+    // Clear before AAP teardown: Disconnect may publish the queued connection-state
+    // signal while this method is still running, and that refresh must already see
+    // an empty cache rather than the previous device's serials.
+    bool clearedBeforeTeardown = false;
+    {
+        std::lock_guard lock{_deviceInfoMutex};
+        clearedBeforeTeardown = _aapDeviceInfo.has_value();
+        _aapDeviceInfo.reset();
+    }
+    if (clearedBeforeTeardown) {
+        emit DeviceInfoChangedSafely();
+    }
+
     {
         std::lock_guard lock{_aapWorkerMutex};
         _aapDesiredAddress.reset();
@@ -601,11 +614,16 @@ void Manager::DisconnectAAP()
     _aapMgr.CancelConnect();
     _aapMgr.Disconnect();
 
-    // Rebind and explicit disconnect both retire the GUI-facing snapshot. This
-    // runs after the reader is joined, so no late callback can repopulate it.
+    // The reader may push one last record while it is being joined. Clear again
+    // after teardown so no late callback can repopulate the GUI-facing snapshot.
+    bool repopulatedDuringTeardown = false;
     {
         std::lock_guard lock{_deviceInfoMutex};
+        repopulatedDuringTeardown = _aapDeviceInfo.has_value();
         _aapDeviceInfo.reset();
+    }
+    if (repopulatedDuringTeardown) {
+        emit DeviceInfoChangedSafely();
     }
 
     {
@@ -1361,14 +1379,16 @@ void Manager::OnAAPDisconnected(AAP::AAPAttempt attempt)
 {
     std::optional<std::chrono::milliseconds> retryDelay;
     bool currentAttempt = false;
+    bool clearedDeviceInfo = false;
     {
         std::lock_guard lock{_aapWorkerMutex};
         currentAttempt = _aapConnection.IsCurrent(attempt);
         if (currentAttempt) {
-            // Natural EOF clears the snapshot before the queued state signal
+            // Natural EOF clears the snapshot before the queued device-info signal
             // tells the card to hide. Stale generations cannot clear a new one.
             {
                 std::lock_guard infoLock{_deviceInfoMutex};
+                clearedDeviceInfo = _aapDeviceInfo.has_value();
                 _aapDeviceInfo.reset();
             }
             retryDelay = _aapConnection.Lost(attempt, AAPClock::now());
@@ -1380,6 +1400,9 @@ void Manager::OnAAPDisconnected(AAP::AAPAttempt attempt)
                 _aapRetryScheduled = false;
             }
         }
+    }
+    if (clearedDeviceInfo) {
+        emit DeviceInfoChangedSafely();
     }
     _aapWorkerCv.notify_all();
     _currentNoiseControlMode = -1;

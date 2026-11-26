@@ -299,6 +299,7 @@ public:
 
 private:
     friend class ::AirPodsDomainTests;
+    friend class ::UiRenderingTests;
 
     std::mutex _mutex;
     // Declared before the scanner and workers it feeds so its timer callbacks cannot outlive
@@ -425,8 +426,8 @@ Q_SIGNALS:
     // Payload is Core::AAP::ConnectFailure cast to int (registered metatypes
     // stay free of AAP enums).
     void AapConnectionFailedSafely(int failure);
-    // Blueprint 2.1: raised from the AAP reader thread when the accessory
-    // pushes its 0x001D record. Deliberately payload-free: the privacy-
+    // Blueprint 2.1: raised from the AAP reader thread or explicit teardown after
+    // the cache is updated or cleared. Deliberately payload-free: the privacy-
     // sensitive device information stays in the manager cache and GUI code
     // pulls it via GetAAPDeviceInfo() on the main thread.
     void DeviceInfoChangedSafely();

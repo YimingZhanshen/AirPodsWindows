@@ -243,6 +243,7 @@ private Q_SLOTS:
     void RefinesKnownModelsOnlyWithinTheirFamily();
     void AirPods5VariantsExposeAapCapabilities();
     void ManagerUsesResolvedModelForStateAndFiltering();
+    void NaturalEofClearsDeviceInfoBeforeSignal();
     void RejectsUnknownModelNumberWithoutGuessing();
     void ModelProductIdUnionMatchesExpectedEntries();
     void ParsesAdvertisementState();
@@ -552,6 +553,36 @@ void AirPodsDomainTests::ManagerUsesResolvedModelForStateAndFiltering()
     QVERIFY(!manager.OnAdvertisementReceived(
         MakeAdvertisementData(0x5678, -45, Side::Left, 8, 7, 5, 0x2027)));
     QCOMPARE(updates, 2);
+}
+
+void AirPodsDomainTests::NaturalEofClearsDeviceInfoBeforeSignal()
+{
+    Core::AirPods::Manager manager;
+    const auto begun = manager._aapConnection.Begin(0x1234);
+    QVERIFY(begun.started);
+    QVERIFY(manager._aapConnection.TransportConnected(begun.attempt));
+    QVERIFY(manager._aapConnection.Connected(
+        begun.attempt, Core::AAP::AAPConnectionStateMachine::Clock::now()));
+
+    Core::AAP::AAPDeviceInfo info;
+    info.serial = "QXNRHHYXP6";
+    {
+        std::lock_guard lock{manager._deviceInfoMutex};
+        manager._aapDeviceInfo = info;
+    }
+
+    int refreshes = 0;
+    bool signalSawEmpty = false;
+    QObject::connect(&manager, &Core::AirPods::Manager::DeviceInfoChangedSafely, &manager, [&] {
+        ++refreshes;
+        signalSawEmpty = !manager.GetAAPDeviceInfo().has_value();
+    });
+
+    manager.OnAAPDisconnected(begun.attempt);
+
+    QCOMPARE(refreshes, 1);
+    QVERIFY(signalSawEmpty);
+    QVERIFY(!manager.GetAAPDeviceInfo().has_value());
 }
 
 void AirPodsDomainTests::RejectsUnknownModelNumberWithoutGuessing()

@@ -2391,6 +2391,42 @@ private Q_SLOTS:
         QVERIFY(infoCard->isHidden());
         QCOMPARE(infoCard->objectName(), QStringLiteral("cardDeviceInfo"));
     }
+
+    // Explicit disconnect must clear metadata before the payload-free refresh is
+    // observable, so every provider pull after teardown returns an empty cache.
+    void SettingsWindowDeviceCardHidesAfterExplicitDisconnect()
+    {
+        auto backend = std::make_shared<Core::QuickConnect::NullBackend>();
+        Core::QuickConnect::Controller quickConnect{backend};
+        Gui::SettingsWindow window{[] { return 0; }, quickConnect};
+        Core::AirPods::Manager manager;
+        window.SetAirPodsManagerProvider([&manager] { return manager; });
+
+        auto *infoCard = window.findChild<Gui::DeviceInfoCard *>();
+        QVERIFY(infoCard != nullptr);
+
+        Core::AAP::AAPDeviceInfo info;
+        info.name = "AirPods Pro";
+        info.serial = "QXNRHHYXP6";
+        {
+            std::lock_guard lock{manager._deviceInfoMutex};
+            manager._aapDeviceInfo = info;
+        }
+        QVERIFY(manager.GetAAPDeviceInfo().has_value());
+        infoCard->Refresh();
+        QVERIFY(!infoCard->isHidden());
+
+        bool infoSignalSawEmpty = false;
+        connect(&manager, &Core::AirPods::Manager::DeviceInfoChangedSafely, infoCard, [&] {
+            infoSignalSawEmpty = !manager.GetAAPDeviceInfo().has_value();
+        });
+
+        manager.DisconnectAAP();
+
+        QVERIFY(infoSignalSawEmpty);
+        QVERIFY(!manager.GetAAPDeviceInfo().has_value());
+        QVERIFY(infoCard->isHidden());
+    }
 };
 
 int main(int argc, char **argv)

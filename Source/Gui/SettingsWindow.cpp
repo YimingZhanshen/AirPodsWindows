@@ -515,9 +515,9 @@ void SettingsWindow::SetAirPodsManagerProvider(
 
     if (_deviceInfoCard != nullptr) {
         // The signal is payload-free by design: the card pulls the manager
-        // cache on the GUI thread (Qt queues the emission from the AAP
-        // reader), so no privacy-sensitive string ever crosses threads in a
-        // signal and worker code never touches widgets.
+        // cache on the GUI thread (Qt queues emissions from the AAP reader),
+        // so no privacy-sensitive string ever crosses threads in a signal and
+        // worker code never touches widgets.
         _deviceInfoCard->SetInfoProvider([this] {
             if (!_getAirPodsManager) {
                 return std::optional<Core::AAP::AAPDeviceInfo>{};
@@ -530,11 +530,6 @@ void SettingsWindow::SetAirPodsManagerProvider(
             connect(
                 &manager, &Core::AirPods::Manager::DeviceInfoChangedSafely, _deviceInfoCard,
                 [this] { _deviceInfoCard->Refresh(); });
-            // Clearing events (disconnect, EOF, rebind) hide the card again;
-            // the connection-state signal already fires for all of them.
-            connect(
-                &manager, &Core::AirPods::Manager::AapConnectionStateChangedSafely, _deviceInfoCard,
-                [this](bool) { _deviceInfoCard->Refresh(); });
             _infoCardSignalConnected = true;
         }
     }

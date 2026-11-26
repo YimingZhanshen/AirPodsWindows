@@ -16,6 +16,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -644,13 +645,21 @@ private slots:
 
     void DeviceInfoRejectsBrokenPreambleSkeleton()
     {
-        // The five unknown bytes between opcode and first string always contain
-        // NULs at offsets 8 and 10 in observed captures; without them the string
-        // offset 11 is unverifiable.
+        // The five-byte preamble is fixed by the documented 222-byte capture; every
+        // offset participates in proving that the string table starts at byte 11.
+        static constexpr std::array<uint8_t, 5> preamble{0x02, 0xD5, 0x00, 0x04, 0x00};
+        for (size_t i = 0; i < preamble.size(); ++i) {
+            auto packet = DeviceInfoSample();
+            packet[6 + i] = static_cast<uint8_t>(packet[6 + i] ^ 0x01);
+            QVERIFY2(
+                !ParseDeviceInfo(packet).has_value(),
+                qPrintable(QString{"accepted corrupt preamble byte %1"}.arg(i)));
+        }
+
+        // Both NULs are also checked explicitly through the same exact comparison.
         auto packet = DeviceInfoSample();
         packet[8] = 0x01;
         QVERIFY(!ParseDeviceInfo(packet).has_value());
-
         packet = DeviceInfoSample();
         packet[10] = 0xFF;
         QVERIFY(!ParseDeviceInfo(packet).has_value());
@@ -696,6 +705,31 @@ private slots:
             {QByteArray{"Air\x7Fpods"}, "A3048", "Apple Inc.", "QXNRHHYXP6", "61.18", "61.18",
              "1.0.0", "updater", "HY9LT2EF26JY", "H3PLWHDJ26K0", "6357536"});
         QVERIFY(!ParseDeviceInfo(del).has_value());
+    }
+
+    void DeviceInfoRejectsUnicodeDisplayControls()
+    {
+        // Qt::PlainText blocks HTML, not bidi reordering or zero-width spoofing.
+        struct {
+            const char *what;
+            QByteArray bytes;
+        } cases[] = {
+            {"right-to-left override", QByteArray::fromHex("e280ae")},
+            {"zero-width space", QByteArray::fromHex("e2808b")},
+            {"line separator", QByteArray::fromHex("e280a8")},
+            {"paragraph separator", QByteArray::fromHex("e280a9")},
+            {"soft hyphen", QByteArray::fromHex("c2ad")},
+            {"byte-order mark", QByteArray::fromHex("efbbbf")},
+        };
+
+        for (const auto &testCase : cases) {
+            const auto packet = BuildDeviceInfoPacket(
+                {"AirPods Pro" + testCase.bytes, "A3048", "Apple Inc.", "QXNRHHYXP6", "61.18",
+                 "61.18", "1.0.0", "updater", "HY9LT2EF26JY", "H3PLWHDJ26K0", "6357536"});
+            QVERIFY2(
+                !ParseDeviceInfo(packet).has_value(),
+                qPrintable(QString{"accepted display control: %1"}.arg(testCase.what)));
+        }
     }
 
     void DeviceInfoAcceptsMultibyteUtf8Names()

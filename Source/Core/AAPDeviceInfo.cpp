@@ -34,10 +34,31 @@ constexpr size_t kPacketMinimumSize = 11;
 constexpr size_t kFieldsOffset = 11;
 constexpr size_t kFieldCount = 11;
 
+// Unicode format controls and separators are display-hostile even inside plain text:
+// bidi overrides can reorder the displayed serial, zero-width characters can spoof
+// adjacent fields, and line/paragraph separators can break the card's single-line rows.
+bool IsDisplayControlOrSeparator(uint32_t codePoint)
+{
+    return codePoint == 0x00AD || (codePoint >= 0x0600 && codePoint <= 0x0605) ||
+           codePoint == 0x061C || codePoint == 0x06DD || codePoint == 0x070F ||
+           codePoint == 0x08E2 || codePoint == 0x180E ||
+           (codePoint >= 0x200B && codePoint <= 0x200F) ||
+           (codePoint >= 0x202A && codePoint <= 0x202E) ||
+           (codePoint >= 0x2060 && codePoint <= 0x2064) ||
+           (codePoint >= 0x2066 && codePoint <= 0x206F) || codePoint == 0x2028 ||
+           codePoint == 0x2029 || (codePoint >= 0xFEFF && codePoint <= 0xFFFB) ||
+           codePoint == 0x110BD || codePoint == 0x110CD ||
+           (codePoint >= 0x13430 && codePoint <= 0x1343F) ||
+           (codePoint >= 0x1BCA0 && codePoint <= 0x1BCA3) ||
+           (codePoint >= 0x1D173 && codePoint <= 0x1D17A) || codePoint == 0xE0001 ||
+           (codePoint >= 0xE0020 && codePoint <= 0xE007F);
+}
+
 // Strict UTF-8 with the printable subset the device-information contract uses:
-// rejects every C0/C1 control code, DEL, stray or truncated continuation bytes,
-// overlong forms, surrogates, and code points above U+10FFFF. The binary blob
-// behind the eleventh field can therefore never masquerade as display text.
+// rejects every C0/C1 control code, DEL, Unicode display controls and separators,
+// stray or truncated continuation bytes, overlong forms, surrogates, and code points
+// above U+10FFFF. The binary blob behind the eleventh field can therefore never
+// masquerade as display text.
 bool IsDisplayableUtf8(std::span<const uint8_t> text)
 {
     for (size_t i = 0; i < text.size(); ++i) {
@@ -85,7 +106,9 @@ bool IsDisplayableUtf8(std::span<const uint8_t> text)
         const bool surrogate = codePoint >= 0xD800 && codePoint <= 0xDFFF;
         // codePoint < 0xA0 also rejects the C1 block encoded as valid two-byte
         // UTF-8 (the overlong check alone would let U+0080-U+009F through).
-        if (overlong || surrogate || codePoint > 0x10FFFF || codePoint < 0xA0) {
+        if (overlong || surrogate || codePoint > 0x10FFFF || codePoint < 0xA0 ||
+            IsDisplayControlOrSeparator(codePoint))
+        {
             return false;
         }
     }
@@ -116,9 +139,10 @@ std::optional<AAPDeviceInfo> ParseDeviceInfo(std::span<const uint8_t> packet)
     if (packet[4] != 0x1D || packet[5] != 0x00) {
         return std::nullopt;
     }
-    // Preamble values are unknown, but both separating NULs are part of every
-    // observed capture; without the skeleton the string offsets are unverifiable.
-    if (packet[8] != 0x00 || packet[10] != 0x00) {
+    // The five-byte preamble is fixed in the only documented 222-byte capture and
+    // in Docs/AAP-Protocol-Spec.md §3; string offsets are meaningless without it.
+    constexpr std::array<uint8_t, 5> kPreamble{0x02, 0xD5, 0x00, 0x04, 0x00};
+    if (!std::equal(kPreamble.begin(), kPreamble.end(), packet.begin() + 6)) {
         return std::nullopt;
     }
 
