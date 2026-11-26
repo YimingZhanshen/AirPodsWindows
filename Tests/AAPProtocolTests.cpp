@@ -37,6 +37,7 @@
 #include "Source/Core/AAPAtt.h"
 #include "Source/Core/AAPBattery.h"
 #include "Source/Core/AAPStem.h"
+#include "Source/Core/AdaptiveNoiseLevel.h"
 #include "Source/Core/ConnectionDiagnostics.h"
 #include "Source/Core/GlobalMedia_abstract.h"
 
@@ -212,9 +213,25 @@ private slots:
 
     void AdaptiveNoisePacketCarriesLevel()
     {
+        // D3 keeps this wire untouched: control command 0x2E (AutoAncStrength). 0x39 is
+        // StemConfig (D4 territory) and must never appear as the adaptive-strength id.
         QCOMPARE(
             Packets::BuildAdaptiveNoisePacket(100),
             Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 100, 0x00, 0x00, 0x00}));
+        QCOMPARE(
+            Packets::BuildAdaptiveNoisePacket(0),
+            Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 0, 0x00, 0x00, 0x00}));
+        QCOMPARE(
+            Packets::BuildAdaptiveNoisePacket(50),
+            Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 50, 0x00, 0x00, 0x00}));
+        // Raw input above 100 is normalized by the shared policy before it reaches the
+        // builder, yielding the 100 frame rather than an out-of-range byte.
+        QCOMPARE(
+            Packets::BuildAdaptiveNoisePacket(Core::AAP::NormalizeAdaptiveNoiseLevel(255)),
+            Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 100, 0x00, 0x00, 0x00}));
+        const auto packet = Packets::BuildAdaptiveNoisePacket(50);
+        QVERIFY(packet.size() >= 7);
+        QVERIFY(packet[6] != 0x39);
     }
 
     // Blueprint 0.1: automatic ear detection must send control command 0x0A

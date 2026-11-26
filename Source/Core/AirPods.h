@@ -39,6 +39,7 @@
 #include "AAP.h"
 #include "AAPManager.h"
 #include "BatteryFusion.h"
+#include "AdaptiveNoiseLevel.h"
 #include "../Helper.h"
 
 class AirPodsDomainTests;
@@ -281,7 +282,11 @@ public:
     bool SetPpeCapLevel(uint8_t level);
     std::optional<uint8_t> GetPpeCapLevel() const;
 
+    // D3: adaptive noise filtering strength (0-100). Set submits the desired value through
+    // the broker; Get reports the level last sent on the current AAP session (nullopt when
+    // unknown).
     bool SetAdaptiveNoiseLevel(uint8_t level);
+    std::optional<uint8_t> GetAdaptiveNoiseLevel() const;
     bool IsAAPConnected() const;
     AAP::AAPAttempt GetLastAAPAttempt() const;
     uint64_t LatestAAPCommandRequest(AAP::AAPCommandKind kind) const;
@@ -332,7 +337,7 @@ private:
     std::atomic<bool> _personalizedVolumeEnabled{false};
     std::atomic<bool> _loudSoundReductionEnabled{false};
     std::atomic<uint8_t> _ppeCapLevel{AAP::kPpeCapLevelDefault};
-    std::atomic<uint8_t> _adaptiveNoiseLevel{50};
+    std::atomic<uint8_t> _adaptiveNoiseLevel{Core::AAP::kAdaptiveNoiseLevelDefault};
     std::atomic<bool> _headTrackingEnabled{false};
     std::atomic<int> _currentNoiseControlMode{-1};
     // AAP-over-BLE battery fusion. `_batteryFusionMutex` guards the three fields
@@ -428,6 +433,9 @@ private:
     // Runs on Manager's thread for both BLE and AAP battery inputs. Nested publish requests
     // are coalesced and drained after the current StateUpdated emission completes.
     void PublishFusedState();
+    // Caller holds _aapWorkerMutex; lets generation-sensitive callbacks validate and
+    // publish state without a check-then-write race against a new attempt.
+    bool IsCurrentAAPAttemptLocked(AAP::AAPAttempt attempt) const;
     void ScheduleScannerRetry();
     void StopScannerRetry();
     bool StartScannerOnce();

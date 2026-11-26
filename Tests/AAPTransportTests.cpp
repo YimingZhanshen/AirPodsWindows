@@ -900,6 +900,105 @@ private slots:
         manager._commandBroker->EndSession();
     }
 
+    void AdaptiveNoiseStrengthRequiresAdaptiveModeAndCurrentSession()
+    {
+        Core::AAP::Manager manager;
+        manager._connected = true;
+
+        // Unknown and every non-Adaptive mode reject the write without touching the wire.
+        for (const auto mode :
+             {Core::AAP::NoiseControlMode::Off, Core::AAP::NoiseControlMode::NoiseCancellation,
+              Core::AAP::NoiseControlMode::Transparency})
+        {
+            manager._noiseControlMode = mode;
+            QVERIFY(!manager.SetAdaptiveNoiseLevel(70));
+        }
+        QVERIFY(!manager.SetAdaptiveNoiseLevel(70));
+        QCOMPARE(transport->SendCalls(), size_t{0});
+        QVERIFY(!manager.GetAdaptiveNoiseLevel().has_value());
+
+        manager._noiseControlMode = Core::AAP::NoiseControlMode::Adaptive;
+        transport->SetSendLimit(5);
+        QVERIFY(!manager.SetAdaptiveNoiseLevel(70));
+        QVERIFY(!manager.GetAdaptiveNoiseLevel().has_value());
+
+        transport->SetSendLimit(std::nullopt);
+        QVERIFY(manager.SetAdaptiveNoiseLevel(255));
+        QCOMPARE(manager.GetAdaptiveNoiseLevel(), std::optional<uint8_t>{100});
+        QCOMPARE(
+            transport->LastSend(),
+            (std::vector<uint8_t>{
+                0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 100, 0x00, 0x00, 0x00}));
+
+        manager._noiseControlMode = Core::AAP::NoiseControlMode::Off;
+        const auto sends = transport->SendCalls();
+        QVERIFY(!manager.SetAdaptiveNoiseLevel(0));
+        QCOMPARE(transport->SendCalls(), sends);
+
+        manager.Disconnect();
+        QVERIFY(!manager.GetAdaptiveNoiseLevel().has_value());
+        QVERIFY(!manager.GetNoiseControlMode().has_value());
+    }
+
+    void AdaptiveNoiseStrengthRejectsResultFromOldGeneration()
+    {
+        Core::AAP::Manager manager;
+        auto oldTransport = std::make_shared<AAPTestSupport::FakeTransport>();
+        auto newTransport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(oldTransport->Connect(1, {}));
+        QVERIFY(newTransport->Connect(1, {}));
+        oldTransport->SetBlockSend(true);
+        manager._transport.store(oldTransport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 9};
+        manager._connected = true;
+        manager._noiseControlMode = Core::AAP::NoiseControlMode::Adaptive;
+
+        std::future<bool> result;
+        struct SendUnblocker {
+            AAPTestSupport::FakeTransport &transport;
+            ~SendUnblocker()
+            {
+                transport.SetBlockSend(false);
+            }
+        } unblocker{*oldTransport};
+        result = std::async(
+            std::launch::async, [&manager] { return manager.SetAdaptiveNoiseLevel(70); });
+        QVERIFY(oldTransport->WaitForSendWaiter(std::chrono::seconds{1}));
+        {
+            std::lock_guard<std::mutex> lock{manager._mutex};
+            manager._attempt = Core::AAP::AAPAttempt{1, 10};
+            manager._transport.store(newTransport);
+            manager._adaptiveNoiseLevel.reset();
+        }
+        oldTransport->SetBlockSend(false);
+        QVERIFY(result.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QVERIFY(!result.get());
+        QVERIFY(!manager.GetAdaptiveNoiseLevel().has_value());
+        QCOMPARE(oldTransport->LastSend().at(7), uint8_t{70});
+        manager.Disconnect();
+    }
+
+    void AdaptiveNoiseStrengthCacheClearsOnNaturalSessionEnd()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transportFactory = [transport](Core::AAP::AAPTransportKind) {
+            return std::static_pointer_cast<Core::AAP::AAPTransport>(transport);
+        };
+        const Core::AAP::AAPAttempt attempt{1, 8};
+        QVERIFY(manager.Connect(attempt));
+        QVERIFY(transport->WaitForReceiveWaiter(std::chrono::seconds{1}));
+        manager._noiseControlMode = Core::AAP::NoiseControlMode::Adaptive;
+        QVERIFY(manager.SetAdaptiveNoiseLevel(60));
+        QCOMPARE(manager.GetAdaptiveNoiseLevel(), std::optional<uint8_t>{60});
+
+        transport->SetEof();
+        QTRY_VERIFY(!manager.IsConnected());
+        QVERIFY(!manager.GetAdaptiveNoiseLevel().has_value());
+        QVERIFY(!manager.GetNoiseControlMode().has_value());
+        manager.Disconnect();
+    }
+
     void ManagerConnectInitializesBeforeConnectionGateOpens()
     {
         Core::AAP::Manager manager;

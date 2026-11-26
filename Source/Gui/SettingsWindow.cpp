@@ -947,6 +947,11 @@ void SettingsWindow::Update(const Fields &fields, bool trigger)
         }
     }
 
+    // D3: reload the remembered strength with signals blocked (_trigger false on programmatic
+    // updates) and gate the inline control on the selected noise control mode.
+    _ui.hsAdaptiveNoiseLevel->setEnabled(noiseControlIndex == 3);
+    _ui.lblAdaptiveNoiseLevelValue->setEnabled(noiseControlIndex == 3);
+
     _ui.hsMaxReceivingRange->setValue(-fields.rssi_min);
 
     auto [batteryOnTrayIconDisable, batteryOnTrayIconWhenLowBattery, batteryOnTrayIconAlways] =
@@ -1154,6 +1159,10 @@ void SettingsWindow::On_cbLoudSoundReduction_toggled(bool checked)
 void SettingsWindow::On_cbNoiseControlMode_currentIndexChanged(int index)
 {
     // UI index 0-3 maps to NoiseControlMode values 1-4 (Off=1, ANC=2, Transparency=3, Adaptive=4)
+    // D3: only Adaptive accepts a filtering-strength edit. Switching modes never rewrites the
+    // remembered strength; C7 replays it when Adaptive becomes active.
+    _ui.hsAdaptiveNoiseLevel->setEnabled(index == 3);
+    _ui.lblAdaptiveNoiseLevelValue->setEnabled(index == 3);
     ModifiableAccess()->noise_control_mode = static_cast<uint32_t>(index + 1);
 }
 
@@ -1165,6 +1174,10 @@ void SettingsWindow::On_hsPpeCapLevel_valueChanged(int value)
 
 void SettingsWindow::On_hsAdaptiveNoiseLevel_valueChanged(int value)
 {
+    // A disabled QSlider still emits programmatic value changes; never persist one.
+    if (!_ui.hsAdaptiveNoiseLevel->isEnabled()) {
+        return;
+    }
     _ui.lblAdaptiveNoiseLevelValue->setText(QString::number(value));
     ModifiableAccess()->adaptive_noise_level = static_cast<uint8_t>(value);
 }

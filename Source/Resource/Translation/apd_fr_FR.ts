@@ -499,6 +499,8 @@ Vous devez d&apos;abord appairer vos AirPods dans les paramètres Bluetooth de W
     <message>
         <source>Action for a long press of the right stem.</source>
         <translation>Action pour un appui long sur la tige droite.</translation>
+        <source>Sets how strongly Adaptive mode shapes ambient noise (0-100). Adjustable only while the noise control mode is Adaptive.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

@@ -156,8 +156,11 @@ public:
     bool SetPpeCapLevel(uint8_t level);
     std::optional<uint8_t> GetPpeCapLevel() const;
 
-    // Adaptive noise level (0-100, only effective when noise control is Adaptive)
+    // Adaptive noise level (0-100, only effective when noise control is Adaptive).
+    // Wire: control command 0x2E (AutoAncStrength), unchanged by D3. Get returns the level
+    // last written on the current session (nullopt before that or after Disconnect).
     bool SetAdaptiveNoiseLevel(uint8_t level);
+    std::optional<uint8_t> GetAdaptiveNoiseLevel() const;
 
     // Raw stem gesture subscription (0x0039). The desired mask survives disconnects and is replayed
     // after every handshake. This direct path is temporary until the C7 command broker owns writes.
@@ -237,6 +240,7 @@ private:
     std::optional<LoudSoundReductionState> _loudSoundReductionState;
     std::optional<uint8_t> _ppeCapLevel;
     std::optional<AAPBatterySnapshot> _batterySnapshot;
+    std::optional<uint8_t> _adaptiveNoiseLevel;
 
     // ATT path probe (blueprint 0.3): deadline in steady_clock milliseconds,
     // 0 when no probe is outstanding. GetAttPathState flips Pending to

@@ -499,6 +499,8 @@ Primero debes emparejar tus AirPods en la configuración de Bluetooth de Windows
     <message>
         <source>Action for a long press of the right stem.</source>
         <translation>Acción para una pulsación larga de el tallo derecho.</translation>
+        <source>Sets how strongly Adaptive mode shapes ambient noise (0-100). Adjustable only while the noise control mode is Adaptive.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
