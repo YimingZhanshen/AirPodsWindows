@@ -160,14 +160,18 @@ jobs:
           # places that step depends on how the package is laid out, so check the script itself.
           $installerScript = Get-Content -LiteralPath `
             'Build/Release/Installer/_CPack_Packages/win64/NSIS/project.nsi'
-          $closeLine = ($installerScript |
-            Select-String -SimpleMatch 'AirPodsWindows_InstanceMutex' |
+          $openMutexLine = ($installerScript |
+            Select-String -Pattern '^\s*System::Call .*kernel32::OpenMutexW\(.*Global\\AirPodsWindows_InstanceMutex' |
+            Select-Object -First 1).LineNumber
+          $taskkillLine = ($installerScript |
+            Select-String -Pattern '^\s*nsExec::Exec .*taskkill\.exe.*AirPodsWindows\.exe' |
             Select-Object -First 1).LineNumber
           $copyLine = ($installerScript |
             Select-String -Pattern '^\s*File /r ' |
             Select-Object -First 1).LineNumber
-          if (-not $closeLine -or -not $copyLine -or $closeLine -ge $copyLine) {
-            throw "The installer copies files (line $copyLine) before it closes a running copy (line $closeLine)."
+          if (-not $openMutexLine -or -not $taskkillLine -or -not $copyLine -or
+              $openMutexLine -ge $copyLine -or $taskkillLine -ge $copyLine) {
+            throw "The installer must open the instance mutex (line $openMutexLine) and taskkill the running copy (line $taskkillLine) before the first File /r (line $copyLine)."
           }
           $requiredRuntimeFiles = @(
             'AirPodsWindows.exe',
