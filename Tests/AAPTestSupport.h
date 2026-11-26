@@ -79,22 +79,60 @@ inline constexpr int kWorkerFailFastExitCode{121};
 class PromiseGate
 {
 public:
+    struct State {
+        size_t waiters{0};
+        bool open{false};
+    };
+
     PromiseGate() : _future{_promise.get_future().share()} {}
 
     bool Wait(std::chrono::milliseconds timeout = kRendezvousTimeout)
     {
-        return _future.wait_for(timeout) == std::future_status::ready;
+        {
+            std::lock_guard lock{_mutex};
+            ++_waiters;
+        }
+        _condition.notify_all();
+        const bool ready = _future.wait_for(timeout) == std::future_status::ready;
+        {
+            std::lock_guard lock{_mutex};
+            --_waiters;
+        }
+        _condition.notify_all();
+        return ready;
     }
 
     void Signal()
     {
-        std::call_once(_signalOnce, [this] { _promise.set_value(); });
+        std::call_once(_signalOnce, [this] {
+            _promise.set_value();
+            std::lock_guard lock{_mutex};
+            _open = true;
+        });
+        _condition.notify_all();
+    }
+
+    // Observes the actual Wait entry state, not a signal emitted before Wait was called.
+    bool WaitForWaiter(std::chrono::milliseconds timeout = kRendezvousTimeout)
+    {
+        std::unique_lock lock{_mutex};
+        return _condition.wait_for(lock, timeout, [this] { return _waiters > 0; });
+    }
+
+    State Snapshot() const
+    {
+        std::lock_guard lock{_mutex};
+        return {_waiters, _open};
     }
 
 private:
     std::promise<void> _promise;
     std::shared_future<void> _future;
     std::once_flag _signalOnce;
+    mutable std::mutex _mutex;
+    std::condition_variable _condition;
+    size_t _waiters{0};
+    bool _open{false};
 };
 
 // The atomic counterpart for callbacks that cannot own a promise. Wait blocks on a
@@ -102,12 +140,22 @@ private:
 class AtomicGate
 {
 public:
+    struct State {
+        size_t waiters{0};
+        bool open{false};
+    };
+
     explicit AtomicGate(bool initiallyOpen = false) : _open{initiallyOpen} {}
 
     bool Wait(std::chrono::milliseconds timeout = kRendezvousTimeout)
     {
         std::unique_lock lock{_mutex};
-        return _condition.wait_for(lock, timeout, [this] { return _open.load(); });
+        ++_waiters;
+        _condition.notify_all();
+        const bool ready = _condition.wait_for(lock, timeout, [this] { return _open.load(); });
+        --_waiters;
+        _condition.notify_all();
+        return ready;
     }
 
     void Open()
@@ -125,10 +173,24 @@ public:
         _open.store(false);
     }
 
+    // Entry and the open predicate are sampled under the same mutex used by Wait.
+    bool WaitForWaiter(std::chrono::milliseconds timeout = kRendezvousTimeout)
+    {
+        std::unique_lock lock{_mutex};
+        return _condition.wait_for(lock, timeout, [this] { return _waiters > 0; });
+    }
+
+    State Snapshot() const
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        return {_waiters, _open.load()};
+    }
+
 private:
     std::atomic<bool> _open;
-    std::mutex _mutex;
+    mutable std::mutex _mutex;
     std::condition_variable _condition;
+    size_t _waiters{0};
 };
 
 // Opens either kind of gate on scope exit. Release is idempotent, so composing it with a

@@ -47,6 +47,7 @@ using AAPTestSupport::BlockingTransport;
 using AAPTestSupport::CallbackRecorder;
 using AAPTestSupport::PromiseGate;
 using AAPTestSupport::ScopedRelease;
+using AAPTestSupport::ScopedUnblock;
 using AAPTestSupport::TransportFactory;
 using AAPTestSupport::Worker;
 using namespace std::chrono_literals;
@@ -62,28 +63,6 @@ bool DisconnectWithin(Core::AAP::Manager &manager, Factory &factory)
     return worker.Finished(2s);
 }
 
-// Holds Disconnect inside transport Close after the Manager has withdrawn its connected
-// gate. That gives the public send path a deterministic teardown window to refuse writes.
-class CloseGatedTransport final : public BlockingTransport
-{
-public:
-    void SetCloseGates(std::shared_ptr<PromiseGate> entered, std::shared_ptr<PromiseGate> release)
-    {
-        _closeEntered = std::move(entered);
-        _closeRelease = std::move(release);
-    }
-
-    void Close() override
-    {
-        _closeEntered->Signal();
-        _closeRelease->Wait(AAPTestSupport::kRendezvousTimeout);
-        BlockingTransport::Close();
-    }
-
-private:
-    std::shared_ptr<PromiseGate> _closeEntered{std::make_shared<PromiseGate>()};
-    std::shared_ptr<PromiseGate> _closeRelease{std::make_shared<PromiseGate>()};
-};
 } // namespace
 
 class AAPManagerWorkerTests : public QObject
@@ -169,41 +148,90 @@ private slots:
     }
 
     // Initialization uses the pinned raw sender, but every later send must still honor
-    // the connected gate. Hold teardown inside Close and prove neither path writes.
-    void PublicSendIsRefusedDuringTeardown()
+    // the connected gate. Pause after the public connected decision, close only the gate,
+    // and prove refusal while the original transport is still published.
+    void PublicSendRechecksConnectedWithTransportStillPresent()
     {
-        auto closeEntered = std::make_shared<PromiseGate>();
-        auto closeRelease = std::make_shared<PromiseGate>();
-        TransportFactory<CloseGatedTransport> factory{[&](CloseGatedTransport &transport) {
-            transport.SetCloseGates(closeEntered, closeRelease);
-            transport.Block(BlockingTransport::Op::Receive);
-        }};
+        auto sendEntered = std::make_shared<PromiseGate>();
+        auto sendRelease = std::make_shared<PromiseGate>();
+        TransportFactory<BlockingTransport> factory{
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
         Core::AAP::Manager manager;
         manager._transportFactoryForTest = [&factory] { return factory.Build(); };
 
         QVERIFY(manager.Connect(Core::AAP::AAPAttempt{42, 1}));
         auto transport = factory.Last();
         QVERIFY(transport != nullptr);
-        const auto sendsBeforeTeardown = transport->CallCount(BlockingTransport::Op::Send);
-        QCOMPARE(sendsBeforeTeardown, size_t{4});
+        const auto sendsBefore = transport->CallCount(BlockingTransport::Op::Send);
+        QCOMPARE(sendsBefore, size_t{4});
 
-        Worker disconnect{
-            [&] { manager.Disconnect(); },
-            [&] {
-                closeRelease->Signal();
-                factory.ReleaseAllBuilt();
-            }};
-        QVERIFY(closeEntered->Wait(2s));
-        QVERIFY(!manager.IsConnected());
-        QVERIFY(!manager._transport.load());
+        manager._publicSendBarrierForTest = [&] {
+            sendEntered->Signal();
+            sendRelease->Wait(AAPTestSupport::kRendezvousTimeout);
+        };
+        ScopedUnblock unblock{*sendRelease};
+        bool result = true;
+        Worker sender{
+            [&] { result = manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Off); },
+            [&] { factory.ReleaseAllBuilt(); }};
+        QVERIFY(sendEntered->Wait(2s));
+        QVERIFY(manager.IsConnected());
+        QVERIFY(manager._transport.load() == transport);
+        {
+            std::lock_guard lock{manager._mutex};
+            manager._connected = false;
+        }
+        QVERIFY(manager._transport.load() == transport);
 
-        QVERIFY(!manager.SendPacket(AAPTestSupport::Records::NoiseControl(0x01)));
-        QVERIFY(!manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Off));
-        QVERIFY(!manager.StartHeadTracking());
-        QCOMPARE(transport->CallCount(BlockingTransport::Op::Send), sendsBeforeTeardown);
+        sendRelease->Signal();
+        QVERIFY(sender.Finished(2s));
+        QVERIFY(!result);
+        QCOMPARE(transport->CallCount(BlockingTransport::Op::Send), sendsBefore);
+        QVERIFY(DisconnectWithin(manager, factory));
+        QVERIFY(!manager._readerThread.joinable());
+    }
 
-        closeRelease->Signal();
-        QVERIFY(disconnect.Finished(2s));
+    // A command that observed the old connected session must not load a replacement
+    // transport after a reconnect. The barrier makes that exact interleaving deterministic.
+    void PublicSendCannotReachAReplacementSession()
+    {
+        auto sendEntered = std::make_shared<PromiseGate>();
+        auto sendRelease = std::make_shared<PromiseGate>();
+        TransportFactory<BlockingTransport> factory{
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        Core::AAP::Manager manager;
+        manager._transportFactoryForTest = [&factory] { return factory.Build(); };
+
+        QVERIFY(manager.Connect(Core::AAP::AAPAttempt{42, 1}));
+        auto first = factory.Last();
+        QVERIFY(first != nullptr);
+        const auto firstSends = first->CallCount(BlockingTransport::Op::Send);
+        manager._publicSendBarrierForTest = [&] {
+            sendEntered->Signal();
+            sendRelease->Wait(AAPTestSupport::kRendezvousTimeout);
+        };
+        ScopedUnblock unblock{*sendRelease};
+        bool result = true;
+        Worker sender{
+            [&] { result = manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Off); },
+            [&] { factory.ReleaseAllBuilt(); }};
+        QVERIFY(sendEntered->Wait(2s));
+        QVERIFY(manager._transport.load() == first);
+
+        QVERIFY(DisconnectWithin(manager, factory));
+        QVERIFY(manager.Connect(Core::AAP::AAPAttempt{42, 2}));
+        auto replacement = factory.Last();
+        QVERIFY(replacement != nullptr);
+        QVERIFY(replacement != first);
+        const auto replacementSends = replacement->CallCount(BlockingTransport::Op::Send);
+        QCOMPARE(replacementSends, size_t{4});
+
+        sendRelease->Signal();
+        QVERIFY(sender.Finished(2s));
+        QVERIFY(!result);
+        QCOMPARE(first->CallCount(BlockingTransport::Op::Send), firstSends);
+        QCOMPARE(replacement->CallCount(BlockingTransport::Op::Send), replacementSends);
+        QVERIFY(DisconnectWithin(manager, factory));
         QVERIFY(!manager._readerThread.joinable());
     }
 
@@ -215,6 +243,11 @@ private slots:
             [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
         Core::AAP::Manager manager;
         manager._transportFactoryForTest = [&factory] { return factory.Build(); };
+        PromiseGate firstAtLock;
+        PromiseGate secondAtLock;
+        manager._beforeConnectLockForTest = [&](const Core::AAP::AAPAttempt &attempt) {
+            (attempt.generation == 1 ? firstAtLock : secondAtLock).Signal();
+        };
 
         std::atomic<int> successes{0};
         std::atomic<uint64_t> winner{0};
@@ -235,27 +268,24 @@ private slots:
                 factory.ReleaseAllBuilt();
             }};
 
-        // The first attempt owns the lifecycle mutex and is parked before publication.
-        // Only then start the contender, so a sequential implementation cannot pass.
+        // The first attempt reaches the real lock-attempt boundary, acquires the lifecycle
+        // mutex, and is parked before publication. Only then start the contender.
+        QVERIFY(firstAtLock.Wait(2s));
         QVERIFY(factory.WaitForCount(1, 2s));
         auto transport = factory.Last();
         QVERIFY(transport != nullptr);
         QVERIFY(transport->WaitForParked(BlockingTransport::Op::Connect, 2s));
         QVERIFY(!manager._transport.load());
 
-        PromiseGate secondStarted;
         Worker secondConnect{
-            [&] {
-                secondStarted.Signal();
-                connect(2, second);
-            },
+            [&] { connect(2, second); },
             [&] {
                 manager.CancelConnect();
                 factory.ReleaseAllBuilt();
             }};
-        QVERIFY(secondStarted.Wait(2s));
-        // Positive contention proof: the contender has entered Connect while the first is
-        // still parked, yet no second transport has been built or published.
+        // Positive contention proof: the contender has reached Connect's actual lock-attempt
+        // seam while the first still owns that lock, yet no second transport has been built.
+        QVERIFY(secondAtLock.Wait(2s));
         QCOMPARE(factory.Count(), size_t{1});
         QCOMPARE(manager.GetLastAttempt().generation, uint64_t{1});
 
@@ -313,6 +343,50 @@ private slots:
         // keeps this race-free: a Connect that failed to release it misses the deadline.
         QVERIFY(DisconnectWithin(manager, factory));
         QVERIFY(!manager.IsConnected());
+    }
+
+    // CancelConnect can win after Connect's entry check but before the pending transport is
+    // published. Rechecking after publication must prevent the transport call altogether;
+    // otherwise the call blocks with only the caller token and Disconnect cannot wake it.
+    void CancelConnectBeforePendingPublicationDoesNotEnterTransportConnect()
+    {
+        auto publishEntered = std::make_shared<PromiseGate>();
+        auto publishRelease = std::make_shared<PromiseGate>();
+        TransportFactory<BlockingTransport> factory{
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        Core::AAP::Manager manager;
+        manager._transportFactoryForTest = [&factory] { return factory.Build(); };
+        manager._beforePendingPublishForTest = [&] {
+            publishEntered->Signal();
+            publishRelease->Wait(AAPTestSupport::kRendezvousTimeout);
+        };
+
+        bool result = true;
+        Worker connector{
+            [&] { result = manager.Connect(Core::AAP::AAPAttempt{42, 1}); },
+            [&] {
+                manager.CancelConnect();
+                factory.ReleaseAllBuilt();
+            }};
+        QVERIFY(publishEntered->Wait(2s));
+        {
+            std::lock_guard lock{manager._pendingConnectMutex};
+            QVERIFY(!manager._pendingTransport);
+        }
+
+        manager.CancelConnect();
+        QCOMPARE(manager._cancelledGeneration.load(), uint64_t{1});
+        publishRelease->Signal();
+        QVERIFY(connector.Finished(2s));
+        QVERIFY(!result);
+        auto transport = factory.Last();
+        QVERIFY(transport != nullptr);
+        QCOMPARE(transport->CallCount(BlockingTransport::Op::Connect), size_t{0});
+        QVERIFY(transport->IsClosed());
+        QVERIFY(!manager.IsConnected());
+        QVERIFY(!manager._transport.load());
+        QCOMPARE(manager.GetLastConnectFailure(), Core::AAP::ConnectFailure::TransportError);
+        QVERIFY(DisconnectWithin(manager, factory));
     }
 
     void CallerCancellationWakesConnectAndJoinsTheWorker()

@@ -231,6 +231,13 @@ private:
     // never assigns it and no public API exposes it, so the branch stays inert there.
     std::function<std::shared_ptr<AAPTransport>()> _transportFactoryForTest;
 
+    // Additional T1 rendezvous seams. They observe real lifecycle boundaries without
+    // replacing the logic under test: lock attempt, pending publication, and public-send
+    // validation. Production never assigns them and no public API exposes them.
+    std::function<void(AAPAttempt)> _beforeConnectLockForTest;
+    std::function<void()> _beforePendingPublishForTest;
+    std::function<void()> _publicSendBarrierForTest;
+
     // Internal methods
     bool SendPacket(const std::vector<uint8_t> &packet);
     bool SendPacket(

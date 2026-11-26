@@ -116,6 +116,9 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         return false;
     }
 
+    if (_beforeConnectLockForTest) {
+        _beforeConnectLockForTest(attempt);
+    }
     std::unique_lock connectLock{_connectMutex};
     const auto cancelled = [&] {
         return stopToken.stop_requested() || _connectStop.get_token().stop_requested() ||
@@ -254,17 +257,38 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
         stopToken, _connectStop, attempt.generation, _cancelledGeneration};
     const auto cancelled = [&] { return attemptCancellation.IsRequested(); };
 
-    LOG(Info, "AAP: Attempting L2CAP SEQPACKET connection to {} on PSM {}",
-        Diagnostics::Recorder::MaskAddress(attempt.address), kPSM);
-    auto seqPacket = _transportFactory
-                         ? _transportFactory(AAPTransportKind::SeqPacket)
-                         : std::shared_ptr<AAPTransport>(CreateSeqPacketTransport().release());
-    setPending(seqPacket);
-    const bool seqConnected = seqPacket->Connect(attempt.address, attemptCancellation.Token());
-    clearPending(seqPacket);
-    if (seqConnected && !cancelled()) {
-        failure = ConnectFailure::None;
-        return seqPacket;
+    // One transport attempt: publish it as the pending connect so CancelConnect can close
+    // it while the blocking Connect is in flight, then withdraw the pending slot. Returns
+    // the transport only when it connected and nobody cancelled meanwhile.
+    auto openTransport = [&](std::shared_ptr<AAPTransport> transport,
+                             ConnectFailure rejectedFailure) -> std::shared_ptr<AAPTransport> {
+        if (_beforePendingPublishForTest) {
+            _beforePendingPublishForTest();
+        }
+        setPending(transport);
+        // CancelConnect may have marked this generation after Connect's entry check but
+        // before the pending slot became visible. Do not enter a blocking transport call
+        // with only the caller token in that window.
+        if (cancelled()) {
+            clearPending(transport);
+            transport->Close();
+            failure = rejectedFailure;
+            return nullptr;
+        }
+
+        // The attempt token observes the caller, the manager and this generation's cancel, so
+        // a Close that lands just before the transport enters its own blocking connect loop
+        // still wakes it.
+        const bool connected = transport->Connect(attempt.address, attemptCancellation.Token());
+        clearPending(transport);
+        if (connected && !cancelled()) {
+            failure = ConnectFailure::None;
+            return transport;
+        }
+        transport->Close();
+        failure = rejectedFailure;
+        return nullptr;
+    };
 
     // T1 test seam: a hardware-free test parks a real Connect on this factory transport and
     // observes the same pending-publish/CancelConnect handshake the socket path uses.
@@ -274,17 +298,16 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
             failure = ConnectFailure::TransportError;
             return nullptr;
         }
-        setPending(injected);
-        const bool connected = injected->Connect(attempt.address, attemptCancellation.Token());
-        clearPending(injected);
-        if (connected && !cancelled()) {
-            failure = ConnectFailure::None;
-            return injected;
-        }
-        injected->Close();
-        failure = ConnectFailure::TransportError;
-        return nullptr;
+        return openTransport(std::move(injected), ConnectFailure::TransportError);
     }
+
+    LOG(Info, "AAP: Attempting L2CAP SEQPACKET connection to {} on PSM {}",
+        Diagnostics::Recorder::MaskAddress(attempt.address), kPSM);
+    auto seqPacket = _transportFactory
+                         ? _transportFactory(AAPTransportKind::SeqPacket)
+                         : std::shared_ptr<AAPTransport>(CreateSeqPacketTransport().release());
+    if (auto connected = openTransport(std::move(seqPacket), ConnectFailure::ServiceUnavailable)) {
+        return connected;
     }
 
     if (cancelled()) {
@@ -795,19 +818,57 @@ void Manager::ProcessAttFrame(
 
 bool Manager::SendPacket(const std::vector<uint8_t> &packet)
 {
-    if (!_connected) {
+    AAPAttempt attempt;
+    std::shared_ptr<AAPTransport> transport;
+    std::stop_source connectStop;
+    {
+        // The connected decision, attempt identity, and transport pin are one snapshot.
+        // A public command must never return to _transport later and pick up a replacement.
+        std::lock_guard lock{_mutex};
+        if (!_connected || _cancelledGeneration.load() == _attempt.generation) {
+            return false;
+        }
+        attempt = _attempt;
+        transport = _transport.load();
+        connectStop = _connectStop;
+    }
+    if (!transport || connectStop.get_token().stop_requested()) {
         return false;
     }
+    if (_publicSendBarrierForTest) {
+        _publicSendBarrierForTest();
+    }
 
-    return SendPacket(_transport.load(), packet, {});
+    {
+        // The barrier/teardown can retire this session after the snapshot. Revalidate the
+        // pinned attempt and cancellation state immediately before entering the raw sender.
+        std::lock_guard lock{_mutex};
+        if (!_connected || attempt.address != _attempt.address ||
+            attempt.generation != _attempt.generation ||
+            _cancelledGeneration.load() == attempt.generation || _transport.load() != transport ||
+            connectStop.get_token().stop_requested())
+        {
+            return false;
+        }
+    }
+    return SendPacket(transport, packet, connectStop.get_token());
 }
 
+// Initialization-only raw sender. Public commands must use the attempt-bound overload
+// above; the handshake and ATT probe deliberately run before the connected gate opens.
 bool Manager::SendPacket(
     const std::shared_ptr<AAPTransport> &transport, const std::vector<uint8_t> &packet,
     std::stop_token stopToken)
 {
-    if (!transport || stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
+    if (!transport || stopToken.stop_requested()) {
         return false;
+    }
+    {
+        // Connect replaces this source under _mutex; never read its token unlocked.
+        std::lock_guard lock{_mutex};
+        if (_connectStop.get_token().stop_requested()) {
+            return false;
+        }
     }
     if (!transport->Send(packet, stopToken)) {
         return false;

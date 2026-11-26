@@ -652,47 +652,46 @@ private slots:
         QCOMPARE(transport.Receive({}), std::optional(complete));
     }
 
-    void PromiseGateTimesOutAndReleasesOnEveryExit()
+    void PromiseGateObservesWaitEntryAndReleasesOnEveryExit()
     {
         AAPTestSupport::PromiseGate gate;
-        AAPTestSupport::PromiseGate entered;
         bool returned = false;
         {
             AAPTestSupport::ScopedUnblock unblock{gate};
             AAPTestSupport::Worker worker{
-                [&] {
-                    entered.Signal();
-                    returned = gate.Wait(2s);
-                },
-                [&] { gate.Signal(); }};
-            QVERIFY(entered.Wait(2s));
-            QVERIFY(!gate.Wait(1ms));
+                [&] { returned = gate.Wait(2s); }, [&] { gate.Signal(); }};
+            QVERIFY(gate.WaitForWaiter(2s));
+            const auto parked = gate.Snapshot();
+            QCOMPARE(parked.waiters, size_t{1});
+            QVERIFY(!parked.open);
             gate.Signal();
             QVERIFY(worker.Finished(2s));
         }
         QVERIFY(returned);
+        const auto released = gate.Snapshot();
+        QCOMPARE(released.waiters, size_t{0});
+        QVERIFY(released.open);
         QVERIFY(gate.Wait(0ms));
     }
 
-    void AtomicGateTimesOutAndReleasesOnEveryExit()
+    void AtomicGateObservesPredicateEntryAndReleasesOnEveryExit()
     {
         AAPTestSupport::AtomicGate gate;
-        AAPTestSupport::PromiseGate entered;
         bool returned = false;
         {
             AAPTestSupport::ScopedUnblock unblock{gate};
-            AAPTestSupport::Worker worker{
-                [&] {
-                    entered.Signal();
-                    returned = gate.Wait(2s);
-                },
-                [&] { gate.Open(); }};
-            QVERIFY(entered.Wait(2s));
-            QVERIFY(!gate.Wait(1ms));
+            AAPTestSupport::Worker worker{[&] { returned = gate.Wait(2s); }, [&] { gate.Open(); }};
+            QVERIFY(gate.WaitForWaiter(2s));
+            const auto parked = gate.Snapshot();
+            QCOMPARE(parked.waiters, size_t{1});
+            QVERIFY(!parked.open);
             gate.Open();
             QVERIFY(worker.Finished(2s));
         }
         QVERIFY(returned);
+        const auto released = gate.Snapshot();
+        QCOMPARE(released.waiters, size_t{0});
+        QVERIFY(released.open);
         QVERIFY(gate.Wait(0ms));
     }
 
