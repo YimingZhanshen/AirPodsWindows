@@ -299,7 +299,7 @@ private:
     Helper::ConWorker _scannerRetryWorker;
 
     using AAPClock = std::chrono::steady_clock;
-    std::mutex _aapWorkerMutex;
+    mutable std::mutex _aapWorkerMutex;
     std::condition_variable _aapWorkerCv;
     AAP::AAPConnectionStateMachine _aapConnection;
     std::optional<uint64_t> _aapDesiredAddress;
