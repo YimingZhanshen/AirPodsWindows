@@ -47,7 +47,8 @@ class SettingsWindow : public QDialog
 public:
     explicit SettingsWindow(
         std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect,
-        std::function<Core::AirPods::Manager &()> getAirPodsManager = {}, QWidget *parent = nullptr);
+        std::function<Core::AirPods::Manager &()> getAirPodsManager = {},
+        QWidget *parent = nullptr);
     void SetLowAudioLatencyChecked(bool checked);
 
     // Installs the application's AirPods manager into the driver status card.
@@ -97,6 +98,8 @@ private:
     // Features
     void On_cbLowAudioLatency_toggled(bool checked);
     void On_cbTrayQuickConnectEnabled_toggled(bool checked);
+    void On_cbAudioAutoConnectEnabled_toggled(bool checked);
+    void On_cbLidPopup_toggled(bool checked);
     void On_cbTrayQuickConnectDevice_currentIndexChanged(int index);
     void On_cbAutoEarDetection_toggled(bool checked);
     void On_cbConversationalAwareness_toggled(bool checked);
@@ -119,7 +122,12 @@ private:
         _ui.retranslateUi(this);
         _ui.cbLowAudioLatency->setAccessibleName(_ui.lbLowAudioLatency->text());
         _ui.cbAutoEarDetection->setAccessibleName(_ui.lbAutoEarDetection->text());
+        _ui.cbConversationalAwareness->setAccessibleName(_ui.lbConversationalAwareness->text());
+        _ui.cbPersonalizedVolume->setAccessibleName(_ui.lbPersonalizedVolume->text());
+        _ui.cbLoudSoundReduction->setAccessibleName(_ui.lbLoudSoundReduction->text());
+        _ui.cbLidPopup->setAccessibleName(_ui.lbLidPopup->text());
         _ui.cbTrayQuickConnectEnabled->setAccessibleName(_ui.lbTrayQuickConnect->text());
+        _ui.cbAudioAutoConnectEnabled->setAccessibleName(_ui.lbAudioAutoConnect->text());
         _ui.cbAppearanceMode->setAccessibleName(_ui.lbAppearance->text());
         _aboutTextTemplate = _ui.label->text();
         InitCreditsText();

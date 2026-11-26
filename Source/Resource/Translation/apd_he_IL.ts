@@ -49,47 +49,32 @@ Enjoy it all.</source>
         <source>Click the icon to view battery information, right-click to customize settings or quit.</source>
         <translation>לחץ על הסמל לצפייה בפרטי הסוללה, או לחץ לחיצה ימנית לשינוי הגדרות או ליציאה.</translation>
     </message>
-</context>
-<context>
-    <name>DownloadWindow</name>
     <message>
-        <source>Download new version</source>
-        <translation>הורדת גרסה חדשה</translation>
-    </message>
-    <message>
-        <source>Download Manually</source>
-        <translation>הורדת ידנית</translation>
-    </message>
-    <message>
-        <source>If the download is slow or fails, you can:</source>
-        <translation>אם ההורדה איטית או שההורדה נכשלה, ניתן:</translation>
+        <source>ANC connection failed</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
-    <name>Gui::DownloadWindow</name>
+    <name>Gui::DriverStatusCard</name>
     <message>
-        <source>Oops, an error occurred during the automatic update.
-Please download and install the new version manually.</source>
-        <translation>משהו השתבש בעדכון האוטומטי.
-לא נורא, אפשר להוריד ולהתקין את הגרסה החדשה ידנית.</translation>
+        <source>Driver (MagicAAP)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Copy install command</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open documentation</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Export diagnostics</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>Gui::MainWindow</name>
-    <message>
-        <source>Change log:</source>
-        <translation>יומן שינויים:</translation>
-    </message>
-    <message>
-        <source>Hey! I found a new version available!
-
-Current version: %1
-Latest version: %2%3</source>
-        <translation>היי! נמצאה גרסה חדשה זמינה!
-
-הגרסה שלך: %1
-הגרסה החדשה: %2%3</translation>
-    </message>
     <message>
         <source>Bind to AirPods</source>
         <translation>שיוך ל-AirPods</translation>
@@ -129,6 +114,38 @@ Latest version: %2%3</source>
     <message>
         <source>Adaptive</source>
         <translation>שמע מותאם</translation>
+    </message>
+    <message>
+        <source>Saved device (not available)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Restore Defaults</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Export diagnostics</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Text files (*.txt)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Could not write the diagnostics file.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>installed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not installed</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -185,6 +202,105 @@ Latest version: %2%3</source>
         <source>Adaptive</source>
         <translation>שמע מותאם</translation>
     </message>
+    <message>
+        <source>Quick connection is disabled.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Choose a Bluetooth audio device in Settings first.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The selected device is not available. Turn it on or bring it into range.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Connecting to %1...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Connection to %1 timed out.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Windows could not connect to %1.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Quick connect</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Low audio latency (may cause hiss)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Battery</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>Gui::UpdateWindow</name>
+    <message>
+        <source>Ready to install. You are using %1.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Downloading update</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Unable to update</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The automatic update was stopped</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Release type</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>New version</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Preview release</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stable release</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No release notes for this version</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The automatic update could not be completed. Please download and install the new version manually, or close this window to continue using AirPodsDesktop.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Waiting for download size...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1 downloaded</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Preparing to install...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Downloading...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1% - %2 of %3</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>MainWindow</name>
@@ -201,29 +317,9 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <translation>לא נמצא מכשיר משויך.
 עליך לשייך תחילה את ה-AirPods בהגדרות ה-Bluetooth של Windows.</translation>
     </message>
-    <message>
-        <source>Update now</source>
-        <translation>עדכן עכשיו</translation>
-    </message>
-    <message>
-        <source>Skip this version</source>
-        <translation>דלג על גרסה זו</translation>
-    </message>
-    <message>
-        <source>View release</source>
-        <translation>צפה בפרטי הגרסה</translation>
-    </message>
-    <message>
-        <source>Remind me later</source>
-        <translation>הזכר לי מאוחר יותר</translation>
-    </message>
 </context>
 <context>
     <name>QObject</name>
-    <message>
-        <source>It fixes short audio playback problems, but may increase battery consumption.</source>
-        <translation>פותר בעיות בהשמעת קטעי שמע קצרים, אך עשוי להגדיל את צריכת הסוללה.</translation>
-    </message>
     <message>
         <source>It automatically pauses or resumes media when your AirPods are taken out or put in your ears.</source>
         <translation>משהה או ממשיך את המדיה באופן אוטומטי בעת הוצאה או הכנסה של ה-AirPods לאוזניים.</translation>
@@ -281,12 +377,84 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <translation>מגן על השמיעה שלך באמצעות צמצום החשיפה לרעש סביבתי חזק.</translation>
     </message>
     <message>
-        <source>Controls the amount of environmental sound in Adaptive mode (0-50).</source>
-        <translation>קובע את כמות רעשי הסביבה שיחדרו במצב ״שמע מותאם״ (0-50).</translation>
-    </message>
-    <message>
         <source>Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).</source>
         <translation>מצב האזנה (1=כבוי, 2=צמצום רעשים, 3=חדירת רעשי רקע, 4=שמע מותאם).</translation>
+    </message>
+    <message>
+        <source>Keeps the audio device awake while your AirPods are connected so short sounds start immediately. This may produce audible hiss and use more battery.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Single-click the tray icon to connect the selected device when disconnected, or show battery information when connected. Battery information opens automatically after a successful connection.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Connect the selected device when audio starts playing and it is disconnected. After a failure, wait at least 30 seconds and start playback again to retry.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Shows the battery window when you open the case, without taking focus from the app in use. When off, open it from the tray icon.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Volume percentage when speaking (based on your pre-speaking volume).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Caps how loud loud sounds get, for hearing protection (0-100).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Driver not installed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Driver ready - waiting for the earbuds</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Connected (driver channel)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Connected (native channel - driver features limited)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Install the driver to unlock ANC control, loud sound reduction and other AAP features. Copy the install command or open the documentation.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open the earbud case near this computer to connect.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>All driver features available.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The earbuds do not answer attribute reads on this channel; loud sound reduction state cannot be read back.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Connected without the driver channel; features that require the driver (loud sound reduction, precise battery) may not work. See the documentation.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Last connection failed: the MagicAAP driver is not installed or not running. Install it (see documentation), then reconnect.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Last connection failed: the earbuds did not offer the ANC service. Make sure they are paired, in range, and the case is open.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Last connection failed: the Bluetooth transport could not be opened. Check that Bluetooth is on and the earbuds are close to this computer.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -403,8 +571,99 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <translation>מצב האזנה</translation>
     </message>
     <message>
-        <source>Adaptive transparency level</source>
-        <translation>רמת חדירת רעשי רקע אדפטיבית</translation>
+        <source>Connect the selected device on a tray icon click</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Device</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The paired Bluetooth audio device a tray icon click connects.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Forget the bound AirPods so that another pair can be bound.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Diagnostics</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Log files help when reporting an issue.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Appearance</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Use system setting</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Dark</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Connect automatically when audio starts playing</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Show battery when the case opens</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>40%</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Hearing protection cap (PPE)</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>UpdateWindow</name>
+    <message>
+        <source>Software Update</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>View release</source>
+        <translation type="unfinished">צפה בפרטי הגרסה</translation>
+    </message>
+    <message>
+        <source>Skip this version</source>
+        <translation type="unfinished">דלג על גרסה זו</translation>
+    </message>
+    <message>
+        <source>Remind me later</source>
+        <translation type="unfinished">הזכר לי מאוחר יותר</translation>
+    </message>
+    <message>
+        <source>Update now</source>
+        <translation type="unfinished">עדכן עכשיו</translation>
+    </message>
+    <message>
+        <source>Download Manually</source>
+        <translation type="unfinished">הורדת ידנית</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>If the download is slow, you can download the update manually. AirPodsDesktop will close when you switch to manual download.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>What&apos;s new</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 </TS>

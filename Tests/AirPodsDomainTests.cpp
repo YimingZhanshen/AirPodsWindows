@@ -1,12 +1,17 @@
+#include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <map>
 #include <tuple>
 #include <vector>
 
 #include <QtTest>
+#include <QFile>
+#include <QImage>
 #include <QTemporaryFile>
+#include <QVector>
 
 #include <Config.h>
 #include "Source/Core/AirPods.h"
@@ -246,6 +251,13 @@ private Q_SLOTS:
     void PresentsMainWindowLifecycleStates();
     void PresentsMainWindowDeviceState();
     void PresentsMainWindowCaseBattery();
+    void MergesMatchingPodBatteries();
+    void PresentsScenesFromPodPlacement();
+    void CollapsesAirPodsMaxToSingleBattery();
+    void ParsesCapturedSpaceGrayAirPodsMax();
+    void PreservesForkAnimationMappingsAndColors();
+    void PlacesPopupInsideMultimonitorBounds();
+    void TranslationLocalesIncludeUpstreamAndForkLanguages();
     void MapsMainWindowAnimationResources();
     void ConvertsTaskbarGeometryAcrossDpiBoundaries();
 };
@@ -1070,41 +1082,277 @@ void AirPodsDomainTests::PresentsMainWindowCaseBattery()
     QVERIFY(!presentation.caseBattery.charging);
 }
 
+void AirPodsDomainTests::MergesMatchingPodBatteries()
+{
+    Core::AirPods::State state;
+    state.model = Core::AirPods::Model::AirPods_Pro_2;
+    state.pods.left.battery = 95;
+    state.pods.right.battery = 95;
+    state.caseBox.battery = 99;
+
+    Gui::MainWindowViewModel viewModel;
+    viewModel.UpdateState(state);
+    auto presentation = viewModel.Present();
+
+    QVERIFY(!presentation.leftBattery.visible);
+    QVERIFY(presentation.rightBattery.visible);
+    QCOMPARE(presentation.rightBattery.value, 95U);
+    QCOMPARE(presentation.rightBattery.badge, Gui::BatteryBadge::None);
+    QCOMPARE(presentation.caseBattery.badge, Gui::BatteryBadge::Case);
+
+    state.caseBox.isBothPodsInCase = true;
+    state.pods.left.isInCase = state.pods.right.isInCase = true;
+    viewModel.UpdateState(state);
+    QCOMPARE(viewModel.Present().caseBattery.badge, Gui::BatteryBadge::None);
+    QCOMPARE(viewModel.Present().scene, Gui::Scene::PodsInCase);
+    state.caseBox.isBothPodsInCase = false;
+    state.pods.left.isInCase = state.pods.right.isInCase = false;
+
+    state.pods.right.isCharging = true;
+    viewModel.UpdateState(state);
+    presentation = viewModel.Present();
+    QVERIFY(presentation.leftBattery.visible);
+    QCOMPARE(presentation.leftBattery.badge, Gui::BatteryBadge::Left);
+    QCOMPARE(presentation.rightBattery.badge, Gui::BatteryBadge::Right);
+}
+
+void AirPodsDomainTests::PresentsScenesFromPodPlacement()
+{
+    Core::AirPods::State state;
+    state.model = Core::AirPods::Model::AirPods_Pro_2;
+    state.pods.left.battery = 80;
+    state.pods.right.battery = 60;
+    state.pods.right.isCharging = true;
+    state.caseBox.battery = 99;
+
+    Gui::MainWindowViewModel viewModel;
+
+    state.pods.left.isInCase = state.pods.right.isInCase = true;
+    state.caseBox.isBothPodsInCase = true;
+    viewModel.UpdateState(state);
+    auto presentation = viewModel.Present();
+    QCOMPARE(presentation.scene, Gui::Scene::PodsInCase);
+    QVERIFY(!presentation.leftBattery.visible);
+    QCOMPARE(presentation.rightBattery.value, 60U);
+    QCOMPARE(presentation.rightBattery.badge, Gui::BatteryBadge::None);
+    QCOMPARE(presentation.caseBattery.badge, Gui::BatteryBadge::None);
+
+    state.pods.right.isInCase = false;
+    state.caseBox.isBothPodsInCase = false;
+    viewModel.UpdateState(state);
+    presentation = viewModel.Present();
+    QCOMPARE(presentation.scene, Gui::Scene::OnePodOut);
+    QVERIFY(presentation.leftBattery.visible && presentation.rightBattery.visible);
+    QCOMPARE(presentation.caseBattery.badge, Gui::BatteryBadge::Case);
+
+    state.pods.left.isInCase = false;
+    viewModel.UpdateState(state);
+    presentation = viewModel.Present();
+    QCOMPARE(presentation.scene, Gui::Scene::BothPodsOut);
+    QVERIFY(presentation.leftBattery.visible && presentation.rightBattery.visible);
+    QCOMPARE(presentation.leftBattery.badge, Gui::BatteryBadge::Left);
+    QCOMPARE(presentation.rightBattery.badge, Gui::BatteryBadge::Right);
+    QVERIFY(presentation.caseBattery.visible);
+    QCOMPARE(presentation.caseBattery.value, 99U);
+
+    state.pods.left.isInEar = state.pods.right.isInEar = true;
+    viewModel.UpdateState(state);
+    QCOMPARE(viewModel.Present(), presentation);
+}
+
+void AirPodsDomainTests::CollapsesAirPodsMaxToSingleBattery()
+{
+    for (const auto model : {Model::AirPods_Max, Model::AirPods_Max_USB_C}) {
+        QVERIFY(Core::AirPods::HasSingleBattery(model));
+        QVERIFY(!Core::AirPods::HasChargingCase(model));
+        Core::AirPods::State state;
+        state.model = model;
+        state.pods.left.battery = Core::AirPods::Battery{80};
+        state.pods.right.battery = Core::AirPods::Battery{20};
+        state.caseBox.battery = Core::AirPods::Battery{90};
+
+        Gui::MainWindowViewModel viewModel;
+        viewModel.UpdateState(state);
+        const auto presentation = viewModel.Present();
+        QCOMPARE(presentation.scene, Gui::Scene::Headset);
+        QVERIFY(!presentation.leftBattery.visible);
+        QVERIFY(presentation.rightBattery.visible);
+        QCOMPARE(presentation.rightBattery.value, 80U);
+        QCOMPARE(presentation.rightBattery.badge, Gui::BatteryBadge::None);
+        QVERIFY(!presentation.caseBattery.visible);
+    }
+}
+
+void AirPodsDomainTests::ParsesCapturedSpaceGrayAirPodsMax()
+{
+    constexpr std::array<uint8_t, 27> captured{
+        0x07, 0x19, 0x01, 0x0a, 0x20, 0x22, 0x04, 0x80, 0x01, 0x0f, 0x45, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    };
+    ReceivedData data;
+    data.address = 0x1234;
+    data.rssi = -60;
+    data.manufacturerDataMap.emplace(
+        Core::AppleCP::VendorId, std::vector<uint8_t>{captured.cbegin(), captured.cend()});
+    const Advertisement advertisement{data};
+    const auto &state = advertisement.GetAdvState();
+    QCOMPARE(state.model, Model::AirPods_Max);
+    QCOMPARE(state.color, Core::AppleCP::Color::MaxSpaceGray);
+    QCOMPARE(state.pods.left.battery.Value(), 40u);
+    QVERIFY(!state.caseBox.battery.Available());
+
+    Gui::MainWindowViewModel viewModel;
+    viewModel.UpdateState(state);
+    const auto presentation = viewModel.Present();
+    QCOMPARE(presentation.animationColor, Core::AppleCP::Color::MaxSpaceGray);
+    QCOMPARE(
+        Gui::GetAnimationPresentation(Model::AirPods_Max, presentation.animationColor).resource,
+        QString{"qrc:/Resource/Video/AirPods_Max/15.avi"});
+
+    // The parsed color must survive aggregation before the presentation layer can select a render.
+    StateManager manager;
+    manager.OnRssiMinChanged(-80);
+    const auto update = manager.OnAdvReceived(advertisement);
+    QVERIFY(update.has_value());
+    QCOMPARE(update->newState.color, Core::AppleCP::Color::MaxSpaceGray);
+}
+
+void AirPodsDomainTests::PreservesForkAnimationMappingsAndColors()
+{
+    const auto airPods5 = Gui::GetAnimationPresentation(Model::AirPods_5);
+    QCOMPARE(airPods5.resource, QString{"qrc:/Resource/Video/AirPods_4_ANC.avi"});
+
+    const auto pro3 = Gui::GetAnimationPresentation(Model::AirPods_Pro_3);
+    QCOMPARE(pro3.resource, QString{"qrc:/Resource/Video/AirPods_Pro_3.avi"});
+
+    const auto powerbeatsPro2 = Gui::GetAnimationPresentation(Model::Powerbeats_Pro_2);
+    QCOMPARE(powerbeatsPro2.resource, QString{"qrc:/Resource/Video/Beats_Fit_Pro.avi"});
+
+    const auto max = Gui::GetAnimationPresentation(Model::AirPods_Max);
+    QCOMPARE(max.resource, QString{"qrc:/Resource/Video/AirPods_Max/16.avi"});
+    QCOMPARE(
+        Gui::GetAnimationPresentation(Model::AirPods_Max, Core::AppleCP::Color::MaxSpaceGray)
+            .resource,
+        QString{"qrc:/Resource/Video/AirPods_Max/15.avi"});
+    const auto maxUsbC = Gui::GetAnimationPresentation(Model::AirPods_Max_USB_C);
+    QCOMPARE(maxUsbC.resource, QString{"qrc:/Resource/Video/AirPods_Max_USB_C/19.avi"});
+    QCOMPARE(
+        Gui::GetAnimationPresentation(
+            Model::AirPods_Max_USB_C, static_cast<Core::AppleCP::Color>(22))
+            .resource,
+        QString{"qrc:/Resource/Video/AirPods_Max_USB_C/22.avi"});
+
+    const std::vector<std::pair<Model, size_t>> colorCounts{
+        {Model::AirPods_Max, 5},  {Model::AirPods_Max_USB_C, 5}, {Model::Beats_Fit_Pro, 14},
+        {Model::Beats_Solo3, 28}, {Model::Powerbeats_3, 15},     {Model::Beats_X, 9},
+    };
+    for (const auto &[model, count] : colorCounts) {
+        QCOMPARE(Gui::GetAnimationColors(model).size(), count);
+    }
+}
+
+void AirPodsDomainTests::PlacesPopupInsideMultimonitorBounds()
+{
+    const QSize popup{320, 330};
+    const QSize margin{24, 24};
+    const QVector<QRect> screens{
+        QRect{0, 0, 1920, 1040},       // primary monitor
+        QRect{-1920, -200, 1280, 720}, // left and above the primary origin
+        QRect{1920, 400, 2560, 1440},  // right and below the primary origin
+        QRect{100, 100, 240, 180},     // smaller than the popup plus margins
+    };
+    for (const auto &screen : screens) {
+        const auto position = Gui::PopupPosition(screen, popup, margin);
+        const QRect placed{position, popup};
+        QVERIFY2(placed.intersects(screen), qPrintable(screen.toString()));
+        QVERIFY2(placed.left() >= screen.left(), qPrintable(screen.toString()));
+        QVERIFY2(placed.top() >= screen.top(), qPrintable(screen.toString()));
+        if (screen.width() >= popup.width() + margin.width()) {
+            QCOMPARE(placed.right() + 1, screen.right() + 1 - margin.width());
+        }
+        if (screen.height() >= popup.height() + margin.height()) {
+            QCOMPARE(placed.bottom() + 1, screen.bottom() + 1 - margin.height());
+        }
+    }
+}
+
+void AirPodsDomainTests::TranslationLocalesIncludeUpstreamAndForkLanguages()
+{
+    const auto locales =
+        QString{Config::TranslationLocales}.split(QStringLiteral(";"), Qt::SkipEmptyParts);
+    for (const auto *locale : {"es_ES", "fa_IR", "id_ID", "pl_PL", "he_IL"}) {
+        QVERIFY2(
+            locales.contains(locale),
+            qPrintable(QString{"Missing translation locale: %1"}.arg(locale)));
+    }
+}
+
 void AirPodsDomainTests::MapsMainWindowAnimationResources()
 {
-    const auto airPods5 = Gui::GetAnimationPresentation(Core::AirPods::Model::AirPods_5);
-    QCOMPARE(airPods5.resource, QString{"qrc:/Resource/Video/AirPods_4_ANC.avi"});
-    QCOMPARE(airPods5.sourceSize, QSize(900, 450));
-
     const auto pro = Gui::GetAnimationPresentation(Core::AirPods::Model::AirPods_Pro_2_USB_C);
     QCOMPARE(pro.resource, QString{"qrc:/Resource/Video/AirPods_Pro_2.avi"});
     QCOMPARE(pro.sourceSize, QSize(900, 450));
 
-    const auto maxUsbC = Gui::GetAnimationPresentation(Core::AirPods::Model::AirPods_Max_USB_C);
-    QCOMPARE(maxUsbC.resource, QString{"qrc:/Resource/Video/AirPods_Max.avi"});
-    QCOMPARE(maxUsbC.sourceSize, QSize(600, 650));
+    QCOMPARE(
+        Gui::GetAnimationPresentation(
+            Core::AirPods::Model::Beats_Fit_Pro, static_cast<Core::AppleCP::Color>(4))
+            .resource,
+        QString{"qrc:/Resource/Video/Beats_Fit_Pro/4.avi"});
+    QCOMPARE(
+        Gui::GetAnimationPresentation(
+            Core::AirPods::Model::Beats_Fit_Pro, static_cast<Core::AppleCP::Color>(200))
+            .resource,
+        QString{"qrc:/Resource/Video/Beats_Fit_Pro/1.avi"});
 
     const auto fallback = Gui::GetAnimationPresentation(Core::AirPods::Model::Unknown);
     QCOMPARE(fallback.resource, QString{"qrc:/Resource/Video/AirPods_1.avi"});
     QCOMPARE(fallback.sourceSize, QSize(800, 400));
 
-    // The qrc is linked into the application, not into this binary, so read it from the source
-    // tree: a mapping naming a resource the qrc does not carry would ship a blank animation.
-    QFile qrc{QString{APD_SOURCE_DIR} + "/Source/Resource/Resource.qrc"};
+    QFile qrc{QString{APD_SOURCE_DIR} + "/Source/Resource/Animation.qrc"};
     QVERIFY(qrc.open(QIODevice::ReadOnly | QIODevice::Text));
     const auto qrcContents = QString::fromUtf8(qrc.readAll());
 
     for (uint32_t i = 0; i < static_cast<uint32_t>(Core::AirPods::Model::_Max); ++i) {
-        const auto resource =
-            Gui::GetAnimationPresentation(static_cast<Core::AirPods::Model>(i)).resource;
-        const auto entry = QString{resource}.replace("qrc:/Resource/", "");
-        QVERIFY2(
-            qrcContents.contains("<file>" + entry + "</file>"),
-            qPrintable(QString{"animation not listed in Resource.qrc: %1"}.arg(resource)));
-        QVERIFY2(
-            QFile::exists(QString{APD_SOURCE_DIR} + "/Source/Resource/" + entry),
-            qPrintable(QString{"animation file missing: %1"}.arg(entry)));
+        const auto model = static_cast<Core::AirPods::Model>(i);
+        for (const auto color : Gui::GetAnimationColors(model)) {
+            const auto presentation = Gui::GetAnimationPresentation(model, color);
+            QStringList resources{
+                QString{presentation.resource}.replace("qrc:/Resource/", ""),
+                QString{presentation.FallbackResource()}.replace(":/Resource/", ""),
+            };
+            const auto stills = QString{presentation.StillDirectory()}.replace(":/Resource/", "");
+            QCOMPARE(!stills.isEmpty(), Core::AirPods::HasChargingCase(model));
+            if (!stills.isEmpty()) {
+                resources << stills + "/L.png" << stills + "/R.png" << stills + "/Case.png";
+            }
+            for (const auto &resource : resources) {
+                QVERIFY2(
+                    qrcContents.contains("<file>" + resource + "</file>"),
+                    qPrintable(QString{"resource not listed in Animation.qrc: %1"}.arg(resource)));
+                QVERIFY2(
+                    QFile::exists(QString{APD_SOURCE_DIR} + "/Source/Resource/" + resource),
+                    qPrintable(QString{"resource file missing: %1"}.arg(resource)));
+            }
+
+            const QImage still{
+                QString{APD_SOURCE_DIR} + "/Source/Resource/" +
+                QString{presentation.FallbackResource()}.replace(":/Resource/", "")};
+            QVERIFY2(!still.isNull(), qPrintable(presentation.resource));
+            QVERIFY2(
+                std::abs(
+                    static_cast<qreal>(presentation.sourceSize.width()) /
+                        presentation.sourceSize.height() -
+                    static_cast<qreal>(still.width()) / still.height()) < 0.01,
+                qPrintable(presentation.resource));
+        }
     }
+
+    QFile mainResources{QString{APD_SOURCE_DIR} + "/Source/Resource/Resource.qrc"};
+    QVERIFY(mainResources.open(QIODevice::ReadOnly | QIODevice::Text));
+    const auto mainContents = QString::fromUtf8(mainResources.readAll());
+    QVERIFY(!mainContents.contains("<file>Video/"));
+    QVERIFY(!mainContents.contains("<file>Image/Animation/"));
+    QVERIFY(!mainContents.contains("<file>Image/Still/"));
 }
 
 void AirPodsDomainTests::ConvertsTaskbarGeometryAcrossDpiBoundaries()

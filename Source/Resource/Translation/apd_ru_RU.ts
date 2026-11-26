@@ -49,6 +49,29 @@ Enjoy it all.</source>
         <source>Click the icon to view battery information, right-click to customize settings or quit.</source>
         <translation>Нажмите на значок, чтобы просмотреть заряд аккумулятора, нажмите правой кнопкой мыши, чтобы настроить параметры, или выйти.</translation>
     </message>
+    <message>
+        <source>ANC connection failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>Gui::DriverStatusCard</name>
+    <message>
+        <source>Driver (MagicAAP)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Copy install command</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open documentation</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Export diagnostics</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>Gui::MainWindow</name>
@@ -60,20 +83,6 @@ Enjoy it all.</source>
         <source>Please select your AirPods device below.</source>
         <translation>Пожалуйста, выберите свои AirPods ниже.</translation>
     </message>
-    <message>
-            <source>Change log:</source>
-            <translation>Список изменений:</translation>
-        </message>
-    <message>
-            <source>Hey! I found a new version available!
-
-    Current version: %1
-    Latest version: %2%3</source>
-            <translation>Найдена новая версия!
-
-    Текущая версия:%1
-    Последняя версия:%2%3</translation>
-        </message>
 </context>
 <context>
     <name>Gui::SettingsWindow</name>
@@ -103,21 +112,41 @@ Enjoy it all.</source>
         <translation>Закрыть</translation>
     </message>
     <message>
-            <source>Off</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Off</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Noise Cancellation</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Noise Cancellation</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Transparency</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Transparency</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Adaptive</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Adaptive</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Export diagnostics</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Text files (*.txt)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Could not write the diagnostics file.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>installed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>not installed</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -170,16 +199,8 @@ Enjoy it all.</source>
         <translation>Выбранное устройство недоступно. Включите его или переместите в зону действия.</translation>
     </message>
     <message>
-        <source>%1 is already connected.</source>
-        <translation>%1 уже подключено.</translation>
-    </message>
-    <message>
         <source>Connecting to %1...</source>
         <translation>Подключение к %1...</translation>
-    </message>
-    <message>
-        <source>%1 connected.</source>
-        <translation>%1 подключено.</translation>
     </message>
     <message>
         <source>Connection to %1 timed out.</source>
@@ -194,99 +215,99 @@ Enjoy it all.</source>
         <translation>Быстрое подключение</translation>
     </message>
     <message>
-            <source>Noise Control</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Noise Control</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Off</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Off</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Noise Cancellation</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Noise Cancellation</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Transparency</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Transparency</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Adaptive</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Adaptive</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Battery</source>
+        <translation>Аккумулятор</translation>
+    </message>
 </context>
 <context>
     <name>Gui::UpdateWindow</name>
     <message>
         <source>Ready to install. You are using %1.</source>
-        <translation type="unfinished"></translation>
+        <translation>Готово к установке. Вы используете версию %1.</translation>
     </message>
     <message>
         <source>Downloading update</source>
-        <translation type="unfinished"></translation>
+        <translation>Загрузка обновления</translation>
     </message>
     <message>
         <source>Unable to update</source>
-        <translation type="unfinished"></translation>
+        <translation>Не удалось обновить</translation>
     </message>
     <message>
         <source>The automatic update was stopped</source>
-        <translation type="unfinished"></translation>
+        <translation>Автоматическое обновление остановлено</translation>
     </message>
     <message>
         <source>Release type</source>
-        <translation type="unfinished"></translation>
+        <translation>Тип выпуска</translation>
     </message>
     <message>
         <source>New version</source>
-        <translation type="unfinished"></translation>
+        <translation>Новая версия</translation>
     </message>
     <message>
         <source>Preview release</source>
-        <translation type="unfinished"></translation>
+        <translation>Предварительный выпуск</translation>
     </message>
     <message>
         <source>Stable release</source>
-        <translation type="unfinished"></translation>
+        <translation>Стабильный выпуск</translation>
     </message>
     <message>
         <source>No release notes for this version</source>
-        <translation type="unfinished"></translation>
+        <translation>Для этой версии нет примечаний к выпуску</translation>
     </message>
     <message>
         <source>The automatic update could not be completed. Please download and install the new version manually, or close this window to continue using AirPodsDesktop.</source>
-        <translation type="unfinished"></translation>
+        <translation>Не удалось завершить автоматическое обновление. Скачайте и установите новую версию вручную или закройте это окно, чтобы продолжить использовать AirPodsDesktop.</translation>
     </message>
     <message>
         <source>Waiting for download size...</source>
-        <translation type="unfinished"></translation>
+        <translation>Ожидание размера загрузки...</translation>
     </message>
     <message>
         <source>%1 downloaded</source>
-        <translation type="unfinished"></translation>
+        <translation>Загружено %1</translation>
     </message>
     <message>
         <source>Preparing to install...</source>
-        <translation type="unfinished"></translation>
+        <translation>Подготовка к установке...</translation>
     </message>
     <message>
         <source>Downloading...</source>
-        <translation type="unfinished"></translation>
+        <translation>Загрузка...</translation>
     </message>
     <message>
         <source>%1% - %2 of %3</source>
-        <translation type="unfinished"></translation>
+        <translation>%1% - %2 из %3</translation>
     </message>
 </context>
 <context>
     <name>MainWindow</name>
     <message>
-        <source>AirPodsDesktop information</source>
-        <translation>Информация об AirPodsDesktop</translation>
+        <source>AirPodsWindows information</source>
+        <translation>Информация о AirPodsWindows</translation>
     </message>
-    <message>
-            <source>AirPodsWindows information</source>
-            <translation>Информация о AirPodsWindows</translation>
-        </message>
 </context>
 <context>
     <name>QMessageBox</name>
@@ -296,22 +317,6 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <translation>Сопряженное устройство не найдено.
 Сначала вам необходимо выполнить сопряжение AirPods в настройках Bluetooth Windows.</translation>
     </message>
-    <message>
-            <source>Update now</source>
-            <translation>Обновить сейчас</translation>
-        </message>
-    <message>
-            <source>Skip this version</source>
-            <translation>Пропустить эту версию</translation>
-        </message>
-    <message>
-            <source>View release</source>
-            <translation>Посмотреть релиз</translation>
-        </message>
-    <message>
-            <source>Remind me later</source>
-            <translation>Напомнить позже</translation>
-        </message>
 </context>
 <context>
     <name>QObject</name>
@@ -336,61 +341,121 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <translation>Поддерживает аудиоустройство активным, пока AirPods подключены, чтобы короткие звуки воспроизводились сразу. Это может вызвать слышимое шипение и увеличить расход заряда.</translation>
     </message>
     <message>
-        <source>A click on the tray icon connects the selected device instead of opening the main window. Double-click still opens it.</source>
-        <translation>Щелчок по значку в области уведомлений подключает выбранное устройство вместо открытия главного окна. Двойной щелчок по-прежнему открывает его.</translation>
+        <source>Off</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
-            <source>It fixes short audio playback problems, but may increase battery consumption.</source>
-            <translation>Это устраняет проблемы с воспроизведением звука, но может увеличить расход батареи наушников.</translation>
-        </message>
+        <source>Noise Cancellation</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Off</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Transparency</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Noise Cancellation</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Adaptive</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Transparency</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Unknown</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Adaptive</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Enabled</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Unknown</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Disabled</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Enabled</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Automatically lowers media volume when you start speaking (AirPods Pro/Max only).</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Disabled</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Adjusts media volume based on your environment and listening habits.</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Automatically lowers media volume when you start speaking (AirPods Pro/Max only).</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Protects your hearing by reducing loud sounds.</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Adjusts media volume based on your environment and listening habits.</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Protects your hearing by reducing loud sounds.</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Single-click the tray icon to connect the selected device when disconnected, or show battery information when connected. Battery information opens automatically after a successful connection.</source>
+        <translation>Один щелчок по значку в области уведомлений подключает выбранное устройство, если оно отключено, или показывает уровень заряда, если оно подключено. После успешного подключения информация о заряде открывается автоматически.</translation>
+    </message>
     <message>
-            <source>Controls the amount of environmental sound in Adaptive mode (0-50).</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Connect the selected device when audio starts playing and it is disconnected. After a failure, wait at least 30 seconds and start playback again to retry.</source>
+        <translation>Подключает выбранное устройство при начале воспроизведения звука, если оно отключено. После ошибки подождите не менее 30 секунд и снова начните воспроизведение для повторной попытки.</translation>
+    </message>
     <message>
-            <source>Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Shows the battery window when you open the case, without taking focus from the app in use. When off, open it from the tray icon.</source>
+        <translation>Показывает окно батареи при открытии футляра, не забирая фокус у используемого приложения. Если выключено, откройте его через значок в трее.</translation>
+    </message>
+    <message>
+        <source>Volume percentage when speaking (based on your pre-speaking volume).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Caps how loud loud sounds get, for hearing protection (0-100).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Driver not installed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Driver ready - waiting for the earbuds</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Connected (driver channel)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Connected (native channel - driver features limited)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Install the driver to unlock ANC control, loud sound reduction and other AAP features. Copy the install command or open the documentation.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open the earbud case near this computer to connect.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>All driver features available.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The earbuds do not answer attribute reads on this channel; loud sound reduction state cannot be read back.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Connected without the driver channel; features that require the driver (loud sound reduction, precise battery) may not work. See the documentation.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Last connection failed: the MagicAAP driver is not installed or not running. Install it (see documentation), then reconnect.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Last connection failed: the earbuds did not offer the ANC service. Make sure they are paired, in range, and the case is open.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Last connection failed: the Bluetooth transport could not be opened. Check that Bluetooth is on and the earbuds are close to this computer.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -401,10 +466,6 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
 </context>
 <context>
     <name>SettingsWindow</name>
-    <message>
-        <source>AirPodsDesktop Settings</source>
-        <translation>Настройки AirPodsDesktop</translation>
-    </message>
     <message>
         <source>General</source>
         <translation>Основные</translation>
@@ -477,14 +538,14 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>About</source>
         <translation>О программе</translation>
     </message>
-        <message>
-            <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-            <translation type="unfinished"></translation>
-        </message>
-        <message>
-            <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
-            <translation type="unfinished"></translation>
-        </message>
+    <message>
+        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
         <source>Connect the selected device on a tray icon click</source>
         <translation>Подключать выбранное устройство щелчком по значку в области уведомлений</translation>
@@ -526,35 +587,51 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <translation>Тёмная</translation>
     </message>
     <message>
-            <source>AirPodsWindows Settings</source>
-            <translation>Настройки AirPodsWindows</translation>
-        </message>
+        <source>AirPodsWindows Settings</source>
+        <translation>Настройки AirPodsWindows</translation>
+    </message>
     <message>
-            <source>Conversational awareness</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Conversational awareness</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Personalized volume</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Personalized volume</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Reduce loud sounds</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Reduce loud sounds</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Noise control mode</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Noise control mode</source>
+        <translation type="unfinished"></translation>
+    </message>
     <message>
-            <source>Adaptive transparency level</source>
-            <translation type="unfinished"></translation>
-        </message>
+        <source>Connect automatically when audio starts playing</source>
+        <translation>Подключать автоматически при начале воспроизведения звука</translation>
+    </message>
+    <message>
+        <source>Show battery when the case opens</source>
+        <translation>Показывать батарею при открытии футляра</translation>
+    </message>
+    <message>
+        <source>Speaking volume reduction:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>40%</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Hearing protection cap (PPE)</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>UpdateWindow</name>
     <message>
         <source>Software Update</source>
-        <translation type="unfinished"></translation>
+        <translation>Обновление программы</translation>
     </message>
     <message>
         <source>View release</source>
@@ -582,11 +659,11 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>If the download is slow, you can download the update manually. AirPodsDesktop will close when you switch to manual download.</source>
-        <translation type="unfinished"></translation>
+        <translation>Если загрузка идёт медленно, вы можете скачать обновление вручную. При переходе к ручной загрузке AirPodsDesktop будет закрыт.</translation>
     </message>
     <message>
         <source>What&apos;s new</source>
-        <translation type="unfinished"></translation>
+        <translation>Что нового</translation>
     </message>
 </context>
 </TS>

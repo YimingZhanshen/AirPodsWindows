@@ -335,6 +335,7 @@ set(
     "Source/Core/AAPAtt.cpp"
     "Source/Core/ConnectionDiagnostics.cpp"
     "Source/Core/QuickConnect.cpp"
+    "Source/Core/PlaybackMonitor.cpp"
     "Source/Core/Settings.cpp"
     "Source/Core/SettingsRepository.cpp"
     "Source/Core/LowAudioLatency.cpp"
@@ -350,6 +351,7 @@ set(
     APD_GUI_CODE_FILES
 
     "Source/Gui/AnimationPlayback.cpp"
+    "Source/Gui/NotificationWindow.cpp"
 
     "Source/Gui/TrayIcon.cpp"
     "Source/Gui/TaskbarStatus.cpp"
@@ -359,6 +361,10 @@ set(
     "Source/Gui/SettingsWindow.cpp"
     "Source/Gui/Widget/Battery.cpp"
     "Source/Gui/Widget/AnimationView.cpp"
+    "Source/Gui/Widget/ActivityIndicator.cpp"
+    "Source/Gui/Widget/CloseButton.cpp"
+    "Source/Gui/Widget/DeviceStill.cpp"
+    "Source/Gui/Widget/FadeOverlay.cpp"
     "Source/Gui/Widget/DriverStatusCard.cpp"
     "Source/Gui/Theme.cpp"
 )
@@ -375,6 +381,7 @@ if (WIN32)
         "Source/Core/AutoStart_win.cpp"
         "Source/Core/Bluetooth_win.cpp"
         "Source/Core/GlobalMedia_win.cpp"
+        "Source/Core/PlaybackMonitor_win.cpp"
         "Source/Core/AAPManager.cpp"
         "Source/Core/MagicAAPWinRT.cpp"
         "Source/Core/QuickConnect_win.cpp"
@@ -423,7 +430,7 @@ qt_add_binary_resources(
 #           https://stackoverflow.com/a/60848939
 #
 
-set(APD_TRANSLATION_LOCALES bg_BG de_DE fr_FR he_IL it_IT ja_JP ko_KR pt_BR pt_PT ru_RU tr_TR uk_UA zh_CN zh_TW)
+set(APD_TRANSLATION_LOCALES bg_BG de_DE es_ES fa_IR fr_FR he_IL id_ID it_IT ja_JP ko_KR pl_PL pt_BR pt_PT ru_RU tr_TR uk_UA zh_CN zh_TW)
 set(APD_TS_DIR "${CMAKE_SOURCE_DIR}/Source/Resource/Translation/")
 set(APD_QM_DIR "${APD_BINARY_OUT_DIR}/translations/")
 

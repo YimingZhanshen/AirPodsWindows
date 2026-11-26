@@ -92,8 +92,8 @@ void ConfigureComboBoxPopup(QComboBox *comboBox)
 SettingsWindow::SettingsWindow(
     std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect,
     std::function<Core::AirPods::Manager &()> getAirPodsManager, QWidget *parent)
-    : QDialog{parent}, _getCurrentLocaleIndex{std::move(getCurrentLocaleIndex)},
-      _quickConnect{quickConnect}
+    : QDialog{parent}, _getCurrentLocaleIndex{std::move(getCurrentLocaleIndex)}, _quickConnect{
+                                                                                     quickConnect}
 {
     // getAirPodsManager is deliberately NOT stored here: this window is built
     // by the tray icon before the application's AirPods manager exists, so any
@@ -115,7 +115,12 @@ SettingsWindow::SettingsWindow(
     for (const auto &[label, checkBox] : {
              std::pair{_ui.lbLowAudioLatency, _ui.cbLowAudioLatency},
              std::pair{_ui.lbAutoEarDetection, _ui.cbAutoEarDetection},
+             std::pair{_ui.lbConversationalAwareness, _ui.cbConversationalAwareness},
+             std::pair{_ui.lbPersonalizedVolume, _ui.cbPersonalizedVolume},
+             std::pair{_ui.lbLoudSoundReduction, _ui.cbLoudSoundReduction},
+             std::pair{_ui.lbLidPopup, _ui.cbLidPopup},
              std::pair{_ui.lbTrayQuickConnect, _ui.cbTrayQuickConnectEnabled},
+             std::pair{_ui.lbAudioAutoConnect, _ui.cbAudioAutoConnectEnabled},
          })
     {
         label->setBuddy(checkBox);
@@ -227,6 +232,18 @@ SettingsWindow::SettingsWindow(
         }
     });
 
+    connect(_ui.cbAudioAutoConnectEnabled, &QCheckBox::toggled, this, [this](bool checked) {
+        if (_trigger) {
+            On_cbAudioAutoConnectEnabled_toggled(checked);
+        }
+    });
+
+    connect(_ui.cbLidPopup, &QCheckBox::toggled, this, [this](bool checked) {
+        if (_trigger) {
+            On_cbLidPopup_toggled(checked);
+        }
+    });
+
     connect(
         _ui.cbTrayQuickConnectDevice, qOverload<int>(&QComboBox::currentIndexChanged), this,
         [this](int index) {
@@ -253,11 +270,12 @@ SettingsWindow::SettingsWindow(
         }
     });
 
-    connect(_ui.sliderConversationalAwarenessVolume, &QSlider::valueChanged, this, [this](int value) {
-        if (_trigger) {
-            On_sliderConversationalAwarenessVolume_valueChanged(value);
-        }
-    });
+    connect(
+        _ui.sliderConversationalAwarenessVolume, &QSlider::valueChanged, this, [this](int value) {
+            if (_trigger) {
+                On_sliderConversationalAwarenessVolume_valueChanged(value);
+            }
+        });
 
     connect(_ui.cbPersonalizedVolume, &QCheckBox::toggled, this, [this](bool checked) {
         if (_trigger) {
@@ -271,11 +289,13 @@ SettingsWindow::SettingsWindow(
         }
     });
 
-    connect(_ui.cbNoiseControlMode, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
-        if (_trigger) {
-            On_cbNoiseControlMode_currentIndexChanged(index);
-        }
-    });
+    connect(
+        _ui.cbNoiseControlMode, qOverload<int>(&QComboBox::currentIndexChanged), this,
+        [this](int index) {
+            if (_trigger) {
+                On_cbNoiseControlMode_currentIndexChanged(index);
+            }
+        });
 
     connect(_ui.hsAdaptiveTransparencyLevel, &QSlider::valueChanged, this, [this](int value) {
         if (_trigger) {
@@ -381,7 +401,9 @@ void SettingsWindow::UpdateDescriptions()
 
     _ui.lbDescLowAudioLatency->setText(constMetaFields.low_audio_latency.Description());
     _ui.lbDescAutoEarDetection->setText(constMetaFields.automatic_ear_detection.Description());
+    _ui.lbDescLidPopup->setText(constMetaFields.popup_on_lid_open.Description());
     _ui.lbDescTrayQuickConnect->setText(constMetaFields.tray_quick_connect_enabled.Description());
+    _ui.lbDescAudioAutoConnect->setText(constMetaFields.audio_auto_connect_enabled.Description());
 
     _ui.lbDescConversationalAwareness->setText(
         constMetaFields.conversational_awareness.Description());
@@ -416,8 +438,8 @@ void SettingsWindow::SetupDriverStatusCard()
     _driverStatusCard->setVisible(false);
 
     connect(_driverStatusCard, &DriverStatusCard::OpenDriverDocsRequested, this, [] {
-        QDesktopServices::openUrl(QUrl{
-            QStringLiteral("https://github.com/YimingZhanshen/AirPodsWindows/blob/main/Docs/Driver.md")});
+        QDesktopServices::openUrl(QUrl{QStringLiteral(
+            "https://github.com/YimingZhanshen/AirPodsWindows/blob/main/Docs/Driver.md")});
     });
     // Blueprint 1.4: one-click export of the connection step log. The report is
     // built from the recorder's redacted entries and written wherever the user
@@ -433,20 +455,18 @@ void SettingsWindow::SetupDriverStatusCard()
 
         QFile file{path};
         if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QMessageBox::warning(this, tr("Export diagnostics"),
-                                 tr("Could not write the diagnostics file."));
+            QMessageBox::warning(
+                this, tr("Export diagnostics"), tr("Could not write the diagnostics file."));
             return;
         }
 
-        const auto aapConnected =
-            _getAirPodsManager && _getAirPodsManager().IsAAPConnected();
+        const auto aapConnected = _getAirPodsManager && _getAirPodsManager().IsAAPConnected();
         const auto viaDriver =
             _getAirPodsManager && _getAirPodsManager().IsAAPConnectedViaMagicAAP();
         const auto header =
             QString{"AirPodsWindows %1\nOS: %2\ndriver: %3\naap connected: %4 (via driver: %5)"}
                 .arg(
-                    QStringLiteral(CONFIG_VERSION_STRING),
-                    QSysInfo::prettyProductName(),
+                    QStringLiteral(CONFIG_VERSION_STRING), QSysInfo::prettyProductName(),
                     Core::AAP::Manager::IsMagicAAPDriverAvailable() ? tr("installed")
                                                                     : tr("not installed"),
                     aapConnected ? QStringLiteral("yes") : QStringLiteral("no"),
@@ -544,10 +564,8 @@ void SettingsWindow::InitCreditsText()
 
         QString result;
         for (const auto &ref : refs) {
-            result += QString{"<br> - <a href=\"%2\">%1</a> (%3)"}
-                          .arg(ref.name)
-                          .arg(ref.url)
-                          .arg(ref.description);
+            result += QString{"<br> - <a href=\"%2\">%1</a> (%3)"}.arg(ref.name).arg(ref.url).arg(
+                ref.description);
         }
         return result;
     }();
@@ -579,11 +597,14 @@ void SettingsWindow::Update(const Fields &fields, bool trigger)
     _ui.cbLowAudioLatency->setChecked(fields.low_audio_latency);
 
     _ui.cbAutoEarDetection->setChecked(fields.automatic_ear_detection);
+    _ui.cbLidPopup->setChecked(fields.popup_on_lid_open);
 
     _ui.cbConversationalAwareness->setChecked(fields.conversational_awareness);
 
-    _ui.sliderConversationalAwarenessVolume->setValue(fields.conversational_awareness_volume_percent);
-    _ui.lblConversationalAwarenessVolumeValue->setText(QString::number(fields.conversational_awareness_volume_percent) + "%");
+    _ui.sliderConversationalAwarenessVolume->setValue(
+        fields.conversational_awareness_volume_percent);
+    _ui.lblConversationalAwarenessVolumeValue->setText(
+        QString::number(fields.conversational_awareness_volume_percent) + "%");
 
     _ui.cbPersonalizedVolume->setChecked(fields.personalized_volume);
 
@@ -648,6 +669,7 @@ void SettingsWindow::UpdateQuickConnectDevices(const Fields &fields)
     _ui.cbTrayQuickConnectDevice->setCurrentIndex(selectedIndex);
 
     _ui.cbTrayQuickConnectEnabled->setChecked(fields.tray_quick_connect_enabled);
+    _ui.cbAudioAutoConnectEnabled->setChecked(fields.audio_auto_connect_enabled);
     // Always leave the checkbox usable: a transient empty enumeration must never trap the user in
     // a state they cannot turn off.
     _ui.cbTrayQuickConnectEnabled->setEnabled(true);
@@ -725,6 +747,16 @@ void SettingsWindow::On_cbAutoRun_toggled(bool checked)
 void SettingsWindow::On_cbTrayQuickConnectEnabled_toggled(bool checked)
 {
     ModifiableAccess()->tray_quick_connect_enabled = checked;
+}
+
+void SettingsWindow::On_cbAudioAutoConnectEnabled_toggled(bool checked)
+{
+    ModifiableAccess()->audio_auto_connect_enabled = checked;
+}
+
+void SettingsWindow::On_cbLidPopup_toggled(bool checked)
+{
+    ModifiableAccess()->popup_on_lid_open = checked;
 }
 
 void SettingsWindow::On_cbTrayQuickConnectDevice_currentIndexChanged(int index)

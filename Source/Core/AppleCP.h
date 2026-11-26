@@ -57,6 +57,8 @@ enum class Color : uint8_t {
     DarkBlue = 0xA,
     LightBlue = 0xB,
     Yellow = 0xC,
+    // Observed from a Space Gray AirPods Max (0x200A); other Max colors use catalog codes.
+    MaxSpaceGray = 0xF,
 };
 
 struct Header {
@@ -108,6 +110,7 @@ public:
     bool IsRightBroadcasted() const;
 
     Core::AirPods::Model GetModel() const;
+    Color GetColor() const;
 
     Core::AirPods::Battery GetLeftBattery() const;
     Core::AirPods::Battery GetRightBattery() const;

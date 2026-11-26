@@ -27,6 +27,7 @@
 #include "Error.h"
 #include "Utils.h"
 #include "Gui/Utils.h"
+#include "Gui/AnimationPlayback.h"
 #include "Gui/MainWindow.h"
 #include "Gui/TaskbarStatus.h"
 #include "Gui/TrayIcon.h"
@@ -38,6 +39,7 @@
 #include "Core/Bluetooth.h"
 #include "Core/GlobalMedia.h"
 #include "Core/LowAudioLatency.h"
+#include "Core/PlaybackMonitor.h"
 #include "Core/QuickConnect.h"
 #if defined APD_OS_WIN
     #include "Core/QuickConnect_win.h"
@@ -174,6 +176,10 @@ bool ApdApplication::Prepare(int argc, char *argv[])
 
     Logger::CleanUpOldLogFiles();
 
+    if (!Gui::RegisterAnimationResources()) {
+        LOG(Warn, "Animations.rcc could not be loaded. The popup will show no device picture.");
+    }
+
     // Fusion is fully palette-driven, which is what makes light/dark theming and the Fluent
     // stylesheet consistent across every control. It must be set before any widget exists.
     setStyle(QStyleFactory::create("Fusion"));
@@ -205,6 +211,11 @@ bool ApdApplication::Prepare(int argc, char *argv[])
     _quickConnectBackend = std::make_shared<Core::QuickConnect::NullBackend>();
 #endif
     _quickConnect = std::make_unique<Core::QuickConnect::Controller>(_quickConnectBackend);
+    _playbackMonitor = std::make_unique<Core::GlobalMedia::PlaybackMonitor>();
+    connect(
+        _playbackMonitor.get(), &Core::GlobalMedia::PlaybackMonitor::PlaybackChanged,
+        _quickConnect.get(), &Core::QuickConnect::Controller::OnPlaybackStateChanged,
+        Qt::QueuedConnection);
 
     _trayIcon = std::make_unique<Gui::TrayIcon>(
         [this] { return GetCurrentLoadedLocaleIndex(); }, *_quickConnect,
@@ -282,21 +293,26 @@ void ApdApplication::ConnectAirPodsManager()
     connect(
         manager, &Core::AirPods::Manager::DeviceConnectionChanged, _lowAudioLatencyController.get(),
         &Core::LowAudioLatency::Controller::SetDeviceConnectedSafely);
-    connect(manager, &Core::AirPods::Manager::LidToggled, mainWindow, [mainWindow](bool opened) {
-        if (opened) {
-            emit mainWindow->ShowSafely();
-        }
-        else {
-            emit mainWindow->HideSafely();
-        }
-    });
+    connect(
+        manager, &Core::AirPods::Manager::LidToggled, mainWindow,
+        [mainWindow](bool opened) {
+            if (opened) {
+                if (Core::Settings::GetCurrent().popup_on_lid_open) {
+                    emit mainWindow->ShowWithoutActivatingSafely();
+                }
+            }
+            else {
+                emit mainWindow->HideSafely();
+            }
+        },
+        Qt::QueuedConnection);
     // Blueprint 1.3: surface AAP connection failures as a tray balloon with an
     // actionable hint instead of a silent feature blackout.
     connect(
         manager, &Core::AirPods::Manager::AapConnectionFailedSafely, _trayIcon.get(),
         [this](int failure) {
-            const auto hint = Gui::DriverStatusCard::FailureHint(
-                static_cast<Core::AAP::ConnectFailure>(failure));
+            const auto hint =
+                Gui::DriverStatusCard::FailureHint(static_cast<Core::AAP::ConnectFailure>(failure));
             if (!hint.isEmpty()) {
                 _trayIcon->ShowMessage(tr("ANC connection failed"), hint);
             }
@@ -461,8 +477,7 @@ void ApdApplication::OnAdaptiveTransparencyLevelChanged(uint8_t level)
 
 void ApdApplication::OnNoiseControlModeChanged(uint32_t mode)
 {
-    _airPodsManager->OnNoiseControlModeChanged(
-        static_cast<Core::AAP::NoiseControlMode>(mode));
+    _airPodsManager->OnNoiseControlModeChanged(static_cast<Core::AAP::NoiseControlMode>(mode));
 }
 
 Core::AirPods::Manager &ApdApplication::GetAirPodsManager()
@@ -508,6 +523,12 @@ void ApdApplication::OnTrayIconBatteryChanged(Core::Settings::TrayIconBatteryBeh
 void ApdApplication::OnTrayQuickConnectEnabledChanged(bool enable)
 {
     _quickConnect->SetEnabled(enable);
+}
+
+void ApdApplication::OnAudioAutoConnectEnabledChanged(bool enable)
+{
+    _quickConnect->SetAudioAutoConnectEnabled(enable);
+    _playbackMonitor->SetEnabled(enable);
 }
 
 void ApdApplication::OnTrayQuickConnectDeviceChanged(const QString &deviceId)

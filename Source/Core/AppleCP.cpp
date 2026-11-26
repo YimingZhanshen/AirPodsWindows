@@ -103,6 +103,11 @@ Core::AirPods::Model AirPods::GetModel() const
     return GetModel(modelId);
 }
 
+Color AirPods::GetColor() const
+{
+    return static_cast<Color>(color);
+}
+
 Core::AirPods::Battery AirPods::GetLeftBattery() const
 {
     const auto val = (IsLeftBroadcasted() ? battery.curr : battery.anot);
