@@ -149,13 +149,29 @@ jobs:
             throw 'The NSIS installer was not generated.'
           }
 
+          # Monolithic packaging puts the staged runtime files at the package root.
           $portableSource =
-            "Build/Release/Installer/_CPack_Packages/win64/NSIS/AirPodsWindows-$env:VERSION-win64/AirPodsWindows"
+            "Build/Release/Installer/_CPack_Packages/win64/NSIS/AirPodsWindows-$env:VERSION-win64"
           if (-not (Test-Path -LiteralPath $portableSource)) {
             throw "Portable package directory not found: $portableSource"
           }
+
+          # The installer has to close a running copy before it copies any file. Where CPack
+          # places that step depends on how the package is laid out, so check the script itself.
+          $installerScript = Get-Content -LiteralPath `
+            'Build/Release/Installer/_CPack_Packages/win64/NSIS/project.nsi'
+          $closeLine = ($installerScript |
+            Select-String -SimpleMatch 'AirPodsWindows_InstanceMutex' |
+            Select-Object -First 1).LineNumber
+          $copyLine = ($installerScript |
+            Select-String -Pattern '^\s*File /r ' |
+            Select-Object -First 1).LineNumber
+          if (-not $closeLine -or -not $copyLine -or $closeLine -ge $copyLine) {
+            throw "The installer copies files (line $copyLine) before it closes a running copy (line $closeLine)."
+          }
           $requiredRuntimeFiles = @(
             'AirPodsWindows.exe',
+            'Animations.rcc',
             'Qt6Core.dll',
             'platforms/qwindows.dll',
             'iconengines/qsvgicon.dll',

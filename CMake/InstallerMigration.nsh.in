@@ -1,9 +1,9 @@
 ; AirPodsWindows installer migration hook.
 ;
-; Injected into the NSIS "-Core installation" section via CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS,
-; so it runs after .onInit and before any file is copied. It refuses unsupported systems, then
-; removes every existing AirPodsWindows installation this machine still has registered — in both
-; the 32-bit and the 64-bit registry views — so the 64-bit install starts from a clean state.
+; Injected into the monolithic NSIS installation section via CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS,
+; after InstallerCloseRunningApp and before any file is copied. It refuses unsupported systems,
+; then removes every existing AirPodsWindows installation this machine still has registered — in
+; both the 32-bit and the 64-bit registry views — so the 64-bit install starts from a clean state.
 ;
 ; Failure handling: a stale entry (uninstaller missing) is dropped and skipped, leftover files are
 ; removed with `RMDir /r`, and only real FILES still inside the directory after one retry abort the

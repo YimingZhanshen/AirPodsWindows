@@ -1,0 +1,24 @@
+<RCC>
+    <qresource prefix="/Resource">
+        <file>Image/Animation/AirPods_1.png</file>
+        <file>Image/Animation/AirPods_2.png</file>
+        <file>Image/Animation/AirPods_3.png</file>
+        <file>Image/Animation/AirPods_4.png</file>
+        <file>Image/Animation/AirPods_4_ANC.png</file>
+        <file>Image/Animation/AirPods_Pro.png</file>
+        <file>Image/Animation/AirPods_Pro_2.png</file>
+        <file>Image/Animation/AirPods_Pro_3.png</file>
+        <file>Image/Animation/AirPods_Max.png</file>
+        <file>Image/Animation/Beats_Fit_Pro.png</file>
+        <file>Video/AirPods_1.avi</file>
+        <file>Video/AirPods_2.avi</file>
+        <file>Video/AirPods_3.avi</file>
+        <file>Video/AirPods_4.avi</file>
+        <file>Video/AirPods_4_ANC.avi</file>
+        <file>Video/AirPods_Pro.avi</file>
+        <file>Video/AirPods_Pro_2.avi</file>
+        <file>Video/AirPods_Pro_3.avi</file>
+        <file>Video/AirPods_Max.avi</file>
+        <file>Video/Beats_Fit_Pro.avi</file>
+    </qresource>
+</RCC>

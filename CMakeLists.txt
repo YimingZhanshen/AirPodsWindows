@@ -262,8 +262,19 @@ message("Fetch 'SingleApplication' done.")
 
 # magic_enum
 #
-find_package(magic_enum CONFIG REQUIRED)
-message("Found 'magic_enum' (${magic_enum_VERSION}).")
+find_package(magic_enum CONFIG)
+if (magic_enum_FOUND)
+    message("Found 'magic_enum' (${magic_enum_VERSION}).")
+else()
+    message("Fetching 'magic_enum'...")
+    FetchContent_Declare(
+        magic_enum
+        GIT_REPOSITORY "https://github.com/Neargye/magic_enum.git"
+        GIT_TAG "3d1f6a5a2a3fbcba077e00ad0ccc2dd9fefc2ca7" # v0.7.3
+    )
+    FetchContent_MakeAvailable(magic_enum)
+    message("Fetch 'magic_enum' done.")
+endif()
 
 #
 # Boost libraries
@@ -388,6 +399,15 @@ endif()
 # Resource
 
 set(APD_QRC_FILE "Source/Resource/Resource.qrc")
+
+# Build the device animations once into a binary resource beside the executables for packaging.
+# Animation.qrc remains the shipping list; the videos are already compressed, so rcc stores them
+# as they are.
+qt_add_binary_resources(
+    apd_animations "Source/Resource/Animation.qrc"
+    DESTINATION "${APD_BINARY_OUT_DIR}/Animations.rcc"
+    OPTIONS --no-compress
+)
 
 #
 # Translation
@@ -536,7 +556,7 @@ add_executable(
     ${APD_QRC_FILE}
 )
 
-add_dependencies(${PROJECT_NAME} apd_translations)
+add_dependencies(${PROJECT_NAME} apd_translations apd_animations)
 
 foreach (APD_TARGET ${APD_INTERNAL_TARGETS} ${PROJECT_NAME})
     set(APD_HEADER_DEFINITION_VISIBILITY PRIVATE)
@@ -640,17 +660,25 @@ if (APD_GENERATE_INSTALLER)
         set(CPACK_NSIS_EXECUTABLES_DIRECTORY "./")
         set(CPACK_NSIS_MUI_FINISHPAGE_RUN "./${PROJECT_NAME}.exe")
         set(CPACK_NSIS_BRANDING_TEXT "${PROJECT_NAME} installer")
-        configure_file(
-            "${CMAKE_CURRENT_SOURCE_DIR}/CMake/InstallerMigration.nsh.in"
-            "${CMAKE_CURRENT_BINARY_DIR}/InstallerMigration.nsh"
-            @ONLY
+        foreach (APD_NSIS_SNIPPET InstallerCloseRunningApp InstallerMigration)
+            configure_file(
+                "${CMAKE_CURRENT_SOURCE_DIR}/CMake/${APD_NSIS_SNIPPET}.nsh.in"
+                "${CMAKE_CURRENT_BINARY_DIR}/${APD_NSIS_SNIPPET}.nsh"
+                @ONLY
+            )
+            file(READ "${CMAKE_CURRENT_BINARY_DIR}/${APD_NSIS_SNIPPET}.nsh" APD_NSIS_COMMANDS)
+            # CPack serializes this value into CPackConfig.cmake before expanding the NSIS template.
+            string(REPLACE "\\" "\\\\" APD_NSIS_COMMANDS "${APD_NSIS_COMMANDS}")
+            string(REPLACE "\"" "\\\"" APD_NSIS_COMMANDS "${APD_NSIS_COMMANDS}")
+            string(REPLACE "$" "\\$" APD_NSIS_COMMANDS "${APD_NSIS_COMMANDS}")
+            set(APD_NSIS_${APD_NSIS_SNIPPET}_COMMANDS "${APD_NSIS_COMMANDS}")
+        endforeach()
+        # Close a running copy first: it locks the files that both hooks below replace or remove,
+        # including the legacy Win32 installation that the migration uninstalls.
+        set(
+            CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS
+            "${APD_NSIS_InstallerCloseRunningApp_COMMANDS}${APD_NSIS_InstallerMigration_COMMANDS}"
         )
-        file(READ "${CMAKE_CURRENT_BINARY_DIR}/InstallerMigration.nsh" APD_NSIS_MIGRATION_COMMANDS)
-        # CPack serializes this value into CPackConfig.cmake before expanding the NSIS template.
-        string(REPLACE "\\" "\\\\" APD_NSIS_MIGRATION_COMMANDS "${APD_NSIS_MIGRATION_COMMANDS}")
-        string(REPLACE "\"" "\\\"" APD_NSIS_MIGRATION_COMMANDS "${APD_NSIS_MIGRATION_COMMANDS}")
-        string(REPLACE "$" "\\$" APD_NSIS_MIGRATION_COMMANDS "${APD_NSIS_MIGRATION_COMMANDS}")
-        set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS "${APD_NSIS_MIGRATION_COMMANDS}")
         string(REPLACE "/" "\\\\" ICON_FILEPATH ${ICON_FILEPATH})
         set(CPACK_NSIS_MUI_ICON ${ICON_FILEPATH})
 
@@ -665,7 +693,7 @@ if (APD_GENERATE_INSTALLER)
         )
         set(
             CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
-            "SetRegView 64\nDelete \\\"$DESKTOP\\\\${SHORTCUT_NAME}.lnk\\\""
+            "${APD_NSIS_InstallerCloseRunningApp_COMMANDS}SetRegView 64\nDelete \\\"$DESKTOP\\\\${SHORTCUT_NAME}.lnk\\\""
         )
     endif()
 
@@ -696,7 +724,12 @@ if (APD_GENERATE_INSTALLER)
         PATTERN "*Validation*" EXCLUDE
         PATTERN "*validation*" EXCLUDE
     )
-    set(CPACK_COMPONENTS_ALL ${PROJECT_NAME})
+    # Package the single component as a monolithic installer. With a component installer,
+    # CPack's NSIS template copies files in per-component sections that run before
+    # CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS, so a running copy would not be closed before its files
+    # were replaced. A monolithic installer copies them right after those commands.
+    set(CPACK_MONOLITHIC_INSTALL ON)
+    set(CPACK_INSTALL_CMAKE_PROJECTS "${CMAKE_BINARY_DIR};${PROJECT_NAME};${PROJECT_NAME};/")
 
     add_custom_command(
         TARGET ${PROJECT_NAME}
