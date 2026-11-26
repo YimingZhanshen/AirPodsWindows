@@ -24,9 +24,12 @@
 #include "Source/Core/AirPods.h"
 #include "Source/Core/BatteryFusion.h"
 #include "Source/Core/AdaptiveNoiseLevel.h"
+#include "Source/Core/AAP.h"
+#include "Source/Core/HeadTrackingIntent.h"
 #include "Source/Core/Settings.h"
 #include "Source/Core/SettingsRepository.h"
 #include "Source/Core/Update.h"
+#include "Source/Gui/HeadTrackingPresentation.h"
 #include "Source/Gui/MainWindowPresentation.h"
 #include "Source/Gui/TaskbarGeometry.h"
 
@@ -89,6 +92,11 @@ public:
     {
         noiseControlMode = mode;
     }
+    void OnHeadTrackingEnabledChanged(bool enable) override
+    {
+        headTrackingEnabled = enable;
+        ++headTrackingChanges;
+    }
     void OnRssiMinChanged(int16_t) override {}
     void OnDeviceAddressChanged(uint64_t) override {}
     void OnTrayIconBatteryChanged(Core::Settings::TrayIconBatteryBehavior) override {}
@@ -123,6 +131,8 @@ public:
     uint8_t adaptiveNoiseLevel{};
     int adaptiveNoiseLevelChanges{0};
     uint32_t noiseControlMode{};
+    bool headTrackingEnabled{false};
+    int headTrackingChanges{0};
     bool audioAutoConnectEnabled{false};
     int audioAutoConnectChanges{0};
     bool autoRun{false};
@@ -241,7 +251,37 @@ Core::AAP::AAPBatterySnapshot LeftSnapshot(uint8_t level)
     snapshot.left =
         AapReading(Core::AAP::BatteryComponent::Left, level, Core::AAP::BatteryStatus::Discharging);
     return snapshot;
-}
+    class RecordingHeadTrackingPort final : public Core::AAP::IHeadTrackingCommandPort
+    {
+    public:
+        bool RequestHeadTracking(bool enable) override
+        {
+            requests.push_back(enable);
+            return succeed;
+        }
+
+        bool succeed{true};
+        std::vector<bool> requests;
+    };
+
+    std::vector<uint8_t> MakeHeadTrackingPacket(uint8_t subCode = 0x44)
+    {
+        std::vector<uint8_t> packet(70, 0);
+        constexpr std::array<uint8_t, 10> prefix{0x04, 0x00, 0x04, 0x00, 0x17,
+                                                 0x00, 0x00, 0x00, 0x10, 0x00};
+        std::copy(prefix.begin(), prefix.end(), packet.begin());
+        packet[10] = subCode;
+        const auto writeInt16 = [&packet](std::size_t offset, std::int16_t value) {
+            packet[offset] = static_cast<uint8_t>(value & 0xFF);
+            packet[offset + 1] = static_cast<uint8_t>((value >> 8) & 0xFF);
+        };
+        writeInt16(43, -32768);
+        writeInt16(45, -2);
+        writeInt16(47, 32767);
+        writeInt16(51, 1234);
+        writeInt16(53, -42);
+        return packet;
+    }
 
 } // namespace
 
@@ -291,6 +331,12 @@ private Q_SLOTS:
     void TracksLidWhilePodsAreOut();
     void LidPopupCooldownBlocksRapidRepeats();
     void EarDetectionTrackerSurvivesStateLoss();
+    void RecognizesHeadTrackingPackets();
+    void HeadTrackingPresentationAgreesWithCoreParser();
+    void HeadTrackingViewModelThrottlesAndTracksGenerations();
+    void HeadTrackingIntentReplaysStartAndStop();
+    void HeadTrackingSettingPersistsWithoutAbiBump();
+    void AdaptiveNoiseTranslationsAreCompleteInAllCatalogs();
     void PackagesCompatibleLowLatencySilence();
     void LoadsSettingsThroughRepository();
     void MigratesLegacySettingsRepository();
@@ -644,6 +690,188 @@ void AirPodsDomainTests::ResolvesAirPodsMaxUsbCDisplayName()
     QCOMPARE(
         Core::AirPods::Details::ResolveDisplayName("AirPods Max", Model::AirPods_Max),
         QString{"AirPods Max"});
+}
+
+void AirPodsDomainTests::RecognizesHeadTrackingPackets()
+{
+    auto packet = MakeHeadTrackingPacket();
+    QCOMPARE(Gui::ClassifyHeadTrackingRecord(packet), Gui::HeadTrackingRecord::Stream);
+    const auto counts = Gui::ReadHeadTrackingCounts(packet);
+    QVERIFY(counts.has_value());
+    QCOMPARE(counts->orientation[0], std::int16_t{-32768});
+    QCOMPARE(counts->verticalAcceleration, std::int16_t{-42});
+
+    packet[10] = 0x45;
+    QCOMPARE(Gui::ClassifyHeadTrackingRecord(packet), Gui::HeadTrackingRecord::Stream);
+    packet[10] = 0x99;
+    QCOMPARE(Gui::ClassifyHeadTrackingRecord(packet), Gui::HeadTrackingRecord::Stream);
+
+    Gui::HeadTrackingViewModel viewModel;
+    const Gui::HeadTrackingViewModel::TimePoint now{};
+    viewModel.SetEnabled(true, now);
+    viewModel.OnTransportUp(7, now);
+    auto view = viewModel.OnPacket(packet, 7, now);
+    QVERIFY(view.has_value());
+    QCOMPARE(view->sample.raw.horizontalAcceleration, std::int16_t{1234});
+
+    packet.resize(55);
+    QCOMPARE(Gui::ClassifyHeadTrackingRecord(packet), Gui::HeadTrackingRecord::NotHeadTracking);
+    QVERIFY(!Gui::ReadHeadTrackingCounts(packet).has_value());
+    QVERIFY(!viewModel.OnPacket(packet, 7, now).has_value());
+
+    packet = MakeHeadTrackingPacket();
+    packet[4] = 0x16;
+    QCOMPARE(Gui::ClassifyHeadTrackingRecord(packet), Gui::HeadTrackingRecord::NotHeadTracking);
+    packet = MakeHeadTrackingPacket();
+    packet[8] = 0x11;
+    QCOMPARE(Gui::ClassifyHeadTrackingRecord(packet), Gui::HeadTrackingRecord::NotHeadTracking);
+}
+
+void AirPodsDomainTests::HeadTrackingPresentationAgreesWithCoreParser()
+{
+    const auto packet = MakeHeadTrackingPacket();
+    const auto counts = Gui::ReadHeadTrackingCounts(packet);
+    const auto parsed = Core::AAP::ParseHeadTrackingData(packet);
+    QVERIFY(counts.has_value());
+    QVERIFY(parsed.has_value());
+    QCOMPARE(counts->orientation[0], parsed->orientation1);
+    QCOMPARE(counts->orientation[1], parsed->orientation2);
+    QCOMPARE(counts->orientation[2], parsed->orientation3);
+    QCOMPARE(counts->horizontalAcceleration, parsed->horizontalAcceleration);
+    QCOMPARE(counts->verticalAcceleration, parsed->verticalAcceleration);
+
+    const auto sample = Gui::NormalizeHeadTrackingSample(*counts);
+    QCOMPARE(sample.orientation[0], -1.0);
+    QCOMPARE(sample.orientation[1], -2.0 / 32768.0);
+    QVERIFY(sample.orientation[2] > 0.999 && sample.orientation[2] < 1.0);
+    QCOMPARE(sample.horizontalAcceleration, 1234.0 / 32768.0);
+    QCOMPARE(sample.verticalAcceleration, -42.0 / 32768.0);
+}
+
+void AirPodsDomainTests::HeadTrackingViewModelThrottlesAndTracksGenerations()
+{
+    using ViewModel = Gui::HeadTrackingViewModel;
+    const ViewModel::TimePoint start{};
+    ViewModel model;
+    Gui::HeadTrackingCounts counts{{1, 2, 3}, 4, 5};
+    model.SetEnabled(true, start);
+    model.OnTransportUp(7, start);
+
+    auto view = model.OnCounts(counts, 7, Gui::HeadTrackingRecord::Stream, start);
+    QVERIFY(view.has_value());
+    QCOMPARE(view->phase, Gui::HeadTrackingPhase::Streaming);
+    QCOMPARE(view->acceptedRecords, uint32_t{1});
+    QCOMPARE(view->publishedUpdates, uint32_t{1});
+
+    counts.orientation[0] = 9;
+    QVERIFY(!model.OnCounts(counts, 7, Gui::HeadTrackingRecord::Stream, start + 50ms));
+    QVERIFY(!model.OnCounts(counts, 7, Gui::HeadTrackingRecord::Stream, start + 99ms));
+    view = model.OnCounts(counts, 7, Gui::HeadTrackingRecord::Stream, start + 100ms);
+    QVERIFY(view.has_value());
+    QCOMPARE(view->sample.orientation[0], 9.0 / 32768.0);
+    QCOMPARE(view->acceptedRecords, uint32_t{4});
+    QCOMPARE(view->publishedUpdates, uint32_t{2});
+
+    QVERIFY(!model.OnCounts(counts, 8, Gui::HeadTrackingRecord::Stream, start + 101ms));
+    QCOMPARE(model.Present(start + 101ms).acceptedRecords, uint32_t{4});
+
+    model.OnTransportUp(8, start + 200ms);
+    QVERIFY(!model.Present(start + 200ms).hasSample);
+    model.OnTransportDown(7, start + 201ms);
+    QCOMPARE(model.Phase(start + 201ms), Gui::HeadTrackingPhase::Armed);
+    QVERIFY(!model.OnCounts(counts, 7, Gui::HeadTrackingRecord::Stream, start + 201ms));
+    QVERIFY(model.OnCounts(counts, 8, Gui::HeadTrackingRecord::Stream, start + 201ms).has_value());
+    QVERIFY(!model.Tick(start + 950ms).has_value());
+    const auto stale = model.Tick(start + 951ms);
+    QVERIFY(stale.has_value());
+    QCOMPARE(stale->phase, Gui::HeadTrackingPhase::Stale);
+
+    model.SetEnabled(false, start + 1000ms);
+    QCOMPARE(model.Phase(start + 1000ms), Gui::HeadTrackingPhase::Off);
+    QVERIFY(!model.Present(start + 1000ms).hasSample);
+    QVERIFY(!model.OnCounts(counts, 8, Gui::HeadTrackingRecord::Stream, start + 1001ms));
+    model.SetEnabled(true, start + 1002ms);
+    QCOMPARE(model.Phase(start + 1002ms), Gui::HeadTrackingPhase::Armed);
+    QVERIFY(model.OnCounts(counts, 8, Gui::HeadTrackingRecord::Stream, start + 1002ms).has_value());
+    model.OnTransportDown(8, start + 1003ms);
+    QCOMPARE(model.Phase(start + 1003ms), Gui::HeadTrackingPhase::LinkDown);
+}
+
+void AirPodsDomainTests::HeadTrackingIntentReplaysStartAndStop()
+{
+    using Intent = Core::AAP::HeadTrackingIntent;
+    RecordingHeadTrackingPort port;
+    Intent intent;
+    intent.SetEnabled(true);
+    QCOMPARE(intent.Flush(port), Intent::Action::None);
+    QVERIFY(port.requests.empty());
+
+    intent.OnTransportUp(0);
+    QVERIFY(!intent.LinkUp());
+    intent.OnTransportUp(7);
+    port.succeed = false;
+    QCOMPARE(intent.Flush(port), Intent::Action::None);
+    QVERIFY(intent.IsPending());
+    QCOMPARE(port.requests, (std::vector<bool>{true}));
+
+    port.succeed = true;
+    QCOMPARE(intent.Flush(port), Intent::Action::Start);
+    QCOMPARE(intent.Applied(), std::optional<bool>{true});
+    QVERIFY(!intent.IsPending());
+    QCOMPARE(intent.Flush(port), Intent::Action::None);
+
+    intent.SetEnabled(false);
+    QCOMPARE(intent.Flush(port), Intent::Action::Stop);
+    QCOMPARE(intent.Applied(), std::optional<bool>{false});
+    QCOMPARE(intent.Flush(port), Intent::Action::None);
+
+    intent.OnTransportDown();
+    QVERIFY(!intent.LinkUp());
+    QVERIFY(!intent.Applied().has_value());
+    intent.OnTransportUp(8);
+    // A fresh device session starts with the stream off, so a disabled intent needs no packet.
+    QCOMPARE(intent.Flush(port), Intent::Action::None);
+    QCOMPARE(port.requests.size(), size_t{3});
+
+    intent.SetEnabled(true);
+    QCOMPARE(intent.Flush(port), Intent::Action::Start);
+    intent.OnTransportDown();
+    intent.OnTransportUp(9);
+    QCOMPARE(intent.Flush(port), Intent::Action::Start);
+    QCOMPARE(port.requests, (std::vector<bool>{true, true, false, true, true}));
+    intent.OnTransportUp(9);
+    QCOMPARE(intent.Flush(port), Intent::Action::None);
+    intent.SetEnabled(false);
+    QCOMPARE(intent.Flush(port), Intent::Action::Stop);
+    QCOMPARE(port.requests, (std::vector<bool>{true, true, false, true, true, false}));
+}
+
+void AirPodsDomainTests::HeadTrackingSettingPersistsWithoutAbiBump()
+{
+    auto repository = std::make_unique<Core::Settings::MemoryRepository>();
+    repository->Write("abi_version", Core::Settings::kFieldsAbiVersion);
+    repository->Write("popup_on_lid_open", true);
+    auto *memoryRepository = repository.get();
+    Core::Settings::SetRepository(std::move(repository));
+    QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+    QCOMPARE(Core::Settings::kFieldsAbiVersion, uint32_t{1});
+    QVERIFY(!Core::Settings::GetCurrent().head_tracking);
+
+    RecordingSettingsObserver observer;
+    Core::Settings::SetApplyObserver(&observer);
+    Core::Settings::Apply();
+    QVERIFY(!observer.headTrackingEnabled);
+    QCOMPARE(observer.headTrackingChanges, 1);
+    {
+        auto settings = Core::Settings::ModifiableAccess();
+        settings->head_tracking = true;
+    }
+    QVERIFY(observer.headTrackingEnabled);
+    QCOMPARE(observer.headTrackingChanges, 2);
+    QVERIFY(memoryRepository->Read("head_tracking").toBool());
+    QVERIFY(memoryRepository->Read("popup_on_lid_open").toBool());
+    Core::Settings::SetApplyObserver(nullptr);
+    Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
 }
 
 void AirPodsDomainTests::PackagesCompatibleLowLatencySilence()

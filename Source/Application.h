@@ -121,8 +121,8 @@ private:
     void OnLoudSoundReductionChanged(bool enable) override;
     void OnPpeCapLevelChanged(uint8_t level) override;
     void OnAdaptiveNoiseLevelChanged(uint8_t level) override;
-    void OnHeadTrackingChanged(bool enabled) override;
     void OnNoiseControlModeChanged(uint32_t mode) override;
+    void OnHeadTrackingEnabledChanged(bool enable) override;
     void OnRssiMinChanged(int16_t rssiMin) override;
     void OnDeviceAddressChanged(uint64_t address) override;
     void OnTrayIconBatteryChanged(Core::Settings::TrayIconBatteryBehavior behavior) override;

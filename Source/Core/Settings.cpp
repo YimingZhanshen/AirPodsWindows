@@ -167,8 +167,13 @@ void OnApply_adaptive_noise_level(const Fields &newFields)
 
 void OnApply_head_tracking(const Fields &newFields)
 {
-    Impl::NotifyApplyObserver(
-        [&](ApplyObserver &observer) { observer.OnHeadTrackingChanged(newFields.head_tracking); });
+    LOG(Info, "OnApply_head_tracking: {}", newFields.head_tracking);
+
+    // The persisted field is `head_tracking`; settings changes flow through the intent-driven
+    // manager entry point so exactly one send path receives the switch.
+    Impl::NotifyApplyObserver([&](ApplyObserver &observer) {
+        observer.OnHeadTrackingEnabledChanged(newFields.head_tracking);
+    });
 }
 
 void OnApply_noise_control_mode(const Fields &newFields)

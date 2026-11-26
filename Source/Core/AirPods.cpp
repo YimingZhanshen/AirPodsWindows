@@ -171,6 +171,9 @@ void Details::EarDetectionTracker::Reset()
 
 Manager::Manager(QObject *parent) : QObject{parent}
 {
+    // Head-tracking records reach the card through a queued signal (blueprint 2.5).
+    qRegisterMetaType<Core::AirPods::HeadTrackingEvent>("Core::AirPods::HeadTrackingEvent");
+
     StartAAPConnectWorker();
     _stateMgr.SetOnDiscardState([this] {
         _lidTracker.OnLost(Details::LidTracker::Clock::now());
@@ -1112,6 +1115,57 @@ bool Manager::ToggleNoiseControl(const AAP::StemActionRequest &request)
     return true;
 }
 
+bool Manager::IsHeadTrackingEnabled() const
+{
+    return _headTrackingEnabled;
+}
+
+std::uint64_t Manager::GetHeadTrackingGeneration() const
+{
+    std::lock_guard<std::mutex> lock{_aapWorkerMutex};
+    if (_aapConnection.State() != AAP::AAPConnectionState::Connected || !_aapMgr.IsConnected()) {
+        return 0;
+    }
+    return _aapMgr.GetLastAttempt().generation;
+}
+
+// The single head-tracking send of the application. Returning false leaves the intent pending so
+// the next `FlushHeadTracking()` retries it, which is the hook C7's broker takes over.
+bool Details::HeadTrackingCommandPort::RequestHeadTracking(bool enable)
+{
+    if (_manager == nullptr) {
+        return false;
+    }
+    return enable ? _manager->StartHeadTracking() : _manager->StopHeadTracking();
+}
+
+void Manager::FlushHeadTracking()
+{
+    AAP::HeadTrackingIntent::Action action;
+    bool desired{false};
+    {
+        std::lock_guard<std::mutex> lock{_headTrackingMutex};
+        action = _headTrackingIntent.Flush(_headTrackingPort);
+        desired = _headTrackingIntent.Enabled();
+    }
+
+    if (action != AAP::HeadTrackingIntent::Action::None) {
+        LOG(Info, "Head tracking intent pushed: {}",
+            action == AAP::HeadTrackingIntent::Action::Start ? "start" : "stop");
+    }
+    emit HeadTrackingDesiredSafely(desired);
+}
+
+void Manager::OnHeadTrackingEnabledChanged(bool enable)
+{
+    {
+        std::lock_guard<std::mutex> lock{_headTrackingMutex};
+        _headTrackingIntent.SetEnabled(enable);
+    }
+    _headTrackingEnabled = enable;
+    FlushHeadTracking();
+}
+
 void Manager::OnConversationalAwarenessChanged(bool enable)
 {
     {
@@ -1164,13 +1218,6 @@ void Manager::OnAdaptiveNoiseLevelChanged(uint8_t level)
 {
     _adaptiveNoiseLevel = Core::AAP::FilteringStrengthToWire(level);
     SetAdaptiveNoiseLevel(_adaptiveNoiseLevel.load());
-}
-
-void Manager::OnHeadTrackingChanged(bool enabled)
-{
-    _headTrackingEnabled = enabled;
-    _aapMgr.SubmitCommand(
-        {AAP::AAPCommandKind::SetHeadTracking, static_cast<uint32_t>(enabled ? 0x01 : 0x00)});
 }
 
 void Manager::OnNoiseControlModeChanged(AAP::NoiseControlMode mode)
@@ -1437,13 +1484,19 @@ void Manager::OnHeadTrackingData(AAP::HeadTrackingData data, AAP::AAPAttempt att
     if (!IsCurrentAAPAttempt(attempt)) {
         return;
     }
-    // This callback receives real-time head tracking sensor data
-    // Can be used for spatial audio or other applications
+    // This callback runs on the AAP reader thread. It forwards the record by value through a
+    // queued signal and never touches a widget: the card owns the presentation policy
+    // (Gui::HeadTrackingViewModel) and applies it on the GUI thread.
+    const HeadTrackingEvent event{data.orientation1,         data.orientation2,
+                                  data.orientation3,         data.horizontalAcceleration,
+                                  data.verticalAcceleration, attempt.generation};
+
     LOG(Trace, "Head tracking: o1={}, o2={}, o3={}, hAccel={}, vAccel={}", data.orientation1,
         data.orientation2, data.orientation3, data.horizontalAcceleration,
         data.verticalAcceleration);
     emit AapCommandStateSafely(
         attempt.generation, static_cast<int>(AAP::AAPCommandKind::SetHeadTracking), 0x01);
+    emit HeadTrackingRecordSafely(event);
 }
 
 void Manager::OnStemPress(AAP::StemEvent event, AAP::AAPAttempt attempt)
@@ -1540,10 +1593,24 @@ void Manager::OnAAPConnected(AAP::AAPAttempt attempt)
         _aapRetryScheduled = false;
     }
 
+    if (!IsCurrentAAPAttempt(attempt)) {
+        return;
+    }
+
     LOG(Info, "AAP connection established - ANC features available");
     emit AapConnectionStateChangedSafely(true);
 
     // The broker replays the complete desired snapshot; never fire an extra direct write here.
+
+    // The broker has already queued this generation's complete desired snapshot. Mark the intent
+    // live and converge through the same port; identical queued/in-flight submissions are
+    // idempotent, so this cannot duplicate or bypass the broker's replay.
+    {
+        std::lock_guard<std::mutex> lock{_headTrackingMutex};
+        _headTrackingIntent.OnTransportUp(attempt.generation);
+    }
+    emit HeadTrackingSessionSafely(true, attempt.generation);
+    FlushHeadTracking();
 }
 
 void Manager::OnAAPDisconnected(AAP::AAPAttempt attempt)
@@ -1586,6 +1653,21 @@ void Manager::OnAAPDisconnected(AAP::AAPAttempt attempt)
 
     LOG(Info, "AAP connection lost - ANC features unavailable");
     emit AapConnectionStateChangedSafely(false);
+
+    // The stream died with the transport. Only the matching generation may end the current
+    // readout; a late loss report from an older session must not freeze a newer stream.
+    bool sessionEnded = false;
+    {
+        std::lock_guard<std::mutex> lock{_headTrackingMutex};
+        if (_headTrackingIntent.LinkUp() && _headTrackingIntent.Generation() == attempt.generation)
+        {
+            _headTrackingIntent.OnTransportDown();
+            sessionEnded = true;
+        }
+    }
+    if (sessionEnded) {
+        emit HeadTrackingSessionSafely(false, attempt.generation);
+    }
 }
 
 std::vector<Bluetooth::Device> GetDevices()

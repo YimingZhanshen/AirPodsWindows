@@ -505,6 +505,10 @@ Devi prima abbinare le tue AirPods nelle impostazioni Bluetooth di Windows.</tra
         <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
         <translation>Imposta l’intensità del filtro della modalità Adaptive (0–100): 0 lascia passare più rumore ambientale; 100 filtra di più. Disponibile solo quando il dispositivo connesso segnala la modalità Adaptive.</translation>
     </message>
+    <message>
+        <source>Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.</source>
+        <translation>Trasmette i dati del sensore di tracciamento della testa degli auricolari e li mostra nella pagina delle impostazioni. Consuma un po’ più di batteria e traffico Bluetooth mentre è connesso.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -519,221 +523,225 @@ Devi prima abbinare le tue AirPods nelle impostazioni Bluetooth di Windows.</tra
         <source>General</source>
         <translation>Generale</translation>
     </message>
-    <message>
+<message>
         <source>Open logs directory</source>
         <translation>Apri la cartella dei logs</translation>
     </message>
-    <message>
+<message>
         <source>Bluetooth maximum receiving range</source>
         <translation>Portata massima della ricezione bluetooth</translation>
     </message>
-    <message>
+<message>
         <source>Unbind AirPods</source>
         <translation>Disabbina AirPods</translation>
     </message>
-    <message>
+<message>
         <source>Launch when system starts</source>
         <translation>Apri all&apos;avvio del sistema</translation>
     </message>
-    <message>
+<message>
         <source>Language</source>
         <translation>Lingua</translation>
     </message>
-    <message>
+<message>
         <source>Visual</source>
         <translation>Vista</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on taskbar</source>
         <translation>Mostra la batteria sulla taskbar</translation>
     </message>
-    <message>
+<message>
         <source>Disable</source>
         <translation>Disabilita</translation>
     </message>
-    <message>
+<message>
         <source>When low battery</source>
         <translation>Quando la batteria è bassa</translation>
     </message>
-    <message>
+<message>
         <source>Always</source>
         <translation>Sempre</translation>
     </message>
-    <message>
+<message>
         <source>As text</source>
         <translation>Come testo</translation>
     </message>
-    <message>
+<message>
         <source>As icon</source>
         <translation>Come icona</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on tray icon</source>
         <translation>Mostra la batteria nell&apos;area di notifica</translation>
     </message>
-    <message>
+<message>
         <source>Features</source>
         <translation>Funzionalità</translation>
     </message>
-    <message>
+<message>
         <source>Automatic ear detection</source>
         <translation>Rilevamento automatico dell&apos;orecchio</translation>
     </message>
-    <message>
+<message>
         <source>Low audio latency</source>
         <translation>Audio a bassa latenza</translation>
     </message>
-    <message>
+<message>
         <source>About</source>
         <translation>Info</translation>
     </message>
-    <message>
+<message>
         <source>Connect the selected device on a tray icon click</source>
         <translation>Connetti il dispositivo selezionato con un clic sull&apos;icona nell&apos;area di notifica</translation>
     </message>
-    <message>
+<message>
         <source>Device</source>
         <translation>Dispositivo</translation>
     </message>
-    <message>
+<message>
         <source>The paired Bluetooth audio device a tray icon click connects.</source>
         <translation>Il dispositivo audio Bluetooth associato che viene connesso facendo clic sull&apos;icona nell&apos;area di notifica.</translation>
     </message>
-    <message>
+<message>
         <source>Forget the bound AirPods so that another pair can be bound.</source>
         <translation>Dissocia gli AirPods associati per poterne associare un altro paio.</translation>
     </message>
-    <message>
+<message>
         <source>Diagnostics</source>
         <translation>Diagnostica</translation>
     </message>
-    <message>
+<message>
         <source>Log files help when reporting an issue.</source>
         <translation>I file di log sono utili quando si segnala un problema.</translation>
     </message>
-    <message>
+<message>
         <source>Appearance</source>
         <translation>Aspetto</translation>
     </message>
-    <message>
+<message>
         <source>Use system setting</source>
         <translation>Usa impostazione di sistema</translation>
     </message>
-    <message>
+<message>
         <source>Light</source>
         <translation>Chiaro</translation>
     </message>
-    <message>
+<message>
         <source>Dark</source>
         <translation>Scuro</translation>
     </message>
-    <message>
+<message>
         <source>Connect automatically when audio starts playing</source>
         <translation>Connetti automaticamente all’avvio della riproduzione audio</translation>
     </message>
-    <message>
+<message>
         <source>Show battery when the case opens</source>
         <translation>Mostra la batteria all&apos;apertura della custodia</translation>
     </message>
-    <message>
+<message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>AirPodsWindows Settings</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Conversational awareness</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Personalized volume</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Reduce loud sounds</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Noise control mode</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Speaking volume reduction:</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>40%</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Stem press actions</source>
         <translation>Azioni di pressione dello stelo</translation>
     </message>
-    <message>
+<message>
         <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
         <translation>Scegli l'azione di Windows per ogni gesto di pressione. Le modifiche vengono salvate automaticamente.</translation>
     </message>
-    <message>
+<message>
         <source>Single</source>
         <translation>Singola</translation>
     </message>
-    <message>
+<message>
         <source>Double</source>
         <translation>Doppia</translation>
     </message>
-    <message>
+<message>
         <source>Triple</source>
         <translation>Tripla</translation>
     </message>
-    <message>
+<message>
         <source>Long</source>
         <translation>Lunga</translation>
     </message>
-    <message>
+<message>
         <source>Left stem</source>
         <translation>Stelo sinistro</translation>
     </message>
-    <message>
+<message>
         <source>Right stem</source>
         <translation>Stelo destro</translation>
     </message>
-    <message>
+<message>
         <source>None</source>
         <translation>Nessuna</translation>
     </message>
-    <message>
+<message>
         <source>Play / Pause</source>
         <translation>Riproduci / Pausa</translation>
     </message>
-    <message>
+<message>
         <source>Next track</source>
         <translation>Traccia successiva</translation>
     </message>
-    <message>
+<message>
         <source>Previous track</source>
         <translation>Traccia precedente</translation>
     </message>
-    <message>
+<message>
         <source>Volume up</source>
         <translation>Alza volume</translation>
     </message>
-    <message>
+<message>
         <source>Volume down</source>
         <translation>Abbassa volume</translation>
     </message>
-    <message>
+<message>
         <source>Toggle noise control</source>
         <translation>Attiva/disattiva controllo rumore</translation>
+    </message>
+<message>
+        <source>Stream head tracking data</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -773,6 +781,81 @@ Devi prima abbinare le tue AirPods nelle impostazioni Bluetooth di Windows.</tra
     <message>
         <source>What&apos;s new</source>
         <translation>Novità</translation>
+    </message>
+</context>
+<context>
+    <name>Gui::HeadTrackingCard</name>
+    <message>
+        <source>Head tracking</source>
+        <translation>Tracciamento della testa</translation>
+    </message>
+    <message>
+        <source>Values are the earbuds' raw sensor counts scaled to signed full range: the protocol publishes no axis names and no physical unit, so none is claimed here.</source>
+        <translation>I valori sono i conteggi grezzi dei sensori degli auricolari, scalati sull’intero intervallo con segno: il protocollo non pubblica nomi degli assi né unità fisiche, quindi qui non se ne dichiara alcuna.</translation>
+    </message>
+    <message>
+        <source>Orientation 1</source>
+        <translation>Orientamento 1</translation>
+    </message>
+    <message>
+        <source>Orientation 2</source>
+        <translation>Orientamento 2</translation>
+    </message>
+    <message>
+        <source>Orientation 3</source>
+        <translation>Orientamento 3</translation>
+    </message>
+    <message>
+        <source>Acceleration, horizontal</source>
+        <translation>Accelerazione, orizzontale</translation>
+    </message>
+    <message>
+        <source>Acceleration, vertical</source>
+        <translation>Accelerazione, verticale</translation>
+    </message>
+    <message>
+        <source>Full scale</source>
+        <translation>Scala completa</translation>
+    </message>
+    <message>
+        <source>Raw</source>
+        <translation>Grezzo</translation>
+    </message>
+    <message>
+        <source>Head tracking is off</source>
+        <translation>Il tracciamento della testa è disattivato</translation>
+    </message>
+    <message>
+        <source>Waiting for the earbuds' first reading</source>
+        <translation>In attesa della prima lettura degli auricolari</translation>
+    </message>
+    <message>
+        <source>Streaming</source>
+        <translation>Trasmissione in corso</translation>
+    </message>
+    <message>
+        <source>No readings for a while - the earbuds paused the stream</source>
+        <translation>Nessuna lettura da un po’ di tempo - gli auricolari hanno sospeso la trasmissione</translation>
+    </message>
+    <message>
+        <source>The AAP connection dropped</source>
+        <translation>La connessione AAP è stata persa</translation>
+    </message>
+    <message>
+        <source>-</source>
+        <translation>-</translation>
+    </message>
+    <message>
+        <source>Session %1</source>
+        <translation>Sessione %1</translation>
+    </message>
+    <message>
+        <source>Last reading %1 s ago</source>
+        <translation>Ultima lettura %1 s fa</translation>
+    </message>
+    <message>
+        <source>%1 - last reading %2 s ago</source>
+        <translation>%1 - ultima lettura %2 s fa</translation>
     </message>
 </context>
 </TS>

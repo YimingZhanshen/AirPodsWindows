@@ -504,6 +504,10 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
         <translation>設定自適應模式的濾波強度（0–100）：0 讓更多環境噪音通過，100 過濾更多噪音。僅在連線的裝置回報自適應模式時可用。</translation>
     </message>
+    <message>
+        <source>Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.</source>
+        <translation>傳輸耳機頭部追蹤感測器的資料，並顯示在設定頁面。連線時會稍微增加電池消耗和藍牙流量。</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -518,221 +522,225 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>General</source>
         <translation>一般</translation>
     </message>
-    <message>
+<message>
         <source>About</source>
         <translation>關於</translation>
     </message>
-    <message>
+<message>
         <source>Open logs directory</source>
         <translation>開啟記錄檔資料夾</translation>
     </message>
-    <message>
+<message>
         <source>Bluetooth maximum receiving range</source>
         <translation>藍牙最大接收範圍</translation>
     </message>
-    <message>
+<message>
         <source>Unbind AirPods</source>
         <translation>解除 AirPods 綁定</translation>
     </message>
-    <message>
+<message>
         <source>Launch when system starts</source>
         <translation>系統啟動時執行</translation>
     </message>
-    <message>
+<message>
         <source>Language</source>
         <translation>語言</translation>
     </message>
-    <message>
+<message>
         <source>Visual</source>
         <translation>外觀</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on taskbar</source>
         <translation>在工作列上顯示電量</translation>
     </message>
-    <message>
+<message>
         <source>Disable</source>
         <translation>停用</translation>
     </message>
-    <message>
+<message>
         <source>When low battery</source>
         <translation>電量不足時</translation>
     </message>
-    <message>
+<message>
         <source>Always</source>
         <translation>一律顯示</translation>
     </message>
-    <message>
+<message>
         <source>As text</source>
         <translation>以文字顯示</translation>
     </message>
-    <message>
+<message>
         <source>As icon</source>
         <translation>以圖示顯示</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on tray icon</source>
         <translation>在系統匣圖示上顯示電量</translation>
     </message>
-    <message>
+<message>
         <source>Features</source>
         <translation>功能</translation>
     </message>
-    <message>
+<message>
         <source>Automatic ear detection</source>
         <translation>自動入耳偵測</translation>
     </message>
-    <message>
+<message>
         <source>Low audio latency</source>
         <translation>低音訊延遲</translation>
     </message>
-    <message>
+<message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;開源 &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;倉庫&lt;/span&gt;&lt;/a&gt; 根據 &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt; 許可。&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
-    <message>
+<message>
         <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
         <translation>版權所有 © 2021-2026 SpriteOvO &amp; YimingZhanshen. 保留所有權利。</translation>
     </message>
-    <message>
+<message>
         <source>Connect the selected device on a tray icon click</source>
         <translation>按一下系統匣圖示時連線選取的裝置</translation>
     </message>
-    <message>
+<message>
         <source>Device</source>
         <translation>裝置</translation>
     </message>
-    <message>
+<message>
         <source>The paired Bluetooth audio device a tray icon click connects.</source>
         <translation>按一下系統匣圖示時要連線的已配對藍牙音訊裝置。</translation>
     </message>
-    <message>
+<message>
         <source>Forget the bound AirPods so that another pair can be bound.</source>
         <translation>解除目前綁定的 AirPods，以便綁定另一副。</translation>
     </message>
-    <message>
+<message>
         <source>Diagnostics</source>
         <translation>診斷</translation>
     </message>
-    <message>
+<message>
         <source>Log files help when reporting an issue.</source>
         <translation>回報問題時，日誌檔案能提供協助。</translation>
     </message>
-    <message>
+<message>
         <source>Appearance</source>
         <translation>外觀</translation>
     </message>
-    <message>
+<message>
         <source>Use system setting</source>
         <translation>隨系統</translation>
     </message>
-    <message>
+<message>
         <source>Light</source>
         <translation>淺色</translation>
     </message>
-    <message>
+<message>
         <source>Dark</source>
         <translation>深色</translation>
     </message>
-    <message>
+<message>
         <source>AirPodsWindows Settings</source>
         <translation>AirPodsWindows 設定</translation>
     </message>
-    <message>
+<message>
         <source>Conversational awareness</source>
         <translation>對話感知</translation>
     </message>
-    <message>
+<message>
         <source>Speaking volume reduction:</source>
         <translation>說話時音量降低至：</translation>
     </message>
-    <message>
+<message>
         <source>Personalized volume</source>
         <translation>個人化音量</translation>
     </message>
-    <message>
+<message>
         <source>Reduce loud sounds</source>
         <translation>響亮聲音降低</translation>
     </message>
-    <message>
+<message>
         <source>Noise control mode</source>
         <translation>降噪控制模式</translation>
     </message>
-    <message>
+<message>
         <source>Connect automatically when audio starts playing</source>
         <translation>音訊開始播放時自動連線</translation>
     </message>
-    <message>
+<message>
         <source>Show battery when the case opens</source>
         <translation>開啟充電盒時顯示電量</translation>
     </message>
-    <message>
+<message>
         <source>40%</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Stem press actions</source>
         <translation>耳機柄按壓操作</translation>
     </message>
-    <message>
+<message>
         <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
         <translation>為每次按壓手勢選擇 Windows 操作。變更會自動儲存。</translation>
     </message>
-    <message>
+<message>
         <source>Single</source>
         <translation>單按</translation>
     </message>
-    <message>
+<message>
         <source>Double</source>
         <translation>雙按</translation>
     </message>
-    <message>
+<message>
         <source>Triple</source>
         <translation>三按</translation>
     </message>
-    <message>
+<message>
         <source>Long</source>
         <translation>長按</translation>
     </message>
-    <message>
+<message>
         <source>Left stem</source>
         <translation>左側耳機柄</translation>
     </message>
-    <message>
+<message>
         <source>Right stem</source>
         <translation>右側耳機柄</translation>
     </message>
-    <message>
+<message>
         <source>None</source>
         <translation>無</translation>
     </message>
-    <message>
+<message>
         <source>Play / Pause</source>
         <translation>播放 / 暫停</translation>
     </message>
-    <message>
+<message>
         <source>Next track</source>
         <translation>下一首</translation>
     </message>
-    <message>
+<message>
         <source>Previous track</source>
         <translation>上一首</translation>
     </message>
-    <message>
+<message>
         <source>Volume up</source>
         <translation>提高音量</translation>
     </message>
-    <message>
+<message>
         <source>Volume down</source>
         <translation>降低音量</translation>
     </message>
-    <message>
+<message>
         <source>Toggle noise control</source>
         <translation>切換噪音控制</translation>
+    </message>
+<message>
+        <source>Stream head tracking data</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -772,6 +780,81 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     <message>
         <source>What&apos;s new</source>
         <translation>更新內容</translation>
+    </message>
+</context>
+<context>
+    <name>Gui::HeadTrackingCard</name>
+    <message>
+        <source>Head tracking</source>
+        <translation>頭部追蹤</translation>
+    </message>
+    <message>
+        <source>Values are the earbuds' raw sensor counts scaled to signed full range: the protocol publishes no axis names and no physical unit, so none is claimed here.</source>
+        <translation>這些數值是耳機感測器的原始計數，按有符號滿量程縮放：協定未公布座標軸名稱或物理單位，因此這裡不作推斷。</translation>
+    </message>
+    <message>
+        <source>Orientation 1</source>
+        <translation>方向 1</translation>
+    </message>
+    <message>
+        <source>Orientation 2</source>
+        <translation>方向 2</translation>
+    </message>
+    <message>
+        <source>Orientation 3</source>
+        <translation>方向 3</translation>
+    </message>
+    <message>
+        <source>Acceleration, horizontal</source>
+        <translation>加速度，水平</translation>
+    </message>
+    <message>
+        <source>Acceleration, vertical</source>
+        <translation>加速度，垂直</translation>
+    </message>
+    <message>
+        <source>Full scale</source>
+        <translation>滿量程</translation>
+    </message>
+    <message>
+        <source>Raw</source>
+        <translation>原始值</translation>
+    </message>
+    <message>
+        <source>Head tracking is off</source>
+        <translation>頭部追蹤已關閉</translation>
+    </message>
+    <message>
+        <source>Waiting for the earbuds' first reading</source>
+        <translation>正在等待耳機的第一次讀數</translation>
+    </message>
+    <message>
+        <source>Streaming</source>
+        <translation>正在傳輸</translation>
+    </message>
+    <message>
+        <source>No readings for a while - the earbuds paused the stream</source>
+        <translation>已有一段時間沒有讀數——耳機暫停了資料流</translation>
+    </message>
+    <message>
+        <source>The AAP connection dropped</source>
+        <translation>AAP 連線已中斷</translation>
+    </message>
+    <message>
+        <source>-</source>
+        <translation>-</translation>
+    </message>
+    <message>
+        <source>Session %1</source>
+        <translation>工作階段 %1</translation>
+    </message>
+    <message>
+        <source>Last reading %1 s ago</source>
+        <translation>最後一次讀數在 %1 秒前</translation>
+    </message>
+    <message>
+        <source>%1 - last reading %2 s ago</source>
+        <translation>%1 - 最後一次讀數在 %2 秒前</translation>
     </message>
 </context>
 </TS>

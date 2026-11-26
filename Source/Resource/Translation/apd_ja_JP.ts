@@ -504,6 +504,10 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
         <translation>Adaptiveモードのフィルター強度を設定します（0～100）：0は周囲の騒音をより多く通し、100はより強くフィルターします。接続中のデバイスがAdaptiveモードを報告している場合のみ利用できます。</translation>
     </message>
+    <message>
+        <source>Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.</source>
+        <translation>イヤホンの頭部トラッキングセンサーデータをストリーミングし、設定ページに表示します。接続中はバッテリーとBluetooth通信を少し多く消費します。</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -518,221 +522,225 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>General</source>
         <translation>一般</translation>
     </message>
-    <message>
+<message>
         <source>Open logs directory</source>
         <translation>ログファイルのフォルダーを開く</translation>
     </message>
-    <message>
+<message>
         <source>Bluetooth maximum receiving range</source>
         <translation>Bluetoothの最大受信距離</translation>
     </message>
-    <message>
+<message>
         <source>Unbind AirPods</source>
         <translation>AirPods の登録を解除</translation>
     </message>
-    <message>
+<message>
         <source>Launch when system starts</source>
         <translation>コンピュータの起動時に自動で起動</translation>
     </message>
-    <message>
+<message>
         <source>Language</source>
         <translation>言語</translation>
     </message>
-    <message>
+<message>
         <source>Visual</source>
         <translation>表示</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on tray icon</source>
         <translation>通知アイコンに電池残量を表示する</translation>
     </message>
-    <message>
+<message>
         <source>Disable</source>
         <translation>無効</translation>
     </message>
-    <message>
+<message>
         <source>When low battery</source>
         <translation>バッテリー残量が少ない時のみ</translation>
     </message>
-    <message>
+<message>
         <source>Always</source>
         <translation>常に表示</translation>
     </message>
-    <message>
+<message>
         <source>Features</source>
         <translation>機能</translation>
     </message>
-    <message>
+<message>
         <source>Automatic ear detection</source>
         <translation>自動耳検出</translation>
     </message>
-    <message>
+<message>
         <source>Low audio latency</source>
         <translation>低遅延モード</translation>
     </message>
-    <message>
+<message>
         <source>About</source>
         <translation>情報</translation>
     </message>
-    <message>
+<message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Display battery on taskbar</source>
         <translation>タスクバーにバッテリー残量を表示</translation>
     </message>
-    <message>
+<message>
         <source>As text</source>
         <translation>テキストで表示</translation>
     </message>
-    <message>
+<message>
         <source>As icon</source>
         <translation>アイコンで表示</translation>
     </message>
-    <message>
+<message>
         <source>Connect the selected device on a tray icon click</source>
         <translation>通知領域のアイコンをクリックして選択したデバイスに接続</translation>
     </message>
-    <message>
+<message>
         <source>Device</source>
         <translation>デバイス</translation>
     </message>
-    <message>
+<message>
         <source>The paired Bluetooth audio device a tray icon click connects.</source>
         <translation>通知領域のアイコンをクリックしたときに接続する、ペアリング済みの Bluetooth オーディオデバイスです。</translation>
     </message>
-    <message>
+<message>
         <source>Forget the bound AirPods so that another pair can be bound.</source>
         <translation>別の AirPods をバインドできるよう、現在の AirPods のバインドを解除します。</translation>
     </message>
-    <message>
+<message>
         <source>Diagnostics</source>
         <translation>診断</translation>
     </message>
-    <message>
+<message>
         <source>Log files help when reporting an issue.</source>
         <translation>問題を報告する際にログファイルが役立ちます。</translation>
     </message>
-    <message>
+<message>
         <source>Appearance</source>
         <translation>外観</translation>
     </message>
-    <message>
+<message>
         <source>Use system setting</source>
         <translation>システム設定を使用</translation>
     </message>
-    <message>
+<message>
         <source>Light</source>
         <translation>ライト</translation>
     </message>
-    <message>
+<message>
         <source>Dark</source>
         <translation>ダーク</translation>
     </message>
-    <message>
+<message>
         <source>AirPodsWindows Settings</source>
         <translation>AirPodsWindows の設定</translation>
     </message>
-    <message>
+<message>
         <source>Conversational awareness</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Personalized volume</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Reduce loud sounds</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Noise control mode</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Connect automatically when audio starts playing</source>
         <translation>音声の再生開始時に自動接続する</translation>
     </message>
-    <message>
+<message>
         <source>Show battery when the case opens</source>
         <translation>ケースを開いたときに電池残量を表示する</translation>
     </message>
-    <message>
+<message>
         <source>Speaking volume reduction:</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>40%</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Stem press actions</source>
         <translation>ステムの押下操作</translation>
     </message>
-    <message>
+<message>
         <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
         <translation>各押下操作に対する Windows の動作を選択します。変更は自動的に保存されます。</translation>
     </message>
-    <message>
+<message>
         <source>Single</source>
         <translation>1回</translation>
     </message>
-    <message>
+<message>
         <source>Double</source>
         <translation>2回</translation>
     </message>
-    <message>
+<message>
         <source>Triple</source>
         <translation>3回</translation>
     </message>
-    <message>
+<message>
         <source>Long</source>
         <translation>長押し</translation>
     </message>
-    <message>
+<message>
         <source>Left stem</source>
         <translation>左ステム</translation>
     </message>
-    <message>
+<message>
         <source>Right stem</source>
         <translation>右ステム</translation>
     </message>
-    <message>
+<message>
         <source>None</source>
         <translation>なし</translation>
     </message>
-    <message>
+<message>
         <source>Play / Pause</source>
         <translation>再生 / 一時停止</translation>
     </message>
-    <message>
+<message>
         <source>Next track</source>
         <translation>次のトラック</translation>
     </message>
-    <message>
+<message>
         <source>Previous track</source>
         <translation>前のトラック</translation>
     </message>
-    <message>
+<message>
         <source>Volume up</source>
         <translation>音量を上げる</translation>
     </message>
-    <message>
+<message>
         <source>Volume down</source>
         <translation>音量を下げる</translation>
     </message>
-    <message>
+<message>
         <source>Toggle noise control</source>
         <translation>ノイズコントロールを切り替える</translation>
+    </message>
+<message>
+        <source>Stream head tracking data</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -772,6 +780,81 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     <message>
         <source>What&apos;s new</source>
         <translation>新機能</translation>
+    </message>
+</context>
+<context>
+    <name>Gui::HeadTrackingCard</name>
+    <message>
+        <source>Head tracking</source>
+        <translation>頭部トラッキング</translation>
+    </message>
+    <message>
+        <source>Values are the earbuds' raw sensor counts scaled to signed full range: the protocol publishes no axis names and no physical unit, so none is claimed here.</source>
+        <translation>値はイヤホンのセンサーの生カウントを符号付き全範囲に換算したものです。プロトコルは軸名や物理単位を公開していないため、ここでは推定しません。</translation>
+    </message>
+    <message>
+        <source>Orientation 1</source>
+        <translation>方向 1</translation>
+    </message>
+    <message>
+        <source>Orientation 2</source>
+        <translation>方向 2</translation>
+    </message>
+    <message>
+        <source>Orientation 3</source>
+        <translation>方向 3</translation>
+    </message>
+    <message>
+        <source>Acceleration, horizontal</source>
+        <translation>加速度、水平</translation>
+    </message>
+    <message>
+        <source>Acceleration, vertical</source>
+        <translation>加速度、垂直</translation>
+    </message>
+    <message>
+        <source>Full scale</source>
+        <translation>全スケール</translation>
+    </message>
+    <message>
+        <source>Raw</source>
+        <translation>生値</translation>
+    </message>
+    <message>
+        <source>Head tracking is off</source>
+        <translation>頭部トラッキングはオフです</translation>
+    </message>
+    <message>
+        <source>Waiting for the earbuds' first reading</source>
+        <translation>イヤホンの最初の読み取りを待っています</translation>
+    </message>
+    <message>
+        <source>Streaming</source>
+        <translation>ストリーミング中</translation>
+    </message>
+    <message>
+        <source>No readings for a while - the earbuds paused the stream</source>
+        <translation>しばらく読み取れていません - イヤホンがストリームを一時停止しました</translation>
+    </message>
+    <message>
+        <source>The AAP connection dropped</source>
+        <translation>AAP接続が切れました</translation>
+    </message>
+    <message>
+        <source>-</source>
+        <translation>-</translation>
+    </message>
+    <message>
+        <source>Session %1</source>
+        <translation>セッション %1</translation>
+    </message>
+    <message>
+        <source>Last reading %1 s ago</source>
+        <translation>最後の読み取りは%1秒前</translation>
+    </message>
+    <message>
+        <source>%1 - last reading %2 s ago</source>
+        <translation>%1 - 最後の読み取りは%2秒前</translation>
     </message>
 </context>
 </TS>

@@ -57,8 +57,10 @@ public:
     virtual void OnLoudSoundReductionChanged(bool enable) = 0;
     virtual void OnPpeCapLevelChanged(uint8_t level) = 0;
     virtual void OnAdaptiveNoiseLevelChanged(uint8_t) {}
-    virtual void OnHeadTrackingChanged(bool) {}
     virtual void OnNoiseControlModeChanged(uint32_t mode) = 0;
+    // Defaulted for the same reason as OnAudioAutoConnectEnabledChanged: existing observers stay
+    // source-compatible when a setting is appended.
+    virtual void OnHeadTrackingEnabledChanged(bool) {}
     virtual void OnRssiMinChanged(int16_t rssiMin) = 0;
     virtual void OnDeviceAddressChanged(uint64_t address) = 0;
     virtual void OnTrayIconBatteryChanged(TrayIconBatteryBehavior behavior) = 0;
@@ -147,7 +149,9 @@ void SetRepository(std::unique_ptr<Repository> repository);
     callback(uint8_t, adaptive_noise_level, {Core::AAP::kAdaptiveNoiseLevelDefault},               \
         Impl::OnApply(&OnApply_adaptive_noise_level),                                              \
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.")}) \
-    callback(bool, head_tracking, {false}, Impl::OnApply(&OnApply_head_tracking))                   \
+    callback(bool, head_tracking, {false},                                                       \
+        Impl::OnApply(&OnApply_head_tracking),                                                   \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.")}) \
     callback(Core::AAP::StemAction, stem_left_single, {Core::AAP::DefaultStemActions()[0]},         \
         Impl::OnApply(&OnApply_stem_actions),                                                     \
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Action for a single press of the left stem.")})   \
@@ -173,6 +177,10 @@ void SetRepository(std::unique_ptr<Repository> repository);
         Impl::OnApply(&OnApply_stem_actions),                                                     \
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Action for a long press of the right stem.")})
 // clang-format on
+
+// `head_tracking` predates D5 and remains the single persisted switch. D5 deliberately reuses
+// it instead of appending a duplicate key: the field name, type and position are unchanged, so
+// `kFieldsAbiVersion` stays 1 and stores written before D5 keep working untouched.
 
 struct Fields {
 #define DECLARE_FIELD(type, name, dft, ...) type name dft;

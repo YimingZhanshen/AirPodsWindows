@@ -178,6 +178,7 @@ SettingsWindow::SettingsWindow(
              std::pair{_ui.lbConversationalAwareness, _ui.cbConversationalAwareness},
              std::pair{_ui.lbPersonalizedVolume, _ui.cbPersonalizedVolume},
              std::pair{_ui.lbLoudSoundReduction, _ui.cbLoudSoundReduction},
+             std::pair{_ui.lbHeadTracking, _ui.cbHeadTracking},
              std::pair{_ui.lbLidPopup, _ui.cbLidPopup},
              std::pair{_ui.lbTrayQuickConnect, _ui.cbTrayQuickConnectEnabled},
              std::pair{_ui.lbAudioAutoConnect, _ui.cbAudioAutoConnectEnabled},
@@ -349,6 +350,12 @@ SettingsWindow::SettingsWindow(
         }
     });
 
+    connect(_ui.cbHeadTracking, &QCheckBox::toggled, this, [this](bool checked) {
+        if (_trigger) {
+            On_cbHeadTracking_toggled(checked);
+        }
+    });
+
     connect(
         _ui.cbNoiseControlMode, qOverload<int>(&QComboBox::currentIndexChanged), this,
         [this](int index) {
@@ -365,11 +372,6 @@ SettingsWindow::SettingsWindow(
     connect(_ui.hsAdaptiveNoiseLevel, &QSlider::valueChanged, this, [this](int value) {
         if (_trigger) {
             On_hsAdaptiveNoiseLevel_valueChanged(value);
-        }
-    });
-    connect(_ui.cbHeadTracking, &QCheckBox::toggled, this, [this](bool checked) {
-        if (_trigger) {
-            On_cbHeadTracking_toggled(checked);
         }
     });
 
@@ -434,6 +436,7 @@ SettingsWindow::SettingsWindow(
 
     SetupDriverStatusCard();
     SetupStemActionsCard();
+    SetupHeadTrackingCard();
 }
 
 void SettingsWindow::SetupStemActionsCard()
@@ -565,6 +568,7 @@ void SettingsWindow::UpdateDescriptions()
     _ui.lbDescLoudSoundReduction->setText(constMetaFields.loud_sound_reduction.Description());
     _ui.lbDescPpeCapLevel->setText(constMetaFields.ppe_cap_level.Description());
     _ui.lbDescAdaptiveNoiseLevel->setText(constMetaFields.adaptive_noise_level.Description());
+    _ui.lbDescHeadTracking->setText(constMetaFields.head_tracking.Description());
 
     // The About text carries a hard-coded link colour inside the (translated) HTML; swap it
     // for the theme accent so it stays readable in dark mode.
@@ -631,6 +635,18 @@ void SettingsWindow::SetupDriverStatusCard()
     });
 }
 
+// Blueprint 2.5: puts the live sensor readout under its own setting on the Features page, so the
+// switch and its feedback stay together. Like the driver card it stays hidden until
+// SetAirPodsManagerProvider() runs — resolving the manager during construction would dereference
+// one that the tray icon has not created yet.
+void SettingsWindow::SetupHeadTrackingCard()
+{
+    _headTrackingCard = new HeadTrackingCard{_ui.features};
+    const auto switchCardIndex = _ui.featuresLayout->indexOf(_ui.cardHeadTracking);
+    _ui.featuresLayout->insertWidget(switchCardIndex + 1, _headTrackingCard);
+    _headTrackingCard->setVisible(false);
+}
+
 // Called by the application layer once the AirPods manager exists; see the
 // header for why this cannot happen during construction.
 void SettingsWindow::SetAirPodsManagerProvider(
@@ -639,6 +655,9 @@ void SettingsWindow::SetAirPodsManagerProvider(
     _getAirPodsManager = std::move(getAirPodsManager);
     if (!_getAirPodsManager) {
         return;
+    }
+    if (_headTrackingCard != nullptr) {
+        _headTrackingCard->SetManagerProvider(_getAirPodsManager);
     }
     if (!_aapSignalConnected) {
         auto &manager = _getAirPodsManager();
@@ -1051,6 +1070,9 @@ void SettingsWindow::showEvent(QShowEvent *event)
     // re-probe the link state each time the dialog opens.
     if (_driverStatusCard != nullptr) {
         _driverStatusCard->Refresh();
+    }
+    if (_headTrackingCard != nullptr) {
+        _headTrackingCard->Refresh();
     }
 }
 

@@ -504,6 +504,10 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
         <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
         <translation>Adaptive 모드의 필터링 강도를 설정합니다(0~100). 0은 주변 소음을 더 많이 통과시키고 100은 더 많이 필터링합니다. 연결된 기기가 Adaptive 모드를 보고할 때만 사용할 수 있습니다.</translation>
     </message>
+    <message>
+        <source>Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.</source>
+        <translation>이어폰의 머리 추적 센서 데이터를 스트리밍하고 설정 페이지에 표시합니다. 연결 중에는 배터리와 Bluetooth 트래픽을 조금 더 사용합니다.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -518,221 +522,225 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
         <source>General</source>
         <translation>일반</translation>
     </message>
-    <message>
+<message>
         <source>Open logs directory</source>
         <translation>로그 폴더 열기</translation>
     </message>
-    <message>
+<message>
         <source>Bluetooth maximum receiving range</source>
         <translation>Bluetooth 최대 수신 거리</translation>
     </message>
-    <message>
+<message>
         <source>Unbind AirPods</source>
         <translation>AirPods 연결해제</translation>
     </message>
-    <message>
+<message>
         <source>Launch when system starts</source>
         <translation>시스템 시작 시 실행</translation>
     </message>
-    <message>
+<message>
         <source>Language</source>
         <translation>언어</translation>
     </message>
-    <message>
+<message>
         <source>Visual</source>
         <translation>표시</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on tray icon</source>
         <translation>트레이 아이콘에 배터리 표시</translation>
     </message>
-    <message>
+<message>
         <source>Disable</source>
         <translation>안 함</translation>
     </message>
-    <message>
+<message>
         <source>When low battery</source>
         <translation>배터리 부족 시</translation>
     </message>
-    <message>
+<message>
         <source>Always</source>
         <translation>항상</translation>
     </message>
-    <message>
+<message>
         <source>Features</source>
         <translation>기능</translation>
     </message>
-    <message>
+<message>
         <source>Automatic ear detection</source>
         <translation>자동으로 착용 감지</translation>
     </message>
-    <message>
+<message>
         <source>Low audio latency</source>
         <translation>오디오 지연 최소화</translation>
     </message>
-    <message>
+<message>
         <source>About</source>
         <translation>정보</translation>
     </message>
-    <message>
+<message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Display battery on taskbar</source>
         <translation>작업 표시줄에 배터리 상태 표시</translation>
     </message>
-    <message>
+<message>
         <source>As text</source>
         <translation>텍스트</translation>
     </message>
-    <message>
+<message>
         <source>As icon</source>
         <translation>아이콘</translation>
     </message>
-    <message>
+<message>
         <source>Connect the selected device on a tray icon click</source>
         <translation>트레이 아이콘을 클릭하여 선택한 기기에 연결</translation>
     </message>
-    <message>
+<message>
         <source>Device</source>
         <translation>기기</translation>
     </message>
-    <message>
+<message>
         <source>The paired Bluetooth audio device a tray icon click connects.</source>
         <translation>트레이 아이콘 클릭 시 연결할 페어링된 Bluetooth 오디오 기기입니다.</translation>
     </message>
-    <message>
+<message>
         <source>Forget the bound AirPods so that another pair can be bound.</source>
         <translation>다른 AirPods을 바인딩할 수 있도록 현재 AirPods의 바인딩을 해제합니다.</translation>
     </message>
-    <message>
+<message>
         <source>Diagnostics</source>
         <translation>진단</translation>
     </message>
-    <message>
+<message>
         <source>Log files help when reporting an issue.</source>
         <translation>문제를 신고할 때 로그 파일이 도움이 됩니다.</translation>
     </message>
-    <message>
+<message>
         <source>Appearance</source>
         <translation>화면 모드</translation>
     </message>
-    <message>
+<message>
         <source>Use system setting</source>
         <translation>시스템 설정 사용</translation>
     </message>
-    <message>
+<message>
         <source>Light</source>
         <translation>라이트</translation>
     </message>
-    <message>
+<message>
         <source>Dark</source>
         <translation>다크</translation>
     </message>
-    <message>
+<message>
         <source>AirPodsWindows Settings</source>
         <translation>AirPodsWindows 설정</translation>
     </message>
-    <message>
+<message>
         <source>Conversational awareness</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Personalized volume</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Reduce loud sounds</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Noise control mode</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Connect automatically when audio starts playing</source>
         <translation>오디오 재생이 시작되면 자동 연결</translation>
     </message>
-    <message>
+<message>
         <source>Show battery when the case opens</source>
         <translation>충전 케이스를 열면 배터리 표시</translation>
     </message>
-    <message>
+<message>
         <source>Speaking volume reduction:</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>40%</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Stem press actions</source>
         <translation>스템 누르기 동작</translation>
     </message>
-    <message>
+<message>
         <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
         <translation>각 누르기 동작에 대한 Windows 작업을 선택하세요. 변경 사항은 자동으로 저장됩니다.</translation>
     </message>
-    <message>
+<message>
         <source>Single</source>
         <translation>한 번</translation>
     </message>
-    <message>
+<message>
         <source>Double</source>
         <translation>두 번</translation>
     </message>
-    <message>
+<message>
         <source>Triple</source>
         <translation>세 번</translation>
     </message>
-    <message>
+<message>
         <source>Long</source>
         <translation>길게</translation>
     </message>
-    <message>
+<message>
         <source>Left stem</source>
         <translation>왼쪽 스템</translation>
     </message>
-    <message>
+<message>
         <source>Right stem</source>
         <translation>오른쪽 스템</translation>
     </message>
-    <message>
+<message>
         <source>None</source>
         <translation>없음</translation>
     </message>
-    <message>
+<message>
         <source>Play / Pause</source>
         <translation>재생 / 일시 정지</translation>
     </message>
-    <message>
+<message>
         <source>Next track</source>
         <translation>다음 트랙</translation>
     </message>
-    <message>
+<message>
         <source>Previous track</source>
         <translation>이전 트랙</translation>
     </message>
-    <message>
+<message>
         <source>Volume up</source>
         <translation>음량 높이기</translation>
     </message>
-    <message>
+<message>
         <source>Volume down</source>
         <translation>음량 낮추기</translation>
     </message>
-    <message>
+<message>
         <source>Toggle noise control</source>
         <translation>노이즈 제어 전환</translation>
+    </message>
+<message>
+        <source>Stream head tracking data</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -772,6 +780,81 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
     <message>
         <source>What&apos;s new</source>
         <translation>새로운 기능</translation>
+    </message>
+</context>
+<context>
+    <name>Gui::HeadTrackingCard</name>
+    <message>
+        <source>Head tracking</source>
+        <translation>머리 추적</translation>
+    </message>
+    <message>
+        <source>Values are the earbuds' raw sensor counts scaled to signed full range: the protocol publishes no axis names and no physical unit, so none is claimed here.</source>
+        <translation>값은 이어폰 센서의 원시 카운트를 부호 있는 전체 범위로 정규화한 것입니다. 프로토콜은 축 이름이나 물리 단위를 공개하지 않으므로 여기서 추정하지 않습니다.</translation>
+    </message>
+    <message>
+        <source>Orientation 1</source>
+        <translation>방향 1</translation>
+    </message>
+    <message>
+        <source>Orientation 2</source>
+        <translation>방향 2</translation>
+    </message>
+    <message>
+        <source>Orientation 3</source>
+        <translation>방향 3</translation>
+    </message>
+    <message>
+        <source>Acceleration, horizontal</source>
+        <translation>가속도, 수평</translation>
+    </message>
+    <message>
+        <source>Acceleration, vertical</source>
+        <translation>가속도, 수직</translation>
+    </message>
+    <message>
+        <source>Full scale</source>
+        <translation>전체 범위</translation>
+    </message>
+    <message>
+        <source>Raw</source>
+        <translation>원시 값</translation>
+    </message>
+    <message>
+        <source>Head tracking is off</source>
+        <translation>머리 추적이 꺼져 있습니다</translation>
+    </message>
+    <message>
+        <source>Waiting for the earbuds' first reading</source>
+        <translation>이어폰의 첫 번째 측정값을 기다리는 중</translation>
+    </message>
+    <message>
+        <source>Streaming</source>
+        <translation>스트리밍 중</translation>
+    </message>
+    <message>
+        <source>No readings for a while - the earbuds paused the stream</source>
+        <translation>한동안 측정값이 없습니다 - 이어폰이 스트림을 일시 중지했습니다</translation>
+    </message>
+    <message>
+        <source>The AAP connection dropped</source>
+        <translation>AAP 연결이 끊어졌습니다</translation>
+    </message>
+    <message>
+        <source>-</source>
+        <translation>-</translation>
+    </message>
+    <message>
+        <source>Session %1</source>
+        <translation>세션 %1</translation>
+    </message>
+    <message>
+        <source>Last reading %1 s ago</source>
+        <translation>마지막 측정 %1초 전</translation>
+    </message>
+    <message>
+        <source>%1 - last reading %2 s ago</source>
+        <translation>%1 - 마지막 측정 %2초 전</translation>
     </message>
 </context>
 </TS>

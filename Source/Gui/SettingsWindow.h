@@ -31,9 +31,10 @@
 #include "../Core/Settings.h"
 #include "Utils.h"
 // Full definition needed: the language-change lambda below calls
-// DriverStatusCard::Refresh(), and the constructor signature names
-// Core::AirPods::Manager.
+// DriverStatusCard::Refresh() and HeadTrackingCard::Refresh(), and the constructor signature
+// names Core::AirPods::Manager.
 #include "Widget/DriverStatusCard.h"
+#include "Widget/HeadTrackingCard.h"
 
 #include "ui_SettingsWindow.h"
 
@@ -73,6 +74,7 @@ private:
     Core::QuickConnect::Controller &_quickConnect;
     std::function<Core::AirPods::Manager &()> _getAirPodsManager;
     DriverStatusCard *_driverStatusCard{nullptr};
+    HeadTrackingCard *_headTrackingCard{nullptr};
     bool _driverCardSignalConnected{false};
     bool _aapSignalConnected{false};
     std::array<QComboBox *, Core::AAP::kStemActionCount> _stemActionCombos{};
@@ -81,6 +83,7 @@ private:
     void SetupDriverStatusCard();
     void SetupStemActionsCard();
     void RetranslateStemActions();
+    void SetupHeadTrackingCard();
     void RestoreDefaults();
     void Update(const Fields &fields, bool trigger);
     void UpdateQuickConnectDevices(const Fields &fields);
@@ -117,10 +120,10 @@ private:
     void On_sliderConversationalAwarenessVolume_valueChanged(int value);
     void On_cbPersonalizedVolume_toggled(bool checked);
     void On_cbLoudSoundReduction_toggled(bool checked);
+    void On_cbHeadTracking_toggled(bool checked);
     void On_cbNoiseControlMode_currentIndexChanged(int index);
     void On_hsPpeCapLevel_valueChanged(int value);
     void On_hsAdaptiveNoiseLevel_valueChanged(int value);
-    void On_cbHeadTracking_toggled(bool checked);
     void On_hsMaxReceivingRange_valueChanged(int value);
 
     // About
@@ -149,6 +152,9 @@ private:
         UpdateDescriptions();
         if (_driverStatusCard != nullptr) {
             _driverStatusCard->Refresh();
+        }
+        if (_headTrackingCard != nullptr) {
+            _headTrackingCard->Refresh();
         }
         // QDialogButtonBox handles LanguageChange after its parent and resets standard-button
         // labels to Qt's platform text. Apply our app translations once propagation ends.

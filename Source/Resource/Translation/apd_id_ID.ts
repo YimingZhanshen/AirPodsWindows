@@ -504,6 +504,10 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
         <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
         <translation>Mengatur kekuatan penyaringan mode Adaptive (0–100): 0 membiarkan lebih banyak suara lingkungan lolos; 100 menyaring lebih banyak. Hanya tersedia saat perangkat terhubung melaporkan mode Adaptive.</translation>
     </message>
+    <message>
+        <source>Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.</source>
+        <translation>Mengalirkan data sensor pelacakan kepala dari earbud dan menampilkannya di halaman pengaturan. Menggunakan sedikit lebih banyak baterai dan lalu lintas Bluetooth saat terhubung.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -518,221 +522,225 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
         <source>General</source>
         <translation>Umum</translation>
     </message>
-    <message>
+<message>
         <source>About</source>
         <translation>Tentang</translation>
     </message>
-    <message>
+<message>
         <source>Open logs directory</source>
         <translation>Buka folder log</translation>
     </message>
-    <message>
+<message>
         <source>Bluetooth maximum receiving range</source>
         <translation>Jangkauan penerimaan Bluetooth maksimum</translation>
     </message>
-    <message>
+<message>
         <source>Unbind AirPods</source>
         <translation>Lepas AirPods</translation>
     </message>
-    <message>
+<message>
         <source>Launch when system starts</source>
         <translation>Jalankan saat sistem dinyalakan</translation>
     </message>
-    <message>
+<message>
         <source>Language</source>
         <translation>Bahasa</translation>
     </message>
-    <message>
+<message>
         <source>Visual</source>
         <translation>Visual</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on taskbar</source>
         <translation>Tampilkan baterai di taskbar</translation>
     </message>
-    <message>
+<message>
         <source>Disable</source>
         <translation>Nonaktifkan</translation>
     </message>
-    <message>
+<message>
         <source>When low battery</source>
         <translation>Saat baterai lemah</translation>
     </message>
-    <message>
+<message>
         <source>Always</source>
         <translation>Selalu</translation>
     </message>
-    <message>
+<message>
         <source>As text</source>
         <translation>Sebagai teks</translation>
     </message>
-    <message>
+<message>
         <source>As icon</source>
         <translation>Sebagai ikon</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on tray icon</source>
         <translation>Tampilkan baterai di ikon tray</translation>
     </message>
-    <message>
+<message>
         <source>Features</source>
         <translation>Fitur</translation>
     </message>
-    <message>
+<message>
         <source>Automatic ear detection</source>
         <translation>Deteksi telinga otomatis</translation>
     </message>
-    <message>
+<message>
         <source>Low audio latency</source>
         <translation>Latensi audio rendah</translation>
     </message>
-    <message>
+<message>
         <source>Connect the selected device on a tray icon click</source>
         <translation>Hubungkan perangkat yang dipilih saat ikon tray diklik</translation>
     </message>
-    <message>
+<message>
         <source>Device</source>
         <translation>Perangkat</translation>
     </message>
-    <message>
+<message>
         <source>The paired Bluetooth audio device a tray icon click connects.</source>
         <translation>Perangkat audio Bluetooth yang dipasangkan dan akan dihubungkan saat ikon tray diklik.</translation>
     </message>
-    <message>
+<message>
         <source>Forget the bound AirPods so that another pair can be bound.</source>
         <translation>Lupakan AirPods yang terhubung agar pasangan lain dapat dihubungkan.</translation>
     </message>
-    <message>
+<message>
         <source>Diagnostics</source>
         <translation>Diagnostik</translation>
     </message>
-    <message>
+<message>
         <source>Log files help when reporting an issue.</source>
         <translation>Berkas log membantu saat melaporkan masalah.</translation>
     </message>
-    <message>
+<message>
         <source>Appearance</source>
         <translation>Tampilan</translation>
     </message>
-    <message>
+<message>
         <source>Use system setting</source>
         <translation>Ikuti pengaturan sistem</translation>
     </message>
-    <message>
+<message>
         <source>Light</source>
         <translation>Terang</translation>
     </message>
-    <message>
+<message>
         <source>Dark</source>
         <translation>Gelap</translation>
     </message>
-    <message>
+<message>
         <source>Connect automatically when audio starts playing</source>
         <translation>Hubungkan otomatis saat audio mulai diputar</translation>
     </message>
-    <message>
+<message>
         <source>Show battery when the case opens</source>
         <translation>Tampilkan baterai saat case dibuka</translation>
     </message>
-    <message>
+<message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>AirPodsWindows Settings</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Conversational awareness</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Personalized volume</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Reduce loud sounds</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Noise control mode</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Speaking volume reduction:</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>40%</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Stem press actions</source>
         <translation>Tindakan tekan stem</translation>
     </message>
-    <message>
+<message>
         <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
         <translation>Pilih tindakan Windows untuk setiap gestur tekan. Perubahan disimpan otomatis.</translation>
     </message>
-    <message>
+<message>
         <source>Single</source>
         <translation>Sekali</translation>
     </message>
-    <message>
+<message>
         <source>Double</source>
         <translation>Dua kali</translation>
     </message>
-    <message>
+<message>
         <source>Triple</source>
         <translation>Tiga kali</translation>
     </message>
-    <message>
+<message>
         <source>Long</source>
         <translation>Lama</translation>
     </message>
-    <message>
+<message>
         <source>Left stem</source>
         <translation>Stem kiri</translation>
     </message>
-    <message>
+<message>
         <source>Right stem</source>
         <translation>Stem kanan</translation>
     </message>
-    <message>
+<message>
         <source>None</source>
         <translation>Tidak ada</translation>
     </message>
-    <message>
+<message>
         <source>Play / Pause</source>
         <translation>Putar / Jeda</translation>
     </message>
-    <message>
+<message>
         <source>Next track</source>
         <translation>Trek berikutnya</translation>
     </message>
-    <message>
+<message>
         <source>Previous track</source>
         <translation>Trek sebelumnya</translation>
     </message>
-    <message>
+<message>
         <source>Volume up</source>
         <translation>Naikkan volume</translation>
     </message>
-    <message>
+<message>
         <source>Volume down</source>
         <translation>Turunkan volume</translation>
     </message>
-    <message>
+<message>
         <source>Toggle noise control</source>
         <translation>Alihkan kontrol noise</translation>
+    </message>
+<message>
+        <source>Stream head tracking data</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -772,6 +780,81 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
     <message>
         <source>What&apos;s new</source>
         <translation>Yang baru</translation>
+    </message>
+</context>
+<context>
+    <name>Gui::HeadTrackingCard</name>
+    <message>
+        <source>Head tracking</source>
+        <translation>Pelacakan kepala</translation>
+    </message>
+    <message>
+        <source>Values are the earbuds' raw sensor counts scaled to signed full range: the protocol publishes no axis names and no physical unit, so none is claimed here.</source>
+        <translation>Nilai adalah hitungan mentah sensor earbud yang diskalakan ke rentang bertanda penuh: protokol tidak menerbitkan nama sumbu atau unit fisik, sehingga tidak ada yang diklaim di sini.</translation>
+    </message>
+    <message>
+        <source>Orientation 1</source>
+        <translation>Orientasi 1</translation>
+    </message>
+    <message>
+        <source>Orientation 2</source>
+        <translation>Orientasi 2</translation>
+    </message>
+    <message>
+        <source>Orientation 3</source>
+        <translation>Orientasi 3</translation>
+    </message>
+    <message>
+        <source>Acceleration, horizontal</source>
+        <translation>Percepatan, horizontal</translation>
+    </message>
+    <message>
+        <source>Acceleration, vertical</source>
+        <translation>Percepatan, vertikal</translation>
+    </message>
+    <message>
+        <source>Full scale</source>
+        <translation>Skala penuh</translation>
+    </message>
+    <message>
+        <source>Raw</source>
+        <translation>Mentah</translation>
+    </message>
+    <message>
+        <source>Head tracking is off</source>
+        <translation>Pelacakan kepala nonaktif</translation>
+    </message>
+    <message>
+        <source>Waiting for the earbuds' first reading</source>
+        <translation>Menunggu pembacaan pertama dari earbud</translation>
+    </message>
+    <message>
+        <source>Streaming</source>
+        <translation>Mengalir</translation>
+    </message>
+    <message>
+        <source>No readings for a while - the earbuds paused the stream</source>
+        <translation>Tidak ada pembacaan selama beberapa saat - earbud menghentikan aliran sementara</translation>
+    </message>
+    <message>
+        <source>The AAP connection dropped</source>
+        <translation>Koneksi AAP terputus</translation>
+    </message>
+    <message>
+        <source>-</source>
+        <translation>-</translation>
+    </message>
+    <message>
+        <source>Session %1</source>
+        <translation>Sesi %1</translation>
+    </message>
+    <message>
+        <source>Last reading %1 s ago</source>
+        <translation>Pembacaan terakhir %1 detik lalu</translation>
+    </message>
+    <message>
+        <source>%1 - last reading %2 s ago</source>
+        <translation>%1 - pembacaan terakhir %2 detik lalu</translation>
     </message>
 </context>
 </TS>

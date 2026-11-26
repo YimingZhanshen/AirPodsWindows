@@ -504,6 +504,10 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
         <translation>מגדיר את עוצמת הסינון במצב Adaptive (0–100): 0 מאפשר יותר רעש סביבה; 100 מסנן יותר. זמין רק כאשר המכשיר המחובר מדווח על מצב Adaptive.</translation>
     </message>
+    <message>
+        <source>Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.</source>
+        <translation>מזרים את נתוני חיישן מעקב הראש של האוזניות ומציג אותם בעמוד ההגדרות. צורך מעט יותר סוללה ותעבורת Bluetooth בזמן שהמכשיר מחובר.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -518,221 +522,225 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>AirPodsWindows Settings</source>
         <translation>הגדרות AirPodsWindows</translation>
     </message>
-    <message>
+<message>
         <source>General</source>
         <translation>כללי</translation>
     </message>
-    <message>
+<message>
         <source>About</source>
         <translation>אודות</translation>
     </message>
-    <message>
+<message>
         <source>Open logs directory</source>
         <translation>פתיחת תיקיית יומני רישום</translation>
     </message>
-    <message>
+<message>
         <source>Bluetooth maximum receiving range</source>
         <translation>טווח קליטה מרבי של Bluetooth</translation>
     </message>
-    <message>
+<message>
         <source>Unbind AirPods</source>
         <translation>ביטול שיוך ה-AirPods</translation>
     </message>
-    <message>
+<message>
         <source>Launch when system starts</source>
         <translation>הפעל עם עליית המחשב</translation>
     </message>
-    <message>
+<message>
         <source>Language</source>
         <translation>שפה</translation>
     </message>
-    <message>
+<message>
         <source>Visual</source>
         <translation>תצוגה</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on taskbar</source>
         <translation>הצגת מצב סוללה בשורת המשימות</translation>
     </message>
-    <message>
+<message>
         <source>Disable</source>
         <translation>כבוי</translation>
     </message>
-    <message>
+<message>
         <source>When low battery</source>
         <translation>כשהסוללה חלשה</translation>
     </message>
-    <message>
+<message>
         <source>Always</source>
         <translation>תמיד</translation>
     </message>
-    <message>
+<message>
         <source>As text</source>
         <translation>כטקסט</translation>
     </message>
-    <message>
+<message>
         <source>As icon</source>
         <translation>כסמל</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on tray icon</source>
         <translation>הצג מצב סוללה בסמל המגש שבשורת המשימות</translation>
     </message>
-    <message>
+<message>
         <source>Features</source>
         <translation>תכונות</translation>
     </message>
-    <message>
+<message>
         <source>Automatic ear detection</source>
         <translation>זיהוי אוזן אוטומטי</translation>
     </message>
-    <message>
+<message>
         <source>Low audio latency</source>
         <translation>שיהוי שמע נמוך</translation>
     </message>
-    <message>
+<message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;זהו פרויקט &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;קוד פתוח&lt;/span&gt;&lt;/a&gt; המופץ תחת רישיון &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
-    <message>
+<message>
         <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
         <translation>כל הזכויות שמורות © 2021-2026 SpriteOvO &amp; YimingZhanshen.</translation>
     </message>
-    <message>
+<message>
         <source>Conversational awareness</source>
         <translation>מודעות לשיחות</translation>
     </message>
-    <message>
+<message>
         <source>Speaking volume reduction:</source>
         <translation>הנמכת עוצמת השמע בעת דיבור:</translation>
     </message>
-    <message>
+<message>
         <source>Personalized volume</source>
         <translation>עוצמת שמע בהתאמה אישית</translation>
     </message>
-    <message>
+<message>
         <source>Reduce loud sounds</source>
         <translation>הפחתת צלילים חזקים</translation>
     </message>
-    <message>
+<message>
         <source>Noise control mode</source>
         <translation>מצב האזנה</translation>
     </message>
-    <message>
+<message>
         <source>Connect the selected device on a tray icon click</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Device</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>The paired Bluetooth audio device a tray icon click connects.</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Forget the bound AirPods so that another pair can be bound.</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Diagnostics</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Log files help when reporting an issue.</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Appearance</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Use system setting</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Light</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Dark</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Connect automatically when audio starts playing</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Show battery when the case opens</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>40%</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Stem press actions</source>
         <translation>פעולות לחיצת הידית</translation>
     </message>
-    <message>
+<message>
         <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
         <translation>בחר את פעולת ה־Windows עבור כל תנועת לחיצה. השינויים נשמרים אוטומטית.</translation>
     </message>
-    <message>
+<message>
         <source>Single</source>
         <translation>אחת</translation>
     </message>
-    <message>
+<message>
         <source>Double</source>
         <translation>כפולה</translation>
     </message>
-    <message>
+<message>
         <source>Triple</source>
         <translation>שלוש</translation>
     </message>
-    <message>
+<message>
         <source>Long</source>
         <translation>ארוכה</translation>
     </message>
-    <message>
+<message>
         <source>Left stem</source>
         <translation>ידית שמאלית</translation>
     </message>
-    <message>
+<message>
         <source>Right stem</source>
         <translation>ידית ימנית</translation>
     </message>
-    <message>
+<message>
         <source>None</source>
         <translation>ללא</translation>
     </message>
-    <message>
+<message>
         <source>Play / Pause</source>
         <translation>השמעה / השהיה</translation>
     </message>
-    <message>
+<message>
         <source>Next track</source>
         <translation>הרצעה הבאה</translation>
     </message>
-    <message>
+<message>
         <source>Previous track</source>
         <translation>הרצעה הקודמת</translation>
     </message>
-    <message>
+<message>
         <source>Volume up</source>
         <translation>הגברת עוצמת הקול</translation>
     </message>
-    <message>
+<message>
         <source>Volume down</source>
         <translation>הנמכת עוצמת הקול</translation>
     </message>
-    <message>
+<message>
         <source>Toggle noise control</source>
         <translation>מעבר בין מצבי שליטה ברעש</translation>
+    </message>
+<message>
+        <source>Stream head tracking data</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -772,6 +780,81 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     <message>
         <source>What&apos;s new</source>
         <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>Gui::HeadTrackingCard</name>
+    <message>
+        <source>Head tracking</source>
+        <translation>מעקב ראש</translation>
+    </message>
+    <message>
+        <source>Values are the earbuds' raw sensor counts scaled to signed full range: the protocol publishes no axis names and no physical unit, so none is claimed here.</source>
+        <translation>הערכים הם ספירות הגולמי של חיישני האוזניות, לאחר סקילה לטווח המלא עם סימן: הפרוטוקול אינו מפרסם שמות צירים או יחידה פיזית, ולכן אין כאן טענה לכך.</translation>
+    </message>
+    <message>
+        <source>Orientation 1</source>
+        <translation>כיוון 1</translation>
+    </message>
+    <message>
+        <source>Orientation 2</source>
+        <translation>כיוון 2</translation>
+    </message>
+    <message>
+        <source>Orientation 3</source>
+        <translation>כיוון 3</translation>
+    </message>
+    <message>
+        <source>Acceleration, horizontal</source>
+        <translation>תאוצה, אופקית</translation>
+    </message>
+    <message>
+        <source>Acceleration, vertical</source>
+        <translation>תאוצה, אנכית</translation>
+    </message>
+    <message>
+        <source>Full scale</source>
+        <translation>סקאלה מלאה</translation>
+    </message>
+    <message>
+        <source>Raw</source>
+        <translation>גולמי</translation>
+    </message>
+    <message>
+        <source>Head tracking is off</source>
+        <translation>מעקב הראש כבוי</translation>
+    </message>
+    <message>
+        <source>Waiting for the earbuds' first reading</source>
+        <translation>ממתין לקריאה הראשונה מהאוזניות</translation>
+    </message>
+    <message>
+        <source>Streaming</source>
+        <translation>מזרים</translation>
+    </message>
+    <message>
+        <source>No readings for a while - the earbuds paused the stream</source>
+        <translation>אין קריאות כבר זמן מה - האוזניות השהה את הזרם</translation>
+    </message>
+    <message>
+        <source>The AAP connection dropped</source>
+        <translation>חיבור AAP נותק</translation>
+    </message>
+    <message>
+        <source>-</source>
+        <translation>-</translation>
+    </message>
+    <message>
+        <source>Session %1</source>
+        <translation>הפעלה %1</translation>
+    </message>
+    <message>
+        <source>Last reading %1 s ago</source>
+        <translation>הקריאה האחרונה לפני %1 שניות</translation>
+    </message>
+    <message>
+        <source>%1 - last reading %2 s ago</source>
+        <translation>%1 - הקריאה האחרונה לפני %2 שניות</translation>
     </message>
 </context>
 </TS>
