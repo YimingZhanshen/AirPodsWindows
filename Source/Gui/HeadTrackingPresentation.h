@@ -50,28 +50,17 @@ struct HeadTrackingCounts {
     bool operator==(const HeadTrackingCounts &) const = default;
 };
 
-// What one raw AAP message is, as far as the head-tracking view is concerned.
-//
-// The transport gate in `Core::AAP::Manager` checks the opcode pair 0x17 0x00. This pure reader
-// additionally verifies the documented ten-byte sensor prefix before exposing offsets to a view.
+// What one raw AAP message is, as far as the head-tracking view is concerned. Classification and
+// parsing are delegated to the shared Qt-free Core::AAP::HeadTrackingMessage reader.
 enum class HeadTrackingRecord : std::uint8_t {
     NotHeadTracking,
     Stream,
 };
 
-// Shortest length whose fields the parser can read: 16 bits at offset 53 ends at 55.
-inline constexpr std::size_t kHeadTrackingRecordSize = 56;
-// Field offsets from "AAP Definitions.md" §Received Head Tracking Sensor Data. A domain test
-// cross-checks them against `Core::AAP::ParseHeadTrackingData`
-// (`HeadTrackingPresentationAgreesWithCoreParser`) so the two readers cannot drift apart.
-inline constexpr std::size_t kHeadTrackingOrientationOffset = 43;
-inline constexpr std::size_t kHeadTrackingHorizontalAccelerationOffset = 51;
-inline constexpr std::size_t kHeadTrackingVerticalAccelerationOffset = 53;
-
 HeadTrackingRecord ClassifyHeadTrackingRecord(std::span<const std::uint8_t> packet) noexcept;
 
-// Reads the sensor fields of a record that `ClassifyHeadTrackingRecord` accepted; nullopt for
-// anything shorter than `kHeadTrackingRecordSize`.
+// Reads the sensor fields of a record that `ClassifyHeadTrackingRecord` accepted; nullopt for a
+// malformed prefix, a command with opcode 0x17, or a truncated sensor record.
 std::optional<HeadTrackingCounts>
 ReadHeadTrackingCounts(std::span<const std::uint8_t> packet) noexcept;
 

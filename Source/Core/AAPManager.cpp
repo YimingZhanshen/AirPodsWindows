@@ -519,16 +519,6 @@ bool Manager::SetStemConfig(uint8_t mask)
     return true;
 }
 
-bool Manager::StartHeadTracking()
-{
-    return SubmitCommand({AAPCommandKind::SetHeadTracking, 0x01}).accepted;
-}
-
-bool Manager::StopHeadTracking()
-{
-    return SubmitCommand({AAPCommandKind::SetHeadTracking, 0x00}).accepted;
-}
-
 bool Manager::IsHeadTrackingActive() const
 {
     return _headTrackingActive;
@@ -536,6 +526,15 @@ bool Manager::IsHeadTrackingActive() const
 
 AAPCommandResult Manager::SubmitCommand(AAPCommand command, std::stop_token stopToken)
 {
+    // A disconnected submit is desired-state bookkeeping, never a late write on a retiring
+    // session. RecordDesired does not publish outcomes, so callers may hold their intent lock.
+    if (!_connected) {
+        if (stopToken.stop_requested()) {
+            return {false, false, AAPCommandFailure::Rejected};
+        }
+        CommandMode(command.kind, command.value);
+        return _commandBroker->RecordDesired(command);
+    }
     CommandMode(command.kind, command.value);
     if (command.kind == AAPCommandKind::SetAdaptiveNoiseLevel && IsConnected()) {
         std::optional<NoiseControlMode> reportedMode;
@@ -719,14 +718,8 @@ bool Manager::SendCommand(const AAPCommand &command, uint64_t generation, std::s
             }
         }
     }
-    if (command.kind == AAPCommandKind::SetHeadTracking) {
-        // Fence sensor evidence by the completed send. A frame already in the reader queue when
-        // Start was issued carries the previous epoch and cannot confirm the new flight.
-        _headTrackingSendEpoch.fetch_add(1);
-        _headTrackingStartedAtMs.store(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                           std::chrono::steady_clock::now().time_since_epoch())
-                                           .count());
-    }
+    // A successful write only starts the confirmation window. IsHeadTrackingActive changes in
+    // HandleCommandSettled, never optimistically here.
     return true;
 }
 
@@ -755,6 +748,7 @@ void Manager::HandleCommandSettled(const AAPCommandOutcome &outcome)
             callbacks = _callbacks;
             attempt = {_attempt.address, outcome.generation};
             if (outcome.command.kind == AAPCommandKind::SetHeadTracking &&
+                (_connected && _attempt.generation == outcome.generation) &&
                 (outcome.settlement == AAPCommandSettlement::TimedOut ||
                  outcome.settlement == AAPCommandSettlement::Rejected))
             {
@@ -826,7 +820,9 @@ void Manager::HandleCommandSettled(const AAPCommandOutcome &outcome)
             }
             break;
         case AAPCommandKind::SetHeadTracking:
-            _headTrackingActive.store(*value != 0);
+            if (_connected && _attempt.generation == outcome.generation) {
+                _headTrackingActive.store(*value != 0);
+            }
             break;
         default:
             break;
@@ -1201,7 +1197,6 @@ void Manager::ProcessPacket(
         return;
     }
 
-    const auto headEpoch = _headTrackingSendEpoch.load();
     const auto validation = AAPMessage::Validate(packet);
     if (validation != AAPMessage::ValidationResult::Valid) {
         LOG(Warn, "AAP: Rejected invalid {}-byte record before processing: {}", packet.size(),
@@ -1408,22 +1403,14 @@ void Manager::ProcessPacket(
         return;
     }
 
-    // Only opcode 0x0017 carries head-tracking data. Unknown AAP records are
-    // valid for diagnostics but must never fall through into this parser.
-    const auto headFlight = _commandBroker->InFlight();
-    const auto headNowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                               std::chrono::steady_clock::now().time_since_epoch())
-                               .count();
-    const bool startingHeadTracking =
-        headFlight && headFlight->kind == AAPCommandKind::SetHeadTracking &&
-        headFlight->value == 0x01 && headEpoch != 0 && headEpoch == _headTrackingSendEpoch.load() &&
-        headNowMs - _headTrackingStartedAtMs.load() >= 50;
-    if ((_headTrackingActive || startingHeadTracking) && packet.size() >= 56 && packet[0] == 0x04 &&
-        packet[1] == 0x00 && packet[2] == 0x04 && packet[3] == 0x00 && packet[4] == 0x17 &&
-        packet[5] == 0x00)
-    {
+    // Only the shared 0x17 classifier can turn a record into head-tracking data. In particular,
+    // a Start/Stop command with the same opcode and a malformed prefix never reach the parser.
+    if (IsHeadTrackingStreamRecord(packet)) {
         auto trackingData = ParseHeadTrackingData(packet);
         if (trackingData.has_value()) {
+            // A valid current-generation record is proof of a live stream even if it arrived just
+            // after the broker's confirmation deadline.
+            _headTrackingActive.store(true);
             RouteCommandEcho({AAPCommandKind::SetHeadTracking, 0x01}, attempt);
             if (callbacks.onHeadTrackingData) {
                 callbacks.onHeadTrackingData(trackingData.value(), attempt);
@@ -1675,14 +1662,6 @@ bool Manager::SetStemConfig(uint8_t)
 {
     return false;
 }
-bool Manager::StartHeadTracking()
-{
-    return false;
-}
-bool Manager::StopHeadTracking()
-{
-    return false;
-}
 bool Manager::IsHeadTrackingActive() const
 {
     return false;
@@ -1690,7 +1669,10 @@ bool Manager::IsHeadTrackingActive() const
 void Manager::SetCallbacks(Callbacks) {}
 AAPCommandResult Manager::SubmitCommand(AAPCommand command, std::stop_token stopToken)
 {
-    return _commandBroker->Submit(command, stopToken);
+    if (stopToken.stop_requested()) {
+        return {false, false, AAPCommandFailure::Rejected};
+    }
+    return _commandBroker->RecordDesired(command);
 }
 uint64_t Manager::LatestCommandRequest(AAPCommandKind kind) const
 {

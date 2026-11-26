@@ -37,43 +37,74 @@ void HeadTrackingIntent::OnTransportUp(std::uint64_t generation)
 
     _linkUp = true;
     _generation = generation;
-    // A new session says nothing about the device: the buds stream head tracking only after a
-    // Start on this link, so the applied state is unknown and `Flush` below re-pushes it. The
-    // reconnect replay is this same path, not a special case.
     _applied.reset();
+    _inFlightGeneration.reset();
+    _inFlightValue.reset();
+    if (_settledGeneration == generation) {
+        _applied = _settledValue;
+    }
 }
 
 void HeadTrackingIntent::OnTransportDown()
 {
     _linkUp = false;
     _applied.reset();
+    _inFlightGeneration.reset();
+    _inFlightValue.reset();
 }
 
-HeadTrackingIntent::Action HeadTrackingIntent::Flush(IHeadTrackingCommandPort &port)
+HeadTrackingIntent::FlushResult HeadTrackingIntent::Flush(IHeadTrackingCommandPort &port)
 {
     if (!_linkUp) {
-        // Nothing can be sent. Keep the intent, forget the device: the next `OnTransportUp`
-        // makes it pending again.
-        _applied.reset();
-        return Action::None;
+        // Generation zero records the latest desire without queueing wire work. The broker keeps
+        // it for the next session, so a Start/Stop chosen while offline replays that exact value.
+        return {{}, port.SubmitHeadTracking(_enabled, 0)};
     }
 
-    const bool desired = _enabled;
-    // An unknown session is treated as "off", which is what a fresh transport actually is, so
-    // connecting with the feature disabled sends a pointless Stop packet on every reconnect.
-    if (_applied.value_or(false) == desired) {
-        _applied = _applied.value_or(false);
-        return Action::None;
+    const auto value = static_cast<std::uint32_t>(_enabled ? 0x01 : 0x00);
+    if (_applied.has_value() && *_applied == _enabled) {
+        return {{}, {true, false, std::nullopt}};
+    }
+    if (_inFlightGeneration == _generation && _inFlightValue == value) {
+        return {{}, {true, false, std::nullopt}};
     }
 
-    const Action action = desired ? Action::Start : Action::Stop;
-    if (port.RequestHeadTracking(desired)) {
-        _applied = desired;
-        return action;
+    auto submission = port.SubmitHeadTracking(_enabled, _generation);
+    if (!submission.accepted) {
+        return {{}, submission};
     }
-    // A failed send keeps the previous belief, so `IsPending()` stays true and the next `Flush`
-    // retries through the same entry point. It must not be logged or reported as pushed.
-    return Action::None;
+
+    _inFlightGeneration = _generation;
+    _inFlightValue = value;
+    return {_enabled ? Action::Start : Action::Stop, submission};
+}
+
+void HeadTrackingIntent::OnCommandSettled(const AAPCommandOutcome &outcome)
+{
+    if (outcome.command.kind != AAPCommandKind::SetHeadTracking || outcome.generation == 0) {
+        return;
+    }
+    if (_linkUp && outcome.generation != _generation) {
+        return;
+    }
+    if (!_linkUp && outcome.generation < _settledGeneration) {
+        return;
+    }
+
+    const bool applied = outcome.settlement == AAPCommandSettlement::Confirmed ||
+                         outcome.settlement == AAPCommandSettlement::AppliedUnconfirmed;
+    if (applied) {
+        _settledGeneration = outcome.generation;
+        _settledValue = outcome.command.value != 0;
+        if (_linkUp && outcome.generation == _generation) {
+            _applied = _settledValue;
+        }
+    }
+
+    if (_inFlightGeneration == outcome.generation && _inFlightValue == outcome.command.value) {
+        _inFlightGeneration.reset();
+        _inFlightValue.reset();
+    }
 }
 
 bool HeadTrackingIntent::IsPending() const
@@ -81,7 +112,7 @@ bool HeadTrackingIntent::IsPending() const
     if (!_linkUp) {
         return false;
     }
-    return _applied.value_or(false) != _enabled;
+    return !_applied.has_value() || *_applied != _enabled;
 }
 
 } // namespace Core::AAP

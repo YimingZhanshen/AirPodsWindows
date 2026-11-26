@@ -169,16 +169,17 @@ public:
     // after every handshake. This direct path is temporary until the C7 command broker owns writes.
     bool SetStemConfig(uint8_t mask);
 
-    // Head tracking
-    bool StartHeadTracking();
-    bool StopHeadTracking();
+    // Head tracking is submitted only through SubmitCommand(SetHeadTracking); there is no raw
+    // public Start/Stop bypass around broker serialization, confirmation or reconnect replay.
     bool IsHeadTrackingActive() const;
 
     // Cached battery snapshot of the current session (opcode 0x0004). Cleared when
     // a connect starts and when the session ends; consumers fuse it over BLE values.
     std::optional<AAPBatterySnapshot> GetBatterySnapshot() const;
 
-    // Setters above route through the broker; SubmitCommand is the public confirmed path.
+    // Confirmed command path (blueprint 2.7). Settings callers use SubmitCommand so a value is
+    // only reported as applied once the firmware echoes or reads it back, and so a reconnect
+    // re-applies what the user asked for. The older setters remain raw compatibility primitives.
     AAPCommandResult SubmitCommand(AAPCommand command, std::stop_token stopToken = {});
     uint64_t LatestCommandRequest(AAPCommandKind kind) const;
     bool IsCurrentCommandRequest(AAPCommandKind kind, uint64_t requestId) const;
@@ -231,8 +232,6 @@ private:
     AAPAttempt _attempt;
     std::stop_source _connectStop;
     std::atomic<bool> _headTrackingActive{false};
-    std::atomic<uint64_t> _headTrackingSendEpoch{0};
-    std::atomic<int64_t> _headTrackingStartedAtMs{0};
     std::atomic<bool> _usingMagicAAP{false};
 
     // Cached states

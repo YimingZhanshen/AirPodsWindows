@@ -82,12 +82,14 @@ public:
 protected:
     void showEvent(QShowEvent *event) override;
     void hideEvent(QHideEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private:
     void OnRecord(const Core::AirPods::HeadTrackingEvent &record);
     void OnDesired(bool desired);
     void OnSession(bool live, qulonglong generation);
     void OnTick();
+    void Retranslate();
     void Publish();
     void UpdateIndicator();
     void ApplyTheme();
@@ -97,6 +99,8 @@ private:
     QLabel *_detailLabel = new QLabel{this};
     QLabel *_noteLabel = new QLabel{this};
     std::vector<QLabel *> _valueLabels;
+    std::vector<QLabel *> _fieldLabels;
+    std::vector<QLabel *> _columnLabels;
     Widget::ActivityIndicator *_pulse = nullptr;
 
     HeadTrackingViewModel _model;

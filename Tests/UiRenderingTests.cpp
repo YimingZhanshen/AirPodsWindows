@@ -708,6 +708,46 @@ private Q_SLOTS:
         Core::Settings::Save(Core::Settings::GetDefault());
     }
 
+    void HeadTrackingCardRetranslatesStaticTextOnLanguageChange()
+    {
+        Gui::HeadTrackingCard card;
+        card.SetReducedMotionOverride(true);
+        Gui::HeadTrackingView view;
+        view.generation = 42;
+        card.ApplyView(view);
+        card.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&card));
+
+        const auto englishTitle = card.findChild<QLabel *>("htTitleLabel")->text();
+        QTranslator translator;
+        QVERIFY(translator.load(
+            QLocale{"zh_CN"}, "apd", "_",
+            QCoreApplication::applicationDirPath() + "/translations"));
+        QVERIFY(QCoreApplication::installTranslator(&translator));
+        QCoreApplication::processEvents();
+
+        QCOMPARE(
+            card.findChild<QLabel *>("htTitleLabel")->text(),
+            translator.translate("Gui::HeadTrackingCard", "Head tracking"));
+        QCOMPARE(
+            card.findChild<QLabel *>("htField1")->text(),
+            translator.translate("Gui::HeadTrackingCard", "Orientation 1"));
+        QCOMPARE(
+            card.findChild<QLabel *>("htColumn1")->text(),
+            translator.translate("Gui::HeadTrackingCard", "Full scale"));
+        QCOMPARE(
+            card.findChild<QLabel *>("htStatusLabel")->text(),
+            translator.translate("Gui::HeadTrackingCard", "Head tracking is off"));
+        QCOMPARE(
+            card.findChild<QLabel *>("htDetailLabel")->text(),
+            translator.translate("Gui::HeadTrackingCard", "Session %1").arg(42));
+        QVERIFY(!card.findChild<QLabel *>("htNoteLabel")->text().isEmpty());
+
+        QCoreApplication::removeTranslator(&translator);
+        QCoreApplication::processEvents();
+        QCOMPARE(card.findChild<QLabel *>("htTitleLabel")->text(), englishTitle);
+    }
+
     void ConnectionSuccessOpensBatteryWindowAndDismissesNotification()
     {
         Core::QuickConnect::Controller quickConnect{

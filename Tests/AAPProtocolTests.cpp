@@ -788,7 +788,11 @@ private slots:
 
     void HeadTrackingParserReadsLittleEndianOffsets()
     {
-        std::vector<uint8_t> frame(56, 0x00);
+        std::vector<uint8_t> frame(70, 0x00);
+        constexpr std::array<uint8_t, 10> prefix{0x04, 0x00, 0x04, 0x00, 0x17,
+                                                 0x00, 0x00, 0x00, 0x10, 0x00};
+        std::copy(prefix.begin(), prefix.end(), frame.begin());
+        frame[10] = 0x44;
         auto writeInt16 = [&frame](size_t offset, int16_t value) {
             frame[offset] = static_cast<uint8_t>(value & 0xFF);
             frame[offset + 1] = static_cast<uint8_t>((value >> 8) & 0xFF);
@@ -807,7 +811,7 @@ private slots:
         QCOMPARE(result->horizontalAcceleration, int16_t(-32768));
         QCOMPARE(result->verticalAcceleration, int16_t(42));
 
-        frame.resize(55);
+        frame.resize(69);
         QVERIFY(!ParseHeadTrackingData(frame).has_value());
     }
 
@@ -1437,6 +1441,50 @@ private slots:
         QVERIFY(outcome.has_value());
         QCOMPARE(outcome->generation, uint64_t{2});
         QCOMPARE(outcome->settlement, AAPCommandSettlement::TimedOut);
+    }
+
+    void HeadTrackingStartRequiresCurrentGenerationEvidence()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        std::atomic<bool> deadlineRead{false};
+        AAPCommandBroker::Config config;
+        config.clock.now = [&] {
+            deadlineRead.store(true);
+            return clock.Now();
+        };
+        config.clock.advance = [&clock](std::chrono::milliseconds delta) { clock.Advance(delta); };
+        OutcomeQueue outcomes;
+        std::promise<void> started;
+        auto startedFuture = started.get_future();
+        AAPCommandBroker broker(
+            [&](const AAPCommand &, uint64_t, std::stop_token) {
+                started.set_value();
+                return true;
+            },
+            [&](const AAPCommandOutcome &outcome) { outcomes.Push(outcome); }, config);
+        broker.BeginSession(7);
+        QVERIFY(broker.Submit({AAPCommandKind::SetHeadTracking, 0x01}).accepted);
+        QVERIFY(startedFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QTRY_VERIFY(deadlineRead.load());
+        broker.OnEcho({AAPCommandKind::SetHeadTracking, 0x01}, 6);
+        broker.AdvanceTimeForTesting(std::chrono::milliseconds{1999});
+        QCOMPARE(outcomes.Size(), size_t{0});
+        broker.AdvanceTimeForTesting(std::chrono::milliseconds{1});
+        const auto timeout = outcomes.Wait();
+        QVERIFY(timeout.has_value());
+        QCOMPARE(timeout->settlement, AAPCommandSettlement::TimedOut);
+        QCOMPARE(timeout->generation, uint64_t{7});
+        QVERIFY(!broker.Confirmed(AAPCommandKind::SetHeadTracking).has_value());
+        QCOMPARE(broker.Desired(AAPCommandKind::SetHeadTracking), std::optional<uint32_t>{1});
+
+        // Stop has no protocol evidence and therefore settles after the write rather than timing
+        // out or claiming confirmation.
+        QVERIFY(broker.Submit({AAPCommandKind::SetHeadTracking, 0x00}).accepted);
+        const auto stop = outcomes.Wait();
+        QVERIFY(stop.has_value());
+        QCOMPARE(stop->settlement, AAPCommandSettlement::AppliedUnconfirmed);
+        QVERIFY(broker.WaitForIdle(std::chrono::seconds{1}));
     }
 
     void ReconnectReplaysEveryDesiredValueInStableOrder()

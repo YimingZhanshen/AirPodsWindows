@@ -251,37 +251,44 @@ Core::AAP::AAPBatterySnapshot LeftSnapshot(uint8_t level)
     snapshot.left =
         AapReading(Core::AAP::BatteryComponent::Left, level, Core::AAP::BatteryStatus::Discharging);
     return snapshot;
-    class RecordingHeadTrackingPort final : public Core::AAP::IHeadTrackingCommandPort
-    {
-    public:
-        bool RequestHeadTracking(bool enable) override
-        {
-            requests.push_back(enable);
-            return succeed;
-        }
+}
 
-        bool succeed{true};
-        std::vector<bool> requests;
+class RecordingHeadTrackingPort final : public Core::AAP::IHeadTrackingCommandPort
+{
+public:
+    struct Request {
+        bool enable;
+        std::uint64_t generation;
     };
 
-    std::vector<uint8_t> MakeHeadTrackingPacket(uint8_t subCode = 0x44)
+    Core::AAP::AAPCommandResult SubmitHeadTracking(bool enable, std::uint64_t generation) override
     {
-        std::vector<uint8_t> packet(70, 0);
-        constexpr std::array<uint8_t, 10> prefix{0x04, 0x00, 0x04, 0x00, 0x17,
-                                                 0x00, 0x00, 0x00, 0x10, 0x00};
-        std::copy(prefix.begin(), prefix.end(), packet.begin());
-        packet[10] = subCode;
-        const auto writeInt16 = [&packet](std::size_t offset, std::int16_t value) {
-            packet[offset] = static_cast<uint8_t>(value & 0xFF);
-            packet[offset + 1] = static_cast<uint8_t>((value >> 8) & 0xFF);
-        };
-        writeInt16(43, -32768);
-        writeInt16(45, -2);
-        writeInt16(47, 32767);
-        writeInt16(51, 1234);
-        writeInt16(53, -42);
-        return packet;
+        requests.push_back({enable, generation});
+        return result;
     }
+
+    Core::AAP::AAPCommandResult result{true, false, std::nullopt};
+    std::vector<Request> requests;
+};
+
+std::vector<uint8_t> MakeHeadTrackingPacket(uint8_t subCode = 0x44)
+{
+    std::vector<uint8_t> packet(70, 0);
+    constexpr std::array<uint8_t, 10> prefix{0x04, 0x00, 0x04, 0x00, 0x17,
+                                             0x00, 0x00, 0x00, 0x10, 0x00};
+    std::copy(prefix.begin(), prefix.end(), packet.begin());
+    packet[10] = subCode;
+    const auto writeInt16 = [&packet](std::size_t offset, std::int16_t value) {
+        packet[offset] = static_cast<uint8_t>(value & 0xFF);
+        packet[offset + 1] = static_cast<uint8_t>((value >> 8) & 0xFF);
+    };
+    writeInt16(43, -32768);
+    writeInt16(45, -2);
+    writeInt16(47, 32767);
+    writeInt16(51, 1234);
+    writeInt16(53, -42);
+    return packet;
+}
 
 } // namespace
 
@@ -372,6 +379,8 @@ private Q_SLOTS:
     void StemTranslationsAreFinished_data();
     void StemTranslationsAreFinished();
     void AdaptiveNoiseTranslationsAreCompleteInAllCatalogs();
+    void HeadTrackingTranslationsAreComplete_data();
+    void HeadTrackingTranslationsAreComplete();
     void HebrewUpdateWindowTranslationsAreFinished_data();
     void HebrewUpdateWindowTranslationsAreFinished();
     void MapsMainWindowAnimationResources();
@@ -704,17 +713,19 @@ void AirPodsDomainTests::RecognizesHeadTrackingPackets()
     packet[10] = 0x45;
     QCOMPARE(Gui::ClassifyHeadTrackingRecord(packet), Gui::HeadTrackingRecord::Stream);
     packet[10] = 0x99;
-    QCOMPARE(Gui::ClassifyHeadTrackingRecord(packet), Gui::HeadTrackingRecord::Stream);
+    QCOMPARE(Gui::ClassifyHeadTrackingRecord(packet), Gui::HeadTrackingRecord::NotHeadTracking);
+    QVERIFY(!Gui::ReadHeadTrackingCounts(packet).has_value());
 
     Gui::HeadTrackingViewModel viewModel;
     const Gui::HeadTrackingViewModel::TimePoint now{};
     viewModel.SetEnabled(true, now);
     viewModel.OnTransportUp(7, now);
+    packet = MakeHeadTrackingPacket();
     auto view = viewModel.OnPacket(packet, 7, now);
     QVERIFY(view.has_value());
     QCOMPARE(view->sample.raw.horizontalAcceleration, std::int16_t{1234});
 
-    packet.resize(55);
+    packet.resize(69);
     QCOMPARE(Gui::ClassifyHeadTrackingRecord(packet), Gui::HeadTrackingRecord::NotHeadTracking);
     QVERIFY(!Gui::ReadHeadTrackingCounts(packet).has_value());
     QVERIFY(!viewModel.OnPacket(packet, 7, now).has_value());
@@ -729,9 +740,9 @@ void AirPodsDomainTests::RecognizesHeadTrackingPackets()
 
 void AirPodsDomainTests::HeadTrackingPresentationAgreesWithCoreParser()
 {
-    const auto packet = MakeHeadTrackingPacket();
-    const auto counts = Gui::ReadHeadTrackingCounts(packet);
-    const auto parsed = Core::AAP::ParseHeadTrackingData(packet);
+    const auto valid = MakeHeadTrackingPacket();
+    const auto counts = Gui::ReadHeadTrackingCounts(valid);
+    const auto parsed = Core::AAP::ParseHeadTrackingData(valid);
     QVERIFY(counts.has_value());
     QVERIFY(parsed.has_value());
     QCOMPARE(counts->orientation[0], parsed->orientation1);
@@ -739,6 +750,24 @@ void AirPodsDomainTests::HeadTrackingPresentationAgreesWithCoreParser()
     QCOMPARE(counts->orientation[2], parsed->orientation3);
     QCOMPARE(counts->horizontalAcceleration, parsed->horizontalAcceleration);
     QCOMPARE(counts->verticalAcceleration, parsed->verticalAcceleration);
+
+    // Every prefix/reserved byte is a shared rejection boundary, not merely an offset check.
+    for (std::size_t index = 0; index < 12; ++index) {
+        auto malformed = valid;
+        malformed[index] = index == 10 ? 0x99 : static_cast<uint8_t>(malformed[index] ^ 0x01);
+        QCOMPARE(
+            Gui::ClassifyHeadTrackingRecord(malformed), Gui::HeadTrackingRecord::NotHeadTracking);
+        QVERIFY(!Gui::ReadHeadTrackingCounts(malformed).has_value());
+        QVERIFY(!Core::AAP::ParseHeadTrackingData(malformed).has_value());
+        QVERIFY(!Core::AAP::IsHeadTrackingStreamRecord(malformed));
+    }
+    for (const auto &command :
+         {Core::AAP::Packets::StartHeadTracking, Core::AAP::Packets::StopHeadTracking})
+    {
+        QCOMPARE(
+            Gui::ClassifyHeadTrackingRecord(command), Gui::HeadTrackingRecord::NotHeadTracking);
+        QVERIFY(!Core::AAP::ParseHeadTrackingData(command).has_value());
+    }
 
     const auto sample = Gui::NormalizeHeadTrackingSample(*counts);
     QCOMPARE(sample.orientation[0], -1.0);
@@ -799,51 +828,79 @@ void AirPodsDomainTests::HeadTrackingViewModelThrottlesAndTracksGenerations()
 
 void AirPodsDomainTests::HeadTrackingIntentReplaysStartAndStop()
 {
-    using Intent = Core::AAP::HeadTrackingIntent;
+    using namespace Core::AAP;
+    using Intent = HeadTrackingIntent;
     RecordingHeadTrackingPort port;
     Intent intent;
-    intent.SetEnabled(true);
-    QCOMPARE(intent.Flush(port), Intent::Action::None);
-    QVERIFY(port.requests.empty());
+    const auto confirm = [&](bool enable, std::uint64_t generation,
+                             AAPCommandSettlement settlement) {
+        AAPCommandOutcome outcome;
+        outcome.command = {AAPCommandKind::SetHeadTracking, static_cast<uint32_t>(enable)};
+        outcome.generation = generation;
+        outcome.settlement = settlement;
+        intent.OnCommandSettled(outcome);
+    };
 
+    intent.SetEnabled(true);
+    auto offline = intent.Flush(port);
+    QCOMPARE(offline.action, Intent::Action::None);
+    QVERIFY(!offline.submission.accepted);
+    QCOMPARE(offline.submission.failure, std::optional(AAPCommandFailure::TransportClosed));
+    QCOMPARE(port.requests.size(), size_t{1});
+    QCOMPARE(port.requests[0].generation, uint64_t{0});
+    QVERIFY(port.requests[0].enable);
     intent.OnTransportUp(0);
     QVERIFY(!intent.LinkUp());
     intent.OnTransportUp(7);
-    port.succeed = false;
-    QCOMPARE(intent.Flush(port), Intent::Action::None);
-    QVERIFY(intent.IsPending());
-    QCOMPARE(port.requests, (std::vector<bool>{true}));
 
-    port.succeed = true;
-    QCOMPARE(intent.Flush(port), Intent::Action::Start);
+    port.result = {false, false, AAPCommandFailure::Rejected};
+    QCOMPARE(intent.Flush(port).action, Intent::Action::None);
+    QVERIFY(intent.IsPending());
+    QCOMPARE(port.requests.size(), size_t{1});
+
+    port.result = {true, false, std::nullopt};
+    auto flushed = intent.Flush(port);
+    QCOMPARE(flushed.action, Intent::Action::Start);
+    QVERIFY(flushed.submission.accepted);
+    QVERIFY(!intent.Applied().has_value());
+    QCOMPARE(intent.Flush(port).action, Intent::Action::None);
+    confirm(true, 7, AAPCommandSettlement::Confirmed);
     QCOMPARE(intent.Applied(), std::optional<bool>{true});
     QVERIFY(!intent.IsPending());
-    QCOMPARE(intent.Flush(port), Intent::Action::None);
 
     intent.SetEnabled(false);
-    QCOMPARE(intent.Flush(port), Intent::Action::Stop);
+    QCOMPARE(intent.Flush(port).action, Intent::Action::Stop);
+    confirm(false, 7, AAPCommandSettlement::AppliedUnconfirmed);
     QCOMPARE(intent.Applied(), std::optional<bool>{false});
-    QCOMPARE(intent.Flush(port), Intent::Action::None);
+    QCOMPARE(intent.Flush(port).action, Intent::Action::None);
 
     intent.OnTransportDown();
-    QVERIFY(!intent.LinkUp());
     QVERIFY(!intent.Applied().has_value());
     intent.OnTransportUp(8);
-    // A fresh device session starts with the stream off, so a disabled intent needs no packet.
-    QCOMPARE(intent.Flush(port), Intent::Action::None);
-    QCOMPARE(port.requests.size(), size_t{3});
+    // A new generation does not assume session-reset semantics: desired Stop is forced.
+    QCOMPARE(intent.Flush(port).action, Intent::Action::Stop);
+    confirm(false, 8, AAPCommandSettlement::AppliedUnconfirmed);
+    QVERIFY(!intent.IsPending());
 
     intent.SetEnabled(true);
-    QCOMPARE(intent.Flush(port), Intent::Action::Start);
+    QCOMPARE(intent.Flush(port).action, Intent::Action::Start);
     intent.OnTransportDown();
     intent.OnTransportUp(9);
-    QCOMPARE(intent.Flush(port), Intent::Action::Start);
-    QCOMPARE(port.requests, (std::vector<bool>{true, true, false, true, true}));
-    intent.OnTransportUp(9);
-    QCOMPARE(intent.Flush(port), Intent::Action::None);
+    QCOMPARE(intent.Flush(port).action, Intent::Action::Start);
+    confirm(true, 7, AAPCommandSettlement::Confirmed);
+    QVERIFY(!intent.Applied().has_value());
+    confirm(true, 9, AAPCommandSettlement::Confirmed);
+    QCOMPARE(intent.Applied(), std::optional<bool>{true});
+    QCOMPARE(intent.Flush(port).action, Intent::Action::None);
     intent.SetEnabled(false);
-    QCOMPARE(intent.Flush(port), Intent::Action::Stop);
-    QCOMPARE(port.requests, (std::vector<bool>{true, true, false, true, true, false}));
+    QCOMPARE(intent.Flush(port).action, Intent::Action::Stop);
+
+    QCOMPARE(port.requests.size(), size_t{8});
+    QCOMPARE(port.requests[1].generation, uint64_t{7});
+    QCOMPARE(port.requests[4].generation, uint64_t{8});
+    QVERIFY(!port.requests[4].enable);
+    QCOMPARE(port.requests[6].generation, uint64_t{9});
+    QVERIFY(port.requests[6].enable);
 }
 
 void AirPodsDomainTests::HeadTrackingSettingPersistsWithoutAbiBump()
@@ -2694,6 +2751,91 @@ void AirPodsDomainTests::StemTranslationsAreFinished()
                   expected == QStringLiteral("Long"))) ||
                 translation != expected,
             qPrintable(QString{"%1: untranslated fallback for %2"}.arg(where, expected)));
+    }
+}
+
+void AirPodsDomainTests::HeadTrackingTranslationsAreComplete_data()
+{
+    QTest::addColumn<QString>("locale");
+    for (const auto *locale :
+         {"bg_BG", "de_DE", "es_ES", "fa_IR", "fr_FR", "he_IL", "id_ID", "it_IT", "ja_JP", "ko_KR",
+          "pl_PL", "pt_BR", "pt_PT", "ru_RU", "tr_TR", "uk_UA", "zh_CN", "zh_TW"})
+    {
+        QTest::newRow(locale) << locale;
+    }
+}
+
+void AirPodsDomainTests::HeadTrackingTranslationsAreComplete()
+{
+    QFETCH(QString, locale);
+    const QStringList expectedSources{
+        "Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a "
+        "little more battery and Bluetooth traffic while connected.",
+        "Stream head tracking data",
+        "Head tracking",
+        "Values are the earbuds' raw sensor counts scaled to signed full range: the protocol "
+        "publishes no axis names and no physical unit, so none is claimed here.",
+        "Orientation 1",
+        "Orientation 2",
+        "Orientation 3",
+        "Acceleration, horizontal",
+        "Acceleration, vertical",
+        "Full scale",
+        "Raw",
+        "Head tracking is off",
+        "Waiting for the earbuds' first reading",
+        "Streaming",
+        "No readings for a while - the earbuds paused the stream",
+        "The AAP connection dropped",
+        "-",
+        "Session %1",
+        "Last reading %1 s ago",
+        "%1 - last reading %2 s ago"};
+    QCOMPARE(expectedSources.size(), 20);
+
+    QFile catalog{QString{APD_SOURCE_DIR} + "/Source/Resource/Translation/apd_" + locale + ".ts"};
+    QVERIFY(catalog.open(QIODevice::ReadOnly | QIODevice::Text));
+    QXmlStreamReader xml{&catalog};
+    std::map<QString, int> matches;
+    QString contextName;
+    QString source;
+    while (!xml.atEnd()) {
+        xml.readNext();
+        if (xml.isStartElement() && xml.name() == QStringLiteral("context")) {
+            contextName.clear();
+            source.clear();
+        }
+        else if (xml.isStartElement() && xml.name() == QStringLiteral("name")) {
+            contextName = xml.readElementText();
+        }
+        else if (xml.isStartElement() && xml.name() == QStringLiteral("source")) {
+            source = xml.readElementText();
+        }
+        else if (
+            xml.isStartElement() && xml.name() == QStringLiteral("translation") &&
+            expectedSources.contains(source) &&
+            (contextName == "QObject" || contextName == "SettingsWindow" ||
+             contextName == "Gui::HeadTrackingCard"))
+        {
+            ++matches[source];
+            QVERIFY2(
+                xml.attributes().value(QStringLiteral("type")).toString() != "unfinished",
+                qPrintable(locale + "/" + source + " is unfinished"));
+            const auto translation = xml.readElementText().trimmed();
+            QVERIFY2(!translation.isEmpty(), qPrintable(locale + "/" + source + " is empty"));
+            if (source.contains("%1")) {
+                QVERIFY2(
+                    translation.contains("%1"), qPrintable(locale + "/" + source + " lost %1"));
+            }
+            if (source.contains("%2")) {
+                QVERIFY2(
+                    translation.contains("%2"), qPrintable(locale + "/" + source + " lost %2"));
+            }
+        }
+    }
+    QVERIFY2(!xml.hasError(), qPrintable(xml.errorString()));
+    for (const auto &expected : expectedSources) {
+        QCOMPARE(matches[expected], 1);
     }
 }
 

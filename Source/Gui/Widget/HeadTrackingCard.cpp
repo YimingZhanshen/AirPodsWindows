@@ -63,7 +63,7 @@ HeadTrackingCard::HeadTrackingCard(QWidget *parent) : QFrame{parent}
     setProperty("cssClass", "settingCard");
     setFrameShape(QFrame::NoFrame);
 
-    _titleLabel->setText(tr("Head tracking"));
+    _titleLabel->setObjectName("htTitleLabel");
     _titleLabel->setProperty("cssClass", "cardTitle");
 
     _statusLabel->setWordWrap(true);
@@ -77,9 +77,6 @@ HeadTrackingCard::HeadTrackingCard(QWidget *parent) : QFrame{parent}
     _noteLabel->setWordWrap(true);
     _noteLabel->setObjectName("htNoteLabel");
     _noteLabel->setProperty("cssClass", "cardDescription");
-    _noteLabel->setText(
-        tr("Values are the earbuds' raw sensor counts scaled to signed full range: the protocol "
-           "publishes no axis names and no physical unit, so none is claimed here."));
 
     _pulse = new Widget::ActivityIndicator{16, this};
 
@@ -97,6 +94,9 @@ HeadTrackingCard::HeadTrackingCard(QWidget *parent) : QFrame{parent}
             QCoreApplication::translate("Gui::HeadTrackingCard", kColumnHeaders[column]), this};
         header->setProperty("cssClass", "cardDescription");
         header->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        header->setObjectName(
+            QStringLiteral("htColumn%1").arg(static_cast<qulonglong>(column + 1)));
+        _columnLabels.push_back(header);
         gridLayout->addWidget(
             header, 0, static_cast<int>(column) + 1, Qt::AlignRight | Qt::AlignVCenter);
     }
@@ -106,6 +106,8 @@ HeadTrackingCard::HeadTrackingCard(QWidget *parent) : QFrame{parent}
             QCoreApplication::translate("Gui::HeadTrackingCard", kFieldNames[row]), this};
         name->setWordWrap(true);
         name->setProperty("cssClass", "cardDescription");
+        name->setObjectName(QStringLiteral("htField%1").arg(static_cast<qulonglong>(row + 1)));
+        _fieldLabels.push_back(name);
 
         auto *value = new QLabel{this};
         value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
@@ -149,8 +151,7 @@ HeadTrackingCard::HeadTrackingCard(QWidget *parent) : QFrame{parent}
     setVisible(false);
     // Paint the empty state directly: `ApplyView` would compare it against the default `_view`
     // and skip the labels, leaving them blank instead of showing the "-" placeholders.
-    Publish();
-    UpdateIndicator();
+    Retranslate();
 
     connect(
         &Theme::Manager::Instance(), &Theme::Manager::Changed, this, &HeadTrackingCard::ApplyTheme);
@@ -259,15 +260,15 @@ QString HeadTrackingCard::PhaseText(HeadTrackingPhase phase)
 {
     switch (phase) {
     case HeadTrackingPhase::Off:
-        return QObject::tr("Head tracking is off");
+        return tr("Head tracking is off");
     case HeadTrackingPhase::Armed:
-        return QObject::tr("Waiting for the earbuds' first reading");
+        return tr("Waiting for the earbuds' first reading");
     case HeadTrackingPhase::Streaming:
-        return QObject::tr("Streaming");
+        return tr("Streaming");
     case HeadTrackingPhase::Stale:
-        return QObject::tr("No readings for a while - the earbuds paused the stream");
+        return tr("No readings for a while - the earbuds paused the stream");
     case HeadTrackingPhase::LinkDown:
-        return QObject::tr("The AAP connection dropped");
+        return tr("The AAP connection dropped");
     }
     return {};
 }
@@ -275,7 +276,7 @@ QString HeadTrackingCard::PhaseText(HeadTrackingPhase phase)
 QString HeadTrackingCard::FormatNormalized(double value, bool available)
 {
     if (!available) {
-        return QObject::tr("-");
+        return tr("-");
     }
     return QString::number(value, 'f', 3);
 }
@@ -283,7 +284,7 @@ QString HeadTrackingCard::FormatNormalized(double value, bool available)
 QString HeadTrackingCard::FormatRaw(std::int16_t value, bool available)
 {
     if (!available) {
-        return QObject::tr("-");
+        return tr("-");
     }
     return QString::number(static_cast<int>(value));
 }
@@ -303,6 +304,25 @@ std::vector<QString> HeadTrackingCard::ValueRows(const HeadTrackingView &view)
     rows.push_back(FormatNormalized(view.sample.verticalAcceleration, available));
     rows.push_back(FormatRaw(view.sample.raw.verticalAcceleration, available));
     return rows;
+}
+
+void HeadTrackingCard::Retranslate()
+{
+    _titleLabel->setText(tr("Head tracking"));
+    _noteLabel->setText(
+        tr("Values are the earbuds' raw sensor counts scaled to signed full range: the protocol "
+           "publishes no axis names and no physical unit, so none is claimed here."));
+    for (std::size_t index = 0; index < _fieldLabels.size(); ++index) {
+        _fieldLabels[index]->setText(
+            QCoreApplication::translate("Gui::HeadTrackingCard", kFieldNames[index]));
+    }
+    for (std::size_t index = 0; index < _columnLabels.size(); ++index) {
+        _columnLabels[index]->setText(
+            QCoreApplication::translate("Gui::HeadTrackingCard", kColumnHeaders[index]));
+    }
+    // LanguageChange must republish dynamic strings even when the numeric view is unchanged.
+    Publish();
+    UpdateIndicator();
 }
 
 void HeadTrackingCard::Publish()
@@ -353,6 +373,14 @@ void HeadTrackingCard::ApplyTheme()
     _pulse->SetColor(Theme::Manager::Instance().Colors().accent);
     style()->unpolish(this);
     style()->polish(this);
+}
+
+void HeadTrackingCard::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::LanguageChange) {
+        Retranslate();
+    }
+    QFrame::changeEvent(event);
 }
 
 void HeadTrackingCard::showEvent(QShowEvent *event)

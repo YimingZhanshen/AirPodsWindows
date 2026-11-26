@@ -119,6 +119,18 @@ AAPCommandResult AAPCommandBroker::Submit(AAPCommand command, std::stop_token st
 
     // Same-kind supersede: the in-flight wait ends now instead of burning the whole window,
     // and the queued slot is a single value, so a slider burst collapses to the last one.
+    // Re-submitting the head-tracking value already queued/in flight is idempotent; reconnect
+    // replay and the head-tracking intent can converge without replacing a live command with
+    // itself. Other C7 command kinds retain their existing supersede behavior.
+    if (command.kind == AAPCommandKind::SetHeadTracking &&
+        ((state.queued && *state.queued == command.value) ||
+         (_flight && _flight->generation == _generation && !_flight->superseded &&
+          !_flight->sessionLost && _flight->command.kind == command.kind &&
+          _flight->command.value == command.value)))
+    {
+        state.queuedStop = stop;
+        return {true, false, std::nullopt};
+    }
     if (_flight && _flight->generation == _generation && _flight->command.kind == command.kind) {
         _flight->superseded = true;
     }
@@ -516,9 +528,27 @@ void AAPCommandBroker::WorkerLoop(std::stop_token stopToken)
                                           flightStop.request_stop();
                                           _settleCondition.notify_all();
                                       }};
-        const bool sent = send && _sender
-                              ? _sender(flight.command, flight.generation, flightStop.get_token())
-                              : false;
+        bool sent = false;
+        const unsigned attempts =
+            kind == AAPCommandKind::SetHeadTracking ? kHeadTrackingSendAttempts : 1;
+        for (unsigned attempt = 0; attempt < attempts && send; ++attempt) {
+            sent = _sender ? _sender(flight.command, flight.generation, flightStop.get_token())
+                           : false;
+            lock.lock();
+            live->cancelled = live->cancelled || queuedStop.stop_requested();
+            if (stopToken.stop_requested() || _stopping) {
+                _flight.reset();
+                return;
+            }
+
+            const bool retry = !sent && !live->cancelled && !live->superseded &&
+                               !live->sessionLost && !live->evidence && _sessionOpen &&
+                               live->generation == _generation;
+            lock.unlock();
+            if (!retry) {
+                break;
+            }
+        }
         lock.lock();
         live->cancelled = live->cancelled || queuedStop.stop_requested();
 
