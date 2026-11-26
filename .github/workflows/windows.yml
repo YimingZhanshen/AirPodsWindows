@@ -160,13 +160,57 @@ jobs:
           # places that step depends on how the package is laid out, so check the script itself.
           $installerScript = Get-Content -LiteralPath `
             'Build/Release/Installer/_CPack_Packages/win64/NSIS/project.nsi'
-          $openMutexLine = ($installerScript |
+
+          # Strip NSIS comments without removing lines, so matches still report the
+          # original project.nsi line numbers. Comment markers in quoted strings are text.
+          $inBlockComment = $false
+          $quote = $null
+          $executableScript = foreach ($line in $installerScript) {
+            $code = [System.Text.StringBuilder]::new()
+            for ($index = 0; $index -lt $line.Length; $index++) {
+              $character = $line[$index]
+              if ($inBlockComment) {
+                if ($character -eq '*' -and $index + 1 -lt $line.Length -and
+                    $line[$index + 1] -eq '/') {
+                  $inBlockComment = $false
+                  $index++
+                }
+                [void]$code.Append(' ')
+                continue
+              }
+              if ($quote) {
+                [void]$code.Append($character)
+                if ($character -eq $quote -and
+                    ($index -lt 2 -or $line[$index - 1] -ne '\' -or $line[$index - 2] -ne '$')) {
+                  $quote = $null
+                }
+                continue
+              }
+              if ($character -eq '"' -or $character -eq "'" -or $character -eq '`') {
+                $quote = $character
+              }
+              elseif ($character -eq ';') {
+                break
+              }
+              elseif ($character -eq '/' -and $index + 1 -lt $line.Length -and
+                      $line[$index + 1] -eq '*') {
+                $inBlockComment = $true
+                $index++
+                [void]$code.Append(' ')
+                continue
+              }
+              [void]$code.Append($character)
+            }
+            $code.ToString()
+          }
+
+          $openMutexLine = ($executableScript |
             Select-String -Pattern '^\s*System::Call .*kernel32::OpenMutexW\(.*Global\\AirPodsWindows_InstanceMutex' |
             Select-Object -First 1).LineNumber
-          $taskkillLine = ($installerScript |
+          $taskkillLine = ($executableScript |
             Select-String -Pattern '^\s*nsExec::Exec .*taskkill\.exe.*AirPodsWindows\.exe' |
             Select-Object -First 1).LineNumber
-          $copyLine = ($installerScript |
+          $copyLine = ($executableScript |
             Select-String -Pattern '^\s*File /r ' |
             Select-Object -First 1).LineNumber
           if (-not $openMutexLine -or -not $taskkillLine -or -not $copyLine -or
