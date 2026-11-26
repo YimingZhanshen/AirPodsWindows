@@ -70,6 +70,28 @@ private slots:
         QVERIFY(!machine.IsCurrent(first));
     }
 
+    void BackoffRebindUsesNewAddressAndFreshGeneration()
+    {
+        AAPConnectionStateMachine machine{NoJitter};
+        constexpr uint64_t deviceA = 0x340E22CC08A0ULL;
+        constexpr uint64_t deviceB = 0xD4DA214FC3E5ULL;
+        const auto first = machine.Begin(deviceA).attempt;
+        QVERIFY(machine.Connected(first, AAPConnectionStateMachine::Clock::now()));
+        QVERIFY(machine.Lost(first, AAPConnectionStateMachine::Clock::now() + 1s).has_value());
+        QCOMPARE(machine.State(), AAPConnectionState::Backoff);
+
+        // Begin owns attempt allocation. A rebind during backoff must not reuse
+        // the retired A attempt (the old P2 regression) or retain its address.
+        const auto rebound = machine.Begin(deviceB);
+        QVERIFY(rebound.started);
+        QCOMPARE(rebound.attempt.address, deviceB);
+        QVERIFY(rebound.attempt.generation > first.generation);
+        QVERIFY(machine.IsCurrent(rebound.attempt));
+        QVERIFY(!machine.IsCurrent(first));
+        QVERIFY(!machine.Connected(first, AAPConnectionStateMachine::Clock::now()));
+        QVERIFY(!machine.Lost(first, AAPConnectionStateMachine::Clock::now()).has_value());
+    }
+
     void OldGenerationCannotCompleteOrDisconnectNewAttempt()
     {
         AAPConnectionStateMachine machine{NoJitter};

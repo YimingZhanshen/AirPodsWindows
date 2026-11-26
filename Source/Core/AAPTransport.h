@@ -54,6 +54,12 @@ public:
     virtual std::optional<std::vector<uint8_t>> Receive(std::stop_token stop) = 0;
     virtual void Close() = 0;
     virtual AAPTransportKind Kind() const = 0;
+    // Only MagicAAP produces a bind result. A default keeps injected and legacy
+    // transports safe to query without downcasting.
+    virtual Core::MagicAAPWinRT::MagicAAPBindStatus LastBindStatus() const
+    {
+        return Core::MagicAAPWinRT::MagicAAPBindStatus::TransportError;
+    }
 };
 
 class SeqPacketTransport final : public AAPTransport
@@ -113,7 +119,7 @@ public:
         return AAPTransportKind::MagicAAP;
     }
 
-    Core::MagicAAPWinRT::MagicAAPBindStatus LastBindStatus() const
+    Core::MagicAAPWinRT::MagicAAPBindStatus LastBindStatus() const override
     {
         return _lastBindStatus.load();
     }

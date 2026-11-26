@@ -262,10 +262,10 @@ std::optional<uint64_t> AddressFromDevicePrefix(std::wstring_view text)
     return ParseDevicePrefixes(text, conflict);
 }
 
-std::optional<uint64_t> ExtractAddress(const MagicAAPDeviceInterface &targetInterface)
+std::optional<uint64_t> ExtractAddress(const MagicAAPDeviceInterface &device)
 {
     bool conflict = false;
-    return ResolveAddress(targetInterface, conflict);
+    return ResolveAddress(device, conflict);
 }
 
 std::wstring NormalizeContainerId(std::wstring_view containerId)
@@ -415,6 +415,18 @@ MagicAAPBindOutcome BindToTargetInterface(
             outcome.status = MagicAAPBindStatus::Connected;
             return outcome;
         }
+        // The opener may have spent time in CreateFile while another thread
+        // cancelled the connection. A failed final candidate is cancellation,
+        // not an OpenFailed diagnostic for a request that is no longer wanted.
+        if (stop.stop_requested()) {
+            outcome.status = MagicAAPBindStatus::Cancelled;
+            return outcome;
+        }
+    }
+
+    if (stop.stop_requested()) {
+        outcome.status = MagicAAPBindStatus::Cancelled;
+        return outcome;
     }
 
     // Every path of the proven device failed. Reaching for another device would

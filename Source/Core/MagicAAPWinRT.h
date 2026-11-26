@@ -141,10 +141,25 @@ private:
 
     // Copies the callbacks and publishes a new session. `_mutex` must be held.
     ReceiverSnapshot StartSession();
+
+    // Owns the complete receiver-start transaction. Any exception retires the
+    // session and releases every partially initialized transport resource.
+    bool StartReceiverSession();
+    void RollbackConnection();
     void ReceiverLoop(ReceiverSnapshot snapshot);
     void SetError(const std::wstring &error);
     void CleanupWinRTObjects();
     void CleanupDeviceHandle();
+
+    // Hardware-free seams. Production uses WinRT/SetupAPI/CreateFile and a real
+    // receiver thread; tests can substitute enumeration, opening, and thread start.
+    using InterfaceEnumerator = std::function<std::vector<MagicAAPDeviceInterface>()>;
+    using ReceiverThreadStarter = std::function<std::thread(const ReceiverSnapshot &)>;
+    InterfaceEnumerator _interfaceEnumerator;
+    std::function<MagicAAPDeviceHandle(const MagicAAPDeviceInterface &)> _interfaceOpener;
+    std::function<bool()> _driverInstalledProbe;
+    std::function<bool()> _driverRunningProbe;
+    ReceiverThreadStarter _receiverThreadStarter;
 };
 
 } // namespace Core::MagicAAPWinRT

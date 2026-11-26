@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <exception>
 #include <thread>
 
 #if defined APD_OS_WIN
@@ -31,7 +32,11 @@
 
 namespace Core::AAP {
 
-Manager::Manager() = default;
+Manager::Manager()
+    : _driverInstalledProbe([] { return MagicAAPWinRT::MagicAAPWinRTClient::IsDriverInstalled(); }),
+      _driverRunningProbe([] { return MagicAAPWinRT::MagicAAPWinRTClient::IsDriverRunning(); })
+{
+}
 
 Manager::~Manager()
 {
@@ -203,8 +208,8 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
                _cancelledGeneration.load() == attempt.generation;
     };
 
-    LOG(Info, "AAP: Attempting L2CAP SEQPACKET connection to {:016X} on PSM {}", attempt.address,
-        kPSM);
+    LOG(Info, "AAP: Attempting L2CAP SEQPACKET connection to {} on PSM {}",
+        Diagnostics::Recorder::MaskAddress(attempt.address), kPSM);
     auto seqPacket = _transportFactory
                          ? _transportFactory(AAPTransportKind::SeqPacket)
                          : std::shared_ptr<AAPTransport>(CreateSeqPacketTransport().release());
@@ -223,34 +228,48 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
         return nullptr;
     }
 
-    if (!MagicAAPWinRT::MagicAAPWinRTClient::IsDriverInstalled()) {
+    if (!_driverInstalledProbe()) {
         LOG(Info, "AAP: MagicAAP driver not installed");
         failure = ConnectFailure::DriverMissing;
         Diagnostics::Recorder::Instance().Record(
             Diagnostics::Step::DriverOpen, false, "driver not installed");
         return nullptr;
     }
-    if (!MagicAAPWinRT::MagicAAPWinRTClient::IsDriverRunning()) {
+    if (!_driverRunningProbe()) {
         LOG(Warn, "AAP: MagicAAP driver installed but not running");
         failure = ConnectFailure::DriverMissing;
         Diagnostics::Recorder::Instance().Record(
             Diagnostics::Step::DriverOpen, false, "driver not running");
         return nullptr;
     }
-    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::DriverOpen, true);
 
-    auto magicAAP = _transportFactory
-                        ? _transportFactory(AAPTransportKind::MagicAAP)
-                        : std::shared_ptr<AAPTransport>(CreateMagicAAPTransport().release());
-    setPending(magicAAP);
-    const bool magicConnected = magicAAP->Connect(attempt.address, stopToken);
+    std::shared_ptr<AAPTransport> magicAAP;
+    bool magicConnected = false;
+    try {
+        magicAAP = _transportFactory
+                       ? _transportFactory(AAPTransportKind::MagicAAP)
+                       : std::shared_ptr<AAPTransport>(CreateMagicAAPTransport().release());
+        if (magicAAP) {
+            setPending(magicAAP);
+            magicConnected = magicAAP->Connect(attempt.address, stopToken);
+        }
+    }
+    catch (const std::exception &) {
+        // A transport constructor/startup exception is still a failed driver
+        // open and must take the same diagnostic path as a returned failure.
+        magicConnected = false;
+    }
     clearPending(magicAAP);
     if (magicConnected && !cancelled()) {
+        Diagnostics::Recorder::Instance().Record(Diagnostics::Step::DriverOpen, true);
         failure = ConnectFailure::None;
         return magicAAP;
     }
-    magicAAP->Close();
-    const auto bindStatus = static_cast<MagicAAPTransport *>(magicAAP.get())->LastBindStatus();
+    if (magicAAP) {
+        magicAAP->Close();
+    }
+    const auto bindStatus =
+        magicAAP ? magicAAP->LastBindStatus() : MagicAAPWinRT::MagicAAPBindStatus::TransportError;
     switch (bindStatus) {
     case MagicAAPWinRT::MagicAAPBindStatus::NoMatch:
         failure = ConnectFailure::NoMatch;
@@ -265,9 +284,15 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
         break;
     case MagicAAPWinRT::MagicAAPBindStatus::DriverMissing:
         failure = ConnectFailure::DriverMissing;
+        Diagnostics::Recorder::Instance().Record(
+            Diagnostics::Step::DriverOpen, false, "driver unavailable during bind");
         break;
+    case MagicAAPWinRT::MagicAAPBindStatus::TransportError:
+    case MagicAAPWinRT::MagicAAPBindStatus::Cancelled:
     default:
         failure = ConnectFailure::TransportError;
+        Diagnostics::Recorder::Instance().Record(
+            Diagnostics::Step::DriverOpen, false, "transport or receiver startup failed");
         break;
     }
     return nullptr;

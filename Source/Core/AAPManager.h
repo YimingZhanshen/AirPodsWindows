@@ -203,6 +203,8 @@ private:
     std::atomic<ConnectFailure> _lastConnectFailure{ConnectFailure::None};
     std::atomic<uint64_t> _cancelledGeneration{0};
     std::function<std::shared_ptr<AAPTransport>(AAPTransportKind)> _transportFactory;
+    std::function<bool()> _driverInstalledProbe;
+    std::function<bool()> _driverRunningProbe;
 
     // Callbacks
     Callbacks _callbacks;

@@ -38,7 +38,7 @@ namespace AAPTestSupport {
 
 // Records are injected whole. The send limit models a failed atomic write, not a
 // byte stream: callers must never retry the unwritten suffix as another record.
-class FakeTransport final : public Core::AAP::AAPTransport
+class FakeTransport : public Core::AAP::AAPTransport
 {
 public:
     bool Connect(uint64_t, std::stop_token stop) override

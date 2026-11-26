@@ -19,6 +19,7 @@
 #include "MagicAAPWinRT.h"
 
 #include "AAPMessage.h"
+#include "ConnectionDiagnostics.h"
 
 #include <Windows.h>
 #include <combaseapi.h>
@@ -28,8 +29,6 @@
 #include <devpkey.h>
 #include <cfgmgr32.h>
 #include <winsvc.h>
-#include <locale>
-#include <codecvt>
 #include <exception>
 #include <limits>
 #include <utility>
@@ -104,6 +103,16 @@ MagicAAPWinRTClient::MagicAAPWinRTClient()
     // Initialize WinRT apartment
     ::winrt::init_apartment();
 #endif
+    _driverInstalledProbe = [] { return IsDriverInstalled(); };
+    _driverRunningProbe = [] { return IsDriverRunning(); };
+    _interfaceEnumerator = [] { return EnumerateInterfaces(); };
+    _interfaceOpener = [](const MagicAAPDeviceInterface &device) -> MagicAAPDeviceHandle {
+        const HANDLE handle = CreateFileW(
+            device.interfacePath.c_str(), GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED,
+            nullptr);
+        return handle == INVALID_HANDLE_VALUE ? nullptr : handle;
+    };
 }
 
 MagicAAPWinRTClient::~MagicAAPWinRTClient()
@@ -175,8 +184,9 @@ std::vector<std::pair<std::wstring, uint64_t>> MagicAAPWinRTClient::EnumerateAAP
             auto name = deviceInfo.Name();
 
             std::string nameStr = ::winrt::to_string(name);
-            std::string idStr = ::winrt::to_string(id);
-            spdlog::info("[MagicAAPWinRT] Device: {} - {}", nameStr, idStr);
+            // DeviceInformation.Id embeds the full hardware address/path. It is
+            // identity input only and must never reach diagnostics.
+            spdlog::info("[MagicAAPWinRT] Found AAP device: {}", nameStr);
 
             // Try to get Bluetooth address from device
             try {
@@ -190,15 +200,15 @@ std::vector<std::pair<std::wstring, uint64_t>> MagicAAPWinRTClient::EnumerateAAP
                 }
             }
             catch (const ::winrt::hresult_error &e) {
-                std::string errStr = ::winrt::to_string(e.message());
-                spdlog::warn("[MagicAAPWinRT] Failed to get device details: {}", errStr);
+                spdlog::warn(
+                    "[MagicAAPWinRT] Failed to get device details (0x{:08x})",
+                    static_cast<uint32_t>(e.code()));
             }
         }
     }
     catch (const ::winrt::hresult_error &e) {
-        std::string errStr = ::winrt::to_string(e.message());
         spdlog::error(
-            "[MagicAAPWinRT] EnumerateAAPDevices failed: {} (0x{:08x})", errStr,
+            "[MagicAAPWinRT] EnumerateAAPDevices failed (0x{:08x})",
             static_cast<uint32_t>(e.code()));
     }
 #else
@@ -219,7 +229,9 @@ bool MagicAAPWinRTClient::Connect(uint64_t bluetoothAddress)
     }
 
     try {
-        spdlog::info("[MagicAAPWinRT] Connecting to Bluetooth address: {:012X}", bluetoothAddress);
+        spdlog::info(
+            "[MagicAAPWinRT] Connecting to Bluetooth address: {}",
+            Diagnostics::Recorder::MaskAddress(bluetoothAddress));
 
         // Get Bluetooth device
         auto btDevice =
@@ -264,31 +276,36 @@ bool MagicAAPWinRTClient::Connect(uint64_t bluetoothAddress)
 
         spdlog::info("[MagicAAPWinRT] Connected!");
 
-        // Create internal state
-        auto impl = new MagicAAPWinRTClientImpl();
+        // Create internal state. Keep ownership local until every WinRT
+        // assignment succeeds so an exception cannot leak a partial impl.
+        auto impl = std::make_unique<MagicAAPWinRTClientImpl>();
         impl->socket = std::move(socket);
         impl->service = rfcommService;
         impl->reader = WinRTStreams::DataReader(impl->socket.InputStream());
         impl->reader.InputStreamOptions(WinRTStreams::InputStreamOptions::Partial);
         impl->writer = WinRTStreams::DataWriter(impl->socket.OutputStream());
-        _impl = impl;
+        _impl = impl.release();
 
         _connected.store(true);
         _stopReceiver.store(false);
 
         // Copy callbacks and publish the session before the thread can run.
-        auto snapshot = StartSession();
-        _receiverThread = std::thread(&MagicAAPWinRTClient::ReceiverLoop, this, snapshot);
+        if (!StartReceiverSession()) {
+            return false;
+        }
 
         return true;
     }
     catch (const ::winrt::hresult_error &e) {
-        SetError(std::wstring(e.message()));
-        std::string errStr = ::winrt::to_string(e.message());
-        spdlog::error(
-            "[MagicAAPWinRT] Connect failed: {} (0x{:08x})", errStr,
-            static_cast<uint32_t>(e.code()));
-        CleanupWinRTObjects();
+        RollbackConnection();
+        SetError(L"MagicAAP connection failed");
+        spdlog::error("[MagicAAPWinRT] Connect failed (0x{:08x})", static_cast<uint32_t>(e.code()));
+        return false;
+    }
+    catch (const std::exception &) {
+        RollbackConnection();
+        SetError(L"MagicAAP connection failed");
+        spdlog::error("[MagicAAPWinRT] Connect failed");
         return false;
     }
 #else
@@ -310,11 +327,9 @@ bool MagicAAPWinRTClient::ConnectById(const std::wstring &deviceId)
     }
 
     try {
-        // Convert wstring to string properly using WideCharToMultiByte would be better,
-        // but for logging we just use a simple conversion
-        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-        std::string idStr = converter.to_bytes(deviceId);
-        spdlog::info("[MagicAAPWinRT] Connecting to device ID: {}", idStr);
+        // The id can contain a full address and interface path. Log only the
+        // operation, never the identifier or an exception message derived from it.
+        spdlog::info("[MagicAAPWinRT] Connecting by redacted device ID");
 
         // Get RFCOMM service from device ID
         auto rfcommService = WinRTRfcomm::RfcommDeviceService::FromIdAsync(deviceId).get();
@@ -334,31 +349,37 @@ bool MagicAAPWinRTClient::ConnectById(const std::wstring &deviceId)
 
         spdlog::info("[MagicAAPWinRT] Connected!");
 
-        // Create internal state
-        auto impl = new MagicAAPWinRTClientImpl();
+        // Create internal state. Keep ownership local until every WinRT
+        // assignment succeeds so an exception cannot leak a partial impl.
+        auto impl = std::make_unique<MagicAAPWinRTClientImpl>();
         impl->socket = std::move(socket);
         impl->service = rfcommService;
         impl->reader = WinRTStreams::DataReader(impl->socket.InputStream());
         impl->reader.InputStreamOptions(WinRTStreams::InputStreamOptions::Partial);
         impl->writer = WinRTStreams::DataWriter(impl->socket.OutputStream());
-        _impl = impl;
+        _impl = impl.release();
 
         _connected.store(true);
         _stopReceiver.store(false);
 
         // Copy callbacks and publish the session before the thread can run.
-        auto snapshot = StartSession();
-        _receiverThread = std::thread(&MagicAAPWinRTClient::ReceiverLoop, this, snapshot);
+        if (!StartReceiverSession()) {
+            return false;
+        }
 
         return true;
     }
     catch (const ::winrt::hresult_error &e) {
-        SetError(std::wstring(e.message()));
-        std::string errStr = ::winrt::to_string(e.message());
+        RollbackConnection();
+        SetError(L"MagicAAP connection failed");
         spdlog::error(
-            "[MagicAAPWinRT] ConnectById failed: {} (0x{:08x})", errStr,
-            static_cast<uint32_t>(e.code()));
-        CleanupWinRTObjects();
+            "[MagicAAPWinRT] ConnectById failed (0x{:08x})", static_cast<uint32_t>(e.code()));
+        return false;
+    }
+    catch (const std::exception &) {
+        RollbackConnection();
+        SetError(L"MagicAAP connection failed");
+        spdlog::error("[MagicAAPWinRT] ConnectById failed");
         return false;
     }
 #else
@@ -498,9 +519,9 @@ bool MagicAAPWinRTClient::SendData(const std::vector<uint8_t> &data)
         return true;
     }
     catch (const ::winrt::hresult_error &e) {
-        SetError(std::wstring(e.message()));
-        std::string errStr = ::winrt::to_string(e.message());
-        spdlog::error("[MagicAAPWinRT] SendData failed: {}", errStr);
+        SetError(L"MagicAAP write failed");
+        spdlog::error(
+            "[MagicAAPWinRT] SendData failed (0x{:08x})", static_cast<uint32_t>(e.code()));
         return false;
     }
 #else
@@ -518,6 +539,34 @@ MagicAAPWinRTClient::ReceiverSnapshot MagicAAPWinRTClient::StartSession()
     snapshot.onDataReceived = _onDataReceived;
     snapshot.onDisconnected = _onDisconnected;
     return snapshot;
+}
+
+void MagicAAPWinRTClient::RollbackConnection()
+{
+    _sessions.Close();
+    _stopReceiver.store(true);
+    CleanupWinRTObjects();
+    CleanupDeviceHandle();
+    _connected.store(false);
+}
+
+bool MagicAAPWinRTClient::StartReceiverSession()
+{
+    try {
+        auto snapshot = StartSession();
+        _receiverThread = _receiverThreadStarter
+                              ? _receiverThreadStarter(snapshot)
+                              : std::thread(&MagicAAPWinRTClient::ReceiverLoop, this, snapshot);
+        return true;
+    }
+    catch (const std::exception &) {
+        // StartSession may have published an id or allocated WinRT state before
+        // callback copying/thread construction failed. Roll all of it back.
+        RollbackConnection();
+        SetError(L"MagicAAP receiver session could not be started");
+        spdlog::error("[MagicAAPWinRT] Receiver session could not be started");
+        return false;
+    }
 }
 
 void MagicAAPWinRTClient::ReceiverLoop(ReceiverSnapshot snapshot)
@@ -633,13 +682,10 @@ void MagicAAPWinRTClient::ReceiverLoop(ReceiverSnapshot snapshot)
         }
     }
     catch (const ::winrt::hresult_error &e) {
-        std::string errStr = ::winrt::to_string(e.message());
-        spdlog::error(
-            "[MagicAAPWinRT] Receiver error: {} (0x{:08x})", errStr,
-            static_cast<uint32_t>(e.code()));
+        spdlog::error("[MagicAAPWinRT] Receiver error (0x{:08x})", static_cast<uint32_t>(e.code()));
     }
-    catch (const std::exception &e) {
-        spdlog::error("[MagicAAPWinRT] Receiver exception: {}", e.what());
+    catch (const std::exception &) {
+        spdlog::error("[MagicAAPWinRT] Receiver exception");
     }
 #endif
 
@@ -768,95 +814,93 @@ MagicAAPWinRTClient::ConnectViaDeviceInterface(uint64_t bluetoothAddress, std::s
         SetError(L"Connection cancelled");
         return MagicAAPBindStatus::Cancelled;
     }
-    if (!IsDriverInstalled() || !IsDriverRunning()) {
-        SetError(L"MagicAAP driver is not installed or not running");
-        return MagicAAPBindStatus::DriverMissing;
-    }
 
-    auto interfaces = EnumerateInterfaces();
-    if (interfaces.empty()) {
-        SetError(L"MagicAAP published no device interfaces; reinstall or restart the driver");
-        return MagicAAPBindStatus::TransportError;
-    }
-
-    DWORD openError = 0;
-    auto outcome = BindToTargetInterface(
-        interfaces, bluetoothAddress,
-        [&](const MagicAAPDeviceInterface &device) -> MagicAAPDeviceHandle {
-            if (stop.stop_requested()) {
-                return nullptr;
-            }
-            HANDLE handle = CreateFileW(
-                device.interfacePath.c_str(), GENERIC_READ | GENERIC_WRITE,
-                FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED,
-                nullptr);
-            if (handle == INVALID_HANDLE_VALUE) {
-                openError = ::GetLastError();
-                spdlog::warn("[MagicAAPWinRT] Exact target interface open failed: {}", openError);
-                return nullptr;
-            }
-            return handle;
-        },
-        stop);
-
-    switch (outcome.status) {
-    case MagicAAPBindStatus::NoMatch:
-        SetError(L"No MagicAAP interface proves the bound Bluetooth address and ContainerId; "
-                 L"update the MagicAAP driver and reconnect");
-        break;
-    case MagicAAPBindStatus::OpenFailed:
-        SetError(
-            L"The exact MagicAAP target interface could not be opened (Win32 error " +
-            std::to_wstring(openError) + L"); no other device was selected");
-        break;
-    case MagicAAPBindStatus::Cancelled:
-        SetError(L"Connection cancelled");
-        break;
-    case MagicAAPBindStatus::Connected:
-        break;
-    default:
-        SetError(L"MagicAAP transport error");
-        break;
-    }
-
-    if (outcome.status != MagicAAPBindStatus::Connected) {
-        return outcome.status;
-    }
-    if (stop.stop_requested()) {
-        CloseHandle(static_cast<HANDLE>(outcome.handle));
-        SetError(L"Connection cancelled");
-        return MagicAAPBindStatus::Cancelled;
-    }
-
-    _deviceHandle = outcome.handle;
-    _usingDeviceInterface = true;
-    _connected.store(true);
-    _stopReceiver.store(false);
-    auto snapshot = StartSession();
     try {
-        _receiverThread = std::thread(&MagicAAPWinRTClient::ReceiverLoop, this, snapshot);
+        if (!_driverInstalledProbe() || !_driverRunningProbe()) {
+            SetError(L"MagicAAP driver is not installed or not running");
+            return MagicAAPBindStatus::DriverMissing;
+        }
+
+        auto interfaces = _interfaceEnumerator();
+        if (interfaces.empty()) {
+            SetError(L"MagicAAP published no device interfaces; reinstall or restart the driver");
+            return MagicAAPBindStatus::TransportError;
+        }
+
+        DWORD openError = 0;
+        auto outcome = BindToTargetInterface(
+            interfaces, bluetoothAddress,
+            [&](const MagicAAPDeviceInterface &device) -> MagicAAPDeviceHandle {
+                if (stop.stop_requested()) {
+                    return nullptr;
+                }
+                const auto handle = _interfaceOpener(device);
+                if (handle == nullptr) {
+                    openError = ::GetLastError();
+                    spdlog::warn(
+                        "[MagicAAPWinRT] Exact target interface open failed: {}", openError);
+                }
+                return handle;
+            },
+            stop);
+
+        switch (outcome.status) {
+        case MagicAAPBindStatus::NoMatch:
+            SetError(L"No MagicAAP interface proves the bound Bluetooth address and ContainerId; "
+                     L"update the MagicAAP driver and reconnect");
+            break;
+        case MagicAAPBindStatus::OpenFailed:
+            SetError(
+                L"The exact MagicAAP target interface could not be opened (Win32 error " +
+                std::to_wstring(openError) + L"); no other device was selected");
+            break;
+        case MagicAAPBindStatus::Cancelled:
+            SetError(L"Connection cancelled");
+            break;
+        case MagicAAPBindStatus::Connected:
+            break;
+        default:
+            SetError(L"MagicAAP transport error");
+            break;
+        }
+
+        if (outcome.status != MagicAAPBindStatus::Connected) {
+            return outcome.status;
+        }
+        if (stop.stop_requested()) {
+            CloseHandle(static_cast<HANDLE>(outcome.handle));
+            SetError(L"Connection cancelled");
+            return MagicAAPBindStatus::Cancelled;
+        }
+
+        _deviceHandle = outcome.handle;
+        _usingDeviceInterface = true;
+        _connected.store(true);
+        _stopReceiver.store(false);
+        spdlog::info(
+            "[MagicAAPWinRT] Exact target device bound; starting receiver ({} candidate path(s), "
+            "{} open attempt(s))",
+            outcome.candidateCount, outcome.openAttempts);
+        if (!StartReceiverSession()) {
+            return MagicAAPBindStatus::TransportError;
+        }
+
+        return MagicAAPBindStatus::Connected;
     }
-    catch (const std::exception &error) {
-        spdlog::error("[MagicAAPWinRT] Receiver thread creation failed: {}", error.what());
-        _sessions.Close();
-        CleanupDeviceHandle();
-        _connected.store(false);
-        SetError(L"MagicAAP receiver thread could not be started");
+    catch (const std::exception &) {
+        RollbackConnection();
+        SetError(L"MagicAAP device-interface connection failed");
+        spdlog::error("[MagicAAPWinRT] Device-interface connection failed");
         return MagicAAPBindStatus::TransportError;
     }
-
-    spdlog::info(
-        "[MagicAAPWinRT] Bound exact target device ({} candidate path(s), {} open attempt(s))",
-        outcome.candidateCount, outcome.openAttempts);
-    return MagicAAPBindStatus::Connected;
 }
 
 void MagicAAPWinRTClient::CleanupDeviceHandle()
 {
     if (_deviceHandle && _deviceHandle != INVALID_HANDLE_VALUE) {
         CloseHandle(static_cast<HANDLE>(_deviceHandle));
-        _deviceHandle = nullptr;
     }
+    _deviceHandle = nullptr;
     _usingDeviceInterface = false;
 }
 

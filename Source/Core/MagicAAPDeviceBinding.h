@@ -79,7 +79,7 @@ std::optional<uint64_t> AddressFromDevicePrefix(std::wstring_view text);
 // Best available proof of this interface's address. Returns `std::nullopt` when
 // no source proves one, and also when two sources disagree: a contradictory
 // install is not a license to open a device.
-std::optional<uint64_t> ExtractAddress(const MagicAAPDeviceInterface &interface);
+std::optional<uint64_t> ExtractAddress(const MagicAAPDeviceInterface &device);
 
 // `{AAACAC36-8F27-50B1-B473-47BF5F0D04F0}` in a stable uppercase form. Returns an
 // empty string when the value is not a GUID.

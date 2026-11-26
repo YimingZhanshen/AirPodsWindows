@@ -16,14 +16,24 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <chrono>
 #include <cstdint>
+#include <future>
+#include <memory>
+#include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <QtTest>
 
 #include "Source/Core/MagicAAPDeviceBinding.h"
 #include "Source/Core/MagicAAPWinRT.h"
+
+#include <Windows.h>
 
 namespace {
 
@@ -77,6 +87,29 @@ Core::MagicAAPWinRT::MagicAAPInterfaceOpener CountingOpener(OpenLog &log, bool s
         return succeed ? reinterpret_cast<void *>(0x1234) : nullptr;
     };
 }
+
+class ThrowingCopyCallback
+{
+public:
+    explicit ThrowingCopyCallback(std::shared_ptr<std::atomic<bool>> failOnCopy)
+        : _failOnCopy{std::move(failOnCopy)}
+    {
+    }
+
+    ThrowingCopyCallback(ThrowingCopyCallback &&) noexcept = default;
+    ThrowingCopyCallback &operator=(ThrowingCopyCallback &&) noexcept = default;
+    ThrowingCopyCallback(const ThrowingCopyCallback &other) : _failOnCopy{other._failOnCopy}
+    {
+        if (_failOnCopy && _failOnCopy->load()) {
+            throw std::runtime_error("injected callback snapshot failure");
+        }
+    }
+
+    void operator()(const std::vector<uint8_t> &) const {}
+
+private:
+    std::shared_ptr<std::atomic<bool>> _failOnCopy;
+};
 
 } // namespace
 
@@ -268,6 +301,65 @@ private slots:
         QCOMPARE(log.paths.size(), size_t{1});
     }
 
+    void EnumerationPermutationsKeepTheSameCandidateOrder()
+    {
+        const auto target = MakeDevice(L"340E22CC08A0", kTargetContainer);
+        const auto sibling = MakeUnprovable(kTargetContainer);
+        const auto foreign = MakeDevice(L"D4DA214FC3E5", kOtherContainer);
+        std::array<MagicAAPDeviceInterface, 3> metadata{target, sibling, foreign};
+        std::array<size_t, 3> order{0, 1, 2};
+        std::vector<std::wstring> expected;
+
+        do {
+            OpenLog log;
+            const std::vector<MagicAAPDeviceInterface> interfaces{
+                metadata[order[0]], metadata[order[1]], metadata[order[2]]};
+            const auto outcome =
+                BindToTargetInterface(interfaces, kTarget, CountingOpener(log, false));
+            QCOMPARE(outcome.status, MagicAAPBindStatus::OpenFailed);
+            QCOMPARE(outcome.candidateCount, size_t{2});
+            QCOMPARE(outcome.openAttempts, size_t{2});
+            QVERIFY(
+                std::find(log.paths.begin(), log.paths.end(), foreign.interfacePath) ==
+                log.paths.end());
+            if (expected.empty()) {
+                expected = log.paths;
+            }
+            else {
+                QCOMPARE(log.paths, expected);
+            }
+        } while (std::next_permutation(order.begin(), order.end()));
+    }
+
+    void AddressProofSourcesArePermutationInvariant()
+    {
+        const auto unprovablePath = MakeUnprovable(kTargetContainer).interfacePath;
+        for (size_t proofSource = 0; proofSource < 3; ++proofSource) {
+            auto target = MakeDevice(L"340E22CC08A0", kTargetContainer);
+            if (proofSource == 0) {
+                target.deviceInstanceId.clear();
+                target.parentInstanceId.clear();
+            }
+            else {
+                target.interfacePath = unprovablePath;
+                if (proofSource == 1) {
+                    target.parentInstanceId.clear();
+                }
+                else {
+                    target.deviceInstanceId.clear();
+                }
+            }
+
+            OpenLog log;
+            const auto other = MakeDevice(L"D4DA214FC3E5", kOtherContainer);
+            const auto outcome =
+                BindToTargetInterface({other, target}, kTarget, CountingOpener(log, true));
+            QCOMPARE(outcome.status, MagicAAPBindStatus::Connected);
+            QCOMPARE(outcome.candidateCount, size_t{1});
+            QCOMPARE(log.paths, std::vector<std::wstring>{target.interfacePath});
+        }
+    }
+
     void CancelledBindOpensNothing()
     {
         const auto target = MakeDevice(L"340E22CC08A0", kTargetContainer);
@@ -278,6 +370,96 @@ private slots:
             BindToTargetInterface({target}, kTarget, CountingOpener(log, true), stop.get_token());
         QCOMPARE(outcome.status, MagicAAPBindStatus::Cancelled);
         QVERIFY(log.paths.empty());
+    }
+
+    void CancellationDuringLastOpenerFailureIsNotOpenFailed()
+    {
+        const auto target = MakeDevice(L"340E22CC08A0", kTargetContainer);
+        std::promise<void> openerEntered;
+        std::promise<void> releaseOpener;
+        auto entered = openerEntered.get_future();
+        auto release = releaseOpener.get_future();
+        std::stop_source stop;
+        OpenLog log;
+        auto result = std::async(std::launch::async, [&] {
+            return BindToTargetInterface(
+                {target}, kTarget,
+                [&](const MagicAAPDeviceInterface &device) -> void * {
+                    log.paths.push_back(device.interfacePath);
+                    openerEntered.set_value();
+                    release.wait();
+                    return nullptr;
+                },
+                stop.get_token());
+        });
+
+        const bool opened = entered.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+        stop.request_stop();
+        releaseOpener.set_value();
+        QVERIFY(opened);
+        const auto outcome = result.get();
+        QCOMPARE(outcome.status, MagicAAPBindStatus::Cancelled);
+        QCOMPARE(outcome.openAttempts, size_t{1});
+    }
+
+    void CancellationDuringSuccessfulOpenClosesTheHandle()
+    {
+        Core::MagicAAPWinRT::MagicAAPWinRTClient client;
+        const auto target = MakeDevice(L"340E22CC08A0", kTargetContainer);
+        HANDLE handle = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        QVERIFY(handle != nullptr);
+        client._driverInstalledProbe = [] { return true; };
+        client._driverRunningProbe = [] { return true; };
+        client._interfaceEnumerator = [target] { return std::vector{target}; };
+        std::promise<void> openerEntered;
+        std::promise<void> releaseOpener;
+        auto entered = openerEntered.get_future();
+        auto release = releaseOpener.get_future();
+        std::atomic<int> receiverStarts{0};
+        client._interfaceOpener = [&](const MagicAAPDeviceInterface &) -> void * {
+            openerEntered.set_value();
+            release.wait();
+            return handle;
+        };
+        client._receiverThreadStarter = [&](const auto &) {
+            ++receiverStarts;
+            return std::thread{};
+        };
+
+        std::stop_source stop;
+        auto result = std::async(std::launch::async, [&] {
+            return client.ConnectViaDeviceInterface(kTarget, stop.get_token());
+        });
+        const bool opened = entered.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+        stop.request_stop();
+        releaseOpener.set_value();
+        QVERIFY(opened);
+        QCOMPARE(result.get(), MagicAAPBindStatus::Cancelled);
+        QCOMPARE(receiverStarts.load(), 0);
+        QVERIFY(!client.IsConnected());
+        QCOMPARE(client._sessions.Current(), uint64_t{0});
+        DWORD flags = 0;
+        QVERIFY(!GetHandleInformation(handle, &flags));
+    }
+
+    void EnumerationExceptionIsAContainedTransportFailure()
+    {
+        Core::MagicAAPWinRT::MagicAAPWinRTClient client;
+        std::atomic<int> openCalls{0};
+        client._driverInstalledProbe = [] { return true; };
+        client._driverRunningProbe = [] { return true; };
+        client._interfaceEnumerator = []() -> std::vector<MagicAAPDeviceInterface> {
+            throw std::runtime_error("injected enumeration failure");
+        };
+        client._interfaceOpener = [&](const MagicAAPDeviceInterface &) -> void * {
+            ++openCalls;
+            return nullptr;
+        };
+
+        QCOMPARE(client.ConnectViaDeviceInterface(kTarget), MagicAAPBindStatus::TransportError);
+        QCOMPARE(openCalls.load(), 0);
+        QVERIFY(!client.IsConnected());
+        QCOMPARE(client._sessions.Current(), uint64_t{0});
     }
 
     void ReceiverCallbacksAreSnapshottedBeforeThreadStart()
@@ -319,6 +501,151 @@ private slots:
         sessions.Close();
         QVERIFY(!sessions.IsCurrent(second));
         QVERIFY(sessions.Start() > second);
+    }
+
+    void CallbackSnapshotFailureRollsBackSessionAndHandle()
+    {
+        Core::MagicAAPWinRT::MagicAAPWinRTClient client;
+        HANDLE handle = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        QVERIFY(handle != nullptr);
+        auto failOnCopy = std::make_shared<std::atomic<bool>>(false);
+        client.SetOnDataReceived(ThrowingCopyCallback{failOnCopy});
+        failOnCopy->store(true);
+        client._deviceHandle = handle;
+        client._usingDeviceInterface = true;
+        client._connected = true;
+        client._stopReceiver = false;
+
+        bool started = true;
+        {
+            std::lock_guard<std::mutex> lock(client._mutex);
+            started = client.StartReceiverSession();
+        }
+
+        QVERIFY(!started);
+        QVERIFY(!client.IsConnected());
+        QVERIFY(client._stopReceiver.load());
+        QCOMPARE(client._sessions.Current(), uint64_t{0});
+        QVERIFY(client._deviceHandle == nullptr);
+        QVERIFY(!client._usingDeviceInterface);
+        QVERIFY(!client._receiverThread.joinable());
+        DWORD flags = 0;
+        QVERIFY(!GetHandleInformation(handle, &flags));
+    }
+
+    void ReceiverThreadFailureRollsBackSessionAndHandle()
+    {
+        Core::MagicAAPWinRT::MagicAAPWinRTClient client;
+        HANDLE handle = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        QVERIFY(handle != nullptr);
+        client._deviceHandle = handle;
+        client._usingDeviceInterface = true;
+        client._connected = true;
+        client._stopReceiver = false;
+        client._receiverThreadStarter =
+            [](const Core::MagicAAPWinRT::MagicAAPWinRTClient::ReceiverSnapshot &) -> std::thread {
+            throw std::runtime_error("injected thread creation failure");
+        };
+
+        bool started = true;
+        {
+            std::lock_guard<std::mutex> lock(client._mutex);
+            started = client.StartReceiverSession();
+        }
+
+        QVERIFY(!started);
+        QVERIFY(!client.IsConnected());
+        QVERIFY(client._stopReceiver.load());
+        QCOMPARE(client._sessions.Current(), uint64_t{0});
+        QVERIFY(client._deviceHandle == nullptr);
+        QVERIFY(!client._usingDeviceInterface);
+        QVERIFY(!client._receiverThread.joinable());
+        DWORD flags = 0;
+        QVERIFY(!GetHandleInformation(handle, &flags));
+    }
+
+    void ConcurrentCallbackSessionsIssueUniqueMonotonicIds()
+    {
+        MagicAAPCallbackSession sessions;
+        constexpr size_t kThreads = 8;
+        constexpr size_t kStartsPerThread = 250;
+        std::vector<std::vector<uint64_t>> issued(kThreads);
+        std::vector<std::jthread> threads;
+        for (size_t thread = 0; thread < kThreads; ++thread) {
+            threads.emplace_back([&, thread] {
+                for (size_t start = 0; start < kStartsPerThread; ++start) {
+                    issued[thread].push_back(sessions.Start());
+                }
+            });
+        }
+        threads.clear();
+
+        std::vector<uint64_t> all;
+        for (const auto &threadIds : issued) {
+            all.insert(all.end(), threadIds.begin(), threadIds.end());
+        }
+        std::sort(all.begin(), all.end());
+        QCOMPARE(all.size(), kThreads * kStartsPerThread);
+        for (size_t i = 0; i < all.size(); ++i) {
+            QCOMPARE(all[i], static_cast<uint64_t>(i + 1));
+        }
+        QCOMPARE(sessions.Current(), all.back());
+        size_t currentCount = 0;
+        for (const auto session : all) {
+            currentCount += sessions.IsCurrent(session) ? 1 : 0;
+        }
+        QCOMPARE(currentCount, size_t{1});
+    }
+
+    void ConcurrentConnectsStartExactlyOneReceiverSession()
+    {
+        Core::MagicAAPWinRT::MagicAAPWinRTClient client;
+        const auto target = MakeDevice(L"340E22CC08A0", kTargetContainer);
+        HANDLE handle = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        QVERIFY(handle != nullptr);
+        std::atomic<int> enumerations{0};
+        std::atomic<int> opens{0};
+        std::atomic<int> receiverStarts{0};
+        client._driverInstalledProbe = [] { return true; };
+        client._driverRunningProbe = [] { return true; };
+        client._interfaceEnumerator = [&] {
+            ++enumerations;
+            return std::vector{target};
+        };
+        client._interfaceOpener = [&](const MagicAAPDeviceInterface &) -> void * {
+            ++opens;
+            return handle;
+        };
+        client._receiverThreadStarter =
+            [&](const Core::MagicAAPWinRT::MagicAAPWinRTClient::ReceiverSnapshot &) {
+                ++receiverStarts;
+                return std::thread{[&client] {
+                    while (!client._stopReceiver.load()) {
+                        std::this_thread::yield();
+                    }
+                }};
+            };
+
+        auto first = std::async(
+            std::launch::async, [&] { return client.ConnectViaDeviceInterface(kTarget); });
+        auto second = std::async(
+            std::launch::async, [&] { return client.ConnectViaDeviceInterface(kTarget); });
+        const std::array<MagicAAPBindStatus, 2> results{first.get(), second.get()};
+        QCOMPARE(std::count(results.begin(), results.end(), MagicAAPBindStatus::Connected), 1);
+        QCOMPARE(std::count(results.begin(), results.end(), MagicAAPBindStatus::TransportError), 1);
+        QCOMPARE(enumerations.load(), 1);
+        QCOMPARE(opens.load(), 1);
+        QCOMPARE(receiverStarts.load(), 1);
+        QVERIFY(client.IsConnected());
+        QVERIFY(client._receiverThread.joinable());
+        QVERIFY(client._sessions.Current() != 0);
+
+        client.Disconnect();
+        QVERIFY(!client.IsConnected());
+        QVERIFY(!client._receiverThread.joinable());
+        QCOMPARE(client._sessions.Current(), uint64_t{0});
+        DWORD flags = 0;
+        QVERIFY(!GetHandleInformation(handle, &flags));
     }
 };
 

@@ -21,6 +21,7 @@
 #include <memory>
 #include <optional>
 #include <stop_token>
+#include <stdexcept>
 #include <vector>
 
 #if defined(APD_OS_WIN)
@@ -33,6 +34,7 @@
 #include "AAPTestSupport.h"
 #include "Source/Core/AAPMessage.h"
 #include "Source/Core/AAPTransport.h"
+#include "Source/Core/ConnectionDiagnostics.h"
 
 #if defined(APD_OS_WIN)
     #include "Source/Core/AAPManager.h"
@@ -155,6 +157,59 @@ private:
     SOCKET _transportSocket{INVALID_SOCKET};
     SOCKET _peerSocket{INVALID_SOCKET};
     bool _initialized{false};
+};
+#endif
+
+#if defined(APD_OS_WIN)
+class UnavailableSeqPacketTransport final : public AAPTestSupport::FakeTransport
+{
+public:
+    bool Connect(uint64_t, std::stop_token) override
+    {
+        Close();
+        return false;
+    }
+};
+
+class BindStatusTransport final : public AAPTestSupport::FakeTransport
+{
+public:
+    explicit BindStatusTransport(Core::MagicAAPWinRT::MagicAAPBindStatus status) : _status{status}
+    {
+    }
+
+    bool Connect(uint64_t address, std::stop_token stop) override
+    {
+        return FakeTransport::Connect(address, stop) &&
+               _status == Core::MagicAAPWinRT::MagicAAPBindStatus::Connected;
+    }
+
+    Core::AAP::AAPTransportKind Kind() const override
+    {
+        return Core::AAP::AAPTransportKind::MagicAAP;
+    }
+
+    Core::MagicAAPWinRT::MagicAAPBindStatus LastBindStatus() const override
+    {
+        return _status;
+    }
+
+private:
+    Core::MagicAAPWinRT::MagicAAPBindStatus _status;
+};
+
+class ThrowingMagicAAPTransport final : public AAPTestSupport::FakeTransport
+{
+public:
+    bool Connect(uint64_t, std::stop_token) override
+    {
+        throw std::runtime_error("injected MagicAAP startup failure");
+    }
+
+    Core::AAP::AAPTransportKind Kind() const override
+    {
+        return Core::AAP::AAPTransportKind::MagicAAP;
+    }
 };
 #endif
 
@@ -681,6 +736,88 @@ private slots:
                 0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x01, 0x00, 0x00, 0x00}));
         manager._connected = false;
         manager._transport.store(nullptr);
+    }
+
+    void ManagerMapsBindStatusAndRecordsFinalDriverOpen_data()
+    {
+        using Core::AAP::ConnectFailure;
+        using Core::MagicAAPWinRT::MagicAAPBindStatus;
+        QTest::addColumn<int>("bindStatus");
+        QTest::addColumn<int>("expectedFailure");
+        QTest::newRow("connected") << static_cast<int>(MagicAAPBindStatus::Connected)
+                                   << static_cast<int>(ConnectFailure::None);
+        QTest::newRow("no-match") << static_cast<int>(MagicAAPBindStatus::NoMatch)
+                                  << static_cast<int>(ConnectFailure::NoMatch);
+        QTest::newRow("open-failed") << static_cast<int>(MagicAAPBindStatus::OpenFailed)
+                                     << static_cast<int>(ConnectFailure::OpenFailed);
+        QTest::newRow("driver-missing") << static_cast<int>(MagicAAPBindStatus::DriverMissing)
+                                        << static_cast<int>(ConnectFailure::DriverMissing);
+        QTest::newRow("transport-error") << static_cast<int>(MagicAAPBindStatus::TransportError)
+                                         << static_cast<int>(ConnectFailure::TransportError);
+        QTest::newRow("cancelled") << static_cast<int>(MagicAAPBindStatus::Cancelled)
+                                   << static_cast<int>(ConnectFailure::TransportError);
+    }
+
+    void ManagerMapsBindStatusAndRecordsFinalDriverOpen()
+    {
+        using Core::AAP::ConnectFailure;
+        using Core::MagicAAPWinRT::MagicAAPBindStatus;
+        QFETCH(int, bindStatus);
+        QFETCH(int, expectedFailure);
+        const auto status = static_cast<MagicAAPBindStatus>(bindStatus);
+
+        Core::AAP::Manager manager;
+        auto seqPacket = std::make_shared<UnavailableSeqPacketTransport>();
+        auto magicAAP = std::make_shared<BindStatusTransport>(status);
+        manager._driverInstalledProbe = [] { return true; };
+        manager._driverRunningProbe = [] { return true; };
+        manager._transportFactory = [seqPacket, magicAAP](Core::AAP::AAPTransportKind kind) {
+            if (kind == Core::AAP::AAPTransportKind::SeqPacket) {
+                return std::shared_ptr<Core::AAP::AAPTransport>{seqPacket};
+            }
+            return std::shared_ptr<Core::AAP::AAPTransport>{magicAAP};
+        };
+
+        Core::Diagnostics::Recorder::Instance().Reset();
+        ConnectFailure failure = ConnectFailure::None;
+        const auto transport = manager.ConnectTransport({1, 1}, {}, failure);
+        const auto report = Core::Diagnostics::Recorder::Instance().BuildReport({});
+        if (status == MagicAAPBindStatus::Connected) {
+            QVERIFY(transport != nullptr);
+            QVERIFY(report.find("driver_open  ok") != std::string::npos);
+            QVERIFY(report.find("driver_open  FAILED") == std::string::npos);
+            transport->Close();
+        }
+        else {
+            QVERIFY(transport == nullptr);
+            QVERIFY(report.find("driver_open  FAILED") != std::string::npos);
+            QVERIFY(report.find("driver_open  ok") == std::string::npos);
+        }
+        QCOMPARE(failure, static_cast<ConnectFailure>(expectedFailure));
+    }
+
+    void ManagerRecordsDriverOpenFailureWhenMagicConnectThrows()
+    {
+        Core::AAP::Manager manager;
+        auto seqPacket = std::make_shared<UnavailableSeqPacketTransport>();
+        auto magicAAP = std::make_shared<ThrowingMagicAAPTransport>();
+        manager._driverInstalledProbe = [] { return true; };
+        manager._driverRunningProbe = [] { return true; };
+        manager._transportFactory = [seqPacket, magicAAP](Core::AAP::AAPTransportKind kind) {
+            if (kind == Core::AAP::AAPTransportKind::SeqPacket) {
+                return std::shared_ptr<Core::AAP::AAPTransport>{seqPacket};
+            }
+            return std::shared_ptr<Core::AAP::AAPTransport>{magicAAP};
+        };
+
+        Core::Diagnostics::Recorder::Instance().Reset();
+        Core::AAP::ConnectFailure failure = Core::AAP::ConnectFailure::None;
+        const auto transport = manager.ConnectTransport({1, 1}, {}, failure);
+        const auto report = Core::Diagnostics::Recorder::Instance().BuildReport({});
+        QVERIFY(transport == nullptr);
+        QCOMPARE(failure, Core::AAP::ConnectFailure::TransportError);
+        QVERIFY(report.find("driver_open  FAILED") != std::string::npos);
+        QVERIFY(report.find("driver_open  ok") == std::string::npos);
     }
 
     void ManagerConnectInitializesBeforeConnectionGateOpens()
