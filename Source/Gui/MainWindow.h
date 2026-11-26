@@ -58,6 +58,11 @@ public:
     void Show();
     void ShowWithoutActivating();
 
+    // The application-level lid-popup wiring between the AirPods manager and this window
+    // (blueprint 2.6). Lives here so `ApdApplication` and the UI tests install one and the
+    // same signal chain instead of the tests re-implementing the policy.
+    void ConnectLidPopup(Core::AirPods::Manager *manager);
+
     void UpdateState(const Core::AirPods::State &state);
     void Available();
     void Unavailable();

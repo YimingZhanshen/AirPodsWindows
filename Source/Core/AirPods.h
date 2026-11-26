@@ -205,6 +205,9 @@ public:
     enum class Lid : uint8_t { Opened, Closed, Unobservable };
 
     static constexpr std::chrono::seconds kMemory{60};
+    // Blueprint 2.6 (D6): an opened lid pops the window at most once per cooldown window, so
+    // rapid open/close cycling cannot bombard the desktop. Closes are reported regardless.
+    static constexpr std::chrono::seconds kCooldown{60};
 
     std::optional<bool> Update(std::optional<Lid> oldLid, Lid newLid, Timestamp now);
     void OnLost(Timestamp now);
@@ -214,6 +217,7 @@ private:
     mutable std::mutex _mutex;
     std::optional<Lid> _lastLid;
     std::optional<Timestamp> _lostAt;
+    std::optional<Timestamp> _lastPopupAt;
 };
 
 // Keeps an ear-detection baseline even when StateManager drops and recreates its cached state.

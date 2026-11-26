@@ -269,8 +269,6 @@ void ApdApplication::ConnectAirPodsManager()
         manager, &Core::AirPods::Manager::StateUpdated, _taskbarStatus.get(),
         &Gui::TaskbarStatus::UpdateState);
     connect(
-        manager, &Core::AirPods::Manager::Disconnected, mainWindow, &Gui::MainWindow::Disconnect);
-    connect(
         manager, &Core::AirPods::Manager::Disconnected, _trayIcon.get(),
         &Gui::TrayIcon::Disconnect);
     connect(
@@ -293,19 +291,10 @@ void ApdApplication::ConnectAirPodsManager()
     connect(
         manager, &Core::AirPods::Manager::DeviceConnectionChanged, _lowAudioLatencyController.get(),
         &Core::LowAudioLatency::Controller::SetDeviceConnectedSafely);
-    connect(
-        manager, &Core::AirPods::Manager::LidToggled, mainWindow,
-        [mainWindow](bool opened) {
-            if (opened) {
-                if (Core::Settings::GetCurrent().popup_on_lid_open) {
-                    emit mainWindow->ShowWithoutActivatingSafely();
-                }
-            }
-            else {
-                emit mainWindow->HideSafely();
-            }
-        },
-        Qt::QueuedConnection);
+    // Blueprint 2.6: the open-case popup policy (settings gate, never activating the window,
+    // releasing the hold on disconnect) lives in `MainWindow::ConnectLidPopup` so the UI tests
+    // exercise the very same wiring (see D6).
+    mainWindow->ConnectLidPopup(manager);
     // Blueprint 1.3: surface AAP connection failures as a tray balloon with an
     // actionable hint instead of a silent feature blackout.
     connect(

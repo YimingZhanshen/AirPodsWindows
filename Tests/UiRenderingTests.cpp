@@ -8,6 +8,7 @@
 #include <QDialogButtonBox>
 #include <QDesktopServices>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFontDatabase>
 #include <QLabel>
 #include <QListWidget>
@@ -35,6 +36,7 @@
 #include <magic_enum.hpp>
 
 #include "Source/Core/QuickConnect.h"
+#include "Source/Core/Settings.h"
 #include "Source/Core/SettingsRepository.h"
 #include "Source/Gui/MainWindow.h"
 #include "Source/Gui/Widget/ActivityIndicator.h"
@@ -140,6 +142,23 @@ struct SimulatedDownload {
         return [this](const auto &info, const auto &progress) { return Run(info, progress); };
     }
 };
+
+// Manager without the scanner running: the popup tests drive the production signal chain from
+// the manager side while the Bluetooth scanner thread and BLE hardware stay out of the test.
+class PopupTestManager : public Core::AirPods::Manager
+{
+public:
+    using Core::AirPods::Manager::Manager;
+
+    void SimulateLidToggled(bool opened)
+    {
+        emit LidToggled(opened);
+    }
+    void SimulateDisconnected()
+    {
+        emit Disconnected();
+    }
+};
 } // namespace
 
 class UiRenderingTests : public QObject
@@ -166,6 +185,128 @@ private Q_SLOTS:
         QCOMPARE(QApplication::activeWindow(), activeWindow);
         window.close();
         QTRY_VERIFY(!window.isVisible());
+    }
+
+    // D6: the acceptance above is exercised through the exact wiring the application installs
+    // (`MainWindow::ConnectLidPopup`, called from `ApdApplication::ConnectAirPodsManager`), so a
+    // regression in that chain, not just in the widget, fails the suite.
+    void LidPopupWiringShowsInsideOneSecondWithoutActivation()
+    {
+        QWidget holder;
+        holder.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&holder));
+        holder.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&holder));
+        auto *activeWindow = QApplication::activeWindow();
+
+        PopupTestManager manager;
+        Gui::MainWindow window;
+        Core::AirPods::State state;
+        state.model = Core::AirPods::Model::AirPods_Pro_2;
+        state.displayName = QStringLiteral("AirPods Pro");
+        window.UpdateState(state);
+        window.ConnectLidPopup(&manager);
+
+        // Manager-side lid announcement; nothing here calls the window directly.
+        QElapsedTimer elapsed;
+        elapsed.start();
+        manager.SimulateLidToggled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(window.isVisible(), 1000);
+        QVERIFY(elapsed.elapsed() <= 1000);
+        QCOMPARE(QApplication::activeWindow(), activeWindow);
+
+        // The wired show goes through the same screen picking: the settled popup sits inside
+        // the cursor's screen with the 24 px margin (registered at DPI 1/1.25/1.5/2 in CMake).
+        if (const auto *targetScreen = QGuiApplication::screenAt(QCursor::pos());
+            targetScreen != nullptr)
+        {
+            QTest::qWait(700); // let the slide-in animation reach its target
+            const auto expected =
+                Gui::PopupPosition(targetScreen->availableGeometry(), window.size(), {24, 24});
+            QCOMPARE(window.pos(), expected);
+            QVERIFY(targetScreen->availableGeometry().intersects(window.frameGeometry()));
+        }
+
+        // The lid closing releases the popup through the same chain.
+        manager.SimulateLidToggled(false);
+        QTRY_VERIFY(!window.isVisible());
+        QCOMPARE(QApplication::activeWindow(), activeWindow);
+    }
+
+    void LidPopupWiringHonorsPopupOnLidOpenSetting()
+    {
+        PopupTestManager manager;
+        Gui::MainWindow window;
+        window.ConnectLidPopup(&manager);
+
+        {
+            auto settings = Core::Settings::ModifiableAccess();
+            settings->popup_on_lid_open = false;
+        }
+        manager.SimulateLidToggled(true);
+        QTest::qWait(400); // the queued delivery has run; the policy declined the popup
+        QVERIFY(!window.isVisible());
+
+        {
+            auto settings = Core::Settings::ModifiableAccess();
+            settings->popup_on_lid_open = true;
+        }
+        manager.SimulateLidToggled(true);
+        QTRY_VERIFY_WITH_TIMEOUT(window.isVisible(), 1000);
+
+        manager.SimulateLidToggled(false);
+        QTRY_VERIFY(!window.isVisible());
+    }
+
+    void LidPopupWiringReleasesOpenLidHoldOnDisconnect()
+    {
+        PopupTestManager manager;
+        Gui::MainWindow window;
+        auto *autoHide = window.findChild<QTimer *>("autoHideTimer");
+        auto *lidSafety = window.findChild<QTimer *>("lidSafetyTimer");
+        QVERIFY(autoHide != nullptr);
+        QVERIFY(lidSafety != nullptr);
+
+        Core::AirPods::State state;
+        state.model = Core::AirPods::Model::AirPods_4;
+        state.displayName = QStringLiteral("AirPods");
+        state.caseBox.isBothPodsInCase = true;
+        state.caseBox.isLidOpened = true;
+        window.UpdateState(state);
+        window.ConnectLidPopup(&manager);
+
+        manager.SimulateLidToggled(true);
+        QTRY_VERIFY(window.isVisible());
+        QTest::qWait(700); // shown and held by the open lid: only the 90 s cap is armed
+        QVERIFY(lidSafety->isActive());
+        QVERIFY(!autoHide->isActive());
+
+        // The manager-side disconnection (also the advertisement-loss path) releases the hold,
+        // so the popup leaves instead of waiting for a lid close that can never be observed.
+        manager.SimulateDisconnected();
+        QTRY_VERIFY(!lidSafety->isActive());
+        QVERIFY(autoHide->isActive());
+    }
+
+    void LidPopupCloseButtonHidesPopupWithoutDeletingIt()
+    {
+        Gui::MainWindow window;
+        Core::AirPods::State state;
+        state.model = Core::AirPods::Model::AirPods_4;
+        state.displayName = QStringLiteral("AirPods");
+        window.UpdateState(state);
+        window.Show();
+        QTRY_VERIFY(window.isVisible());
+
+        auto *closeButton = window.findChild<Gui::Widget::CloseButton *>();
+        QVERIFY(closeButton != nullptr);
+        QTest::mouseClick(closeButton, Qt::LeftButton);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.isVisible(), 1500);
+
+        // The hidden popup survives for the next lid opening (it is reused, not destroyed).
+        QVERIFY(!window.testAttribute(Qt::WA_DeleteOnClose));
+        window.Show();
+        QTRY_VERIFY(window.isVisible());
     }
 
     void PopupFitsEveryAvailableScreen()

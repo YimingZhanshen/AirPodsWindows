@@ -365,6 +365,13 @@ std::optional<bool> LidTracker::Update(std::optional<Lid> oldLid, Lid newLid, Ti
     _lostAt.reset();
 
     if (newLid == Lid::Opened && previous != Lid::Opened) {
+        // The cooldown starts from the popup that was actually announced, not from these
+        // transitions: a suppressed re-open must not extend it, and a close still hides the
+        // window even while opens are suppressed.
+        if (_lastPopupAt.has_value() && now - *_lastPopupAt <= kCooldown) {
+            return std::nullopt;
+        }
+        _lastPopupAt = now;
         return true;
     }
     // A closed lid is only reported against a known earlier state, so the first state after
@@ -386,6 +393,7 @@ void LidTracker::Reset()
     std::lock_guard<std::mutex> lock{_mutex};
     _lastLid.reset();
     _lostAt.reset();
+    _lastPopupAt.reset();
 }
 
 } // namespace Core::AirPods::Details

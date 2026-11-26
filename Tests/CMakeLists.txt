@@ -152,6 +152,22 @@ foreach(scale_factor 1 1.25 1.5 2)
         NotificationRenderingScale${scale_suffix}
         PROPERTIES ENVIRONMENT "QT_SCALE_FACTOR=${scale_factor}"
     )
+    add_test(
+        NAME LidPopupFitScale${scale_suffix}
+        COMMAND UiRenderingTests PopupFitsEveryAvailableScreen
+    )
+    set_tests_properties(
+        LidPopupFitScale${scale_suffix}
+        PROPERTIES ENVIRONMENT "QT_SCALE_FACTOR=${scale_factor}"
+    )
+    add_test(
+        NAME LidPopupWiringScale${scale_suffix}
+        COMMAND UiRenderingTests LidPopupWiringShowsInsideOneSecondWithoutActivation
+    )
+    set_tests_properties(
+        LidPopupWiringScale${scale_suffix}
+        PROPERTIES ENVIRONMENT "QT_SCALE_FACTOR=${scale_factor}"
+    )
 endforeach()
 
 foreach(test_target AirPodsDomainTests QuickConnectTests AAPProtocolTests AAPConnectionStateMachineTests AAPTransportTests AnimationViewTests UiRenderingTests)

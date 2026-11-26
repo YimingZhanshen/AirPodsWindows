@@ -241,6 +241,8 @@ private Q_SLOTS:
     void AcceptsKnownModelAfterUnknownAdvertisement();
     void TracksLidAcrossShortGaps();
     void TracksLidWhilePodsAreOut();
+    void LidPopupCooldownBlocksRapidRepeats();
+    void LidPopupWiringLivesInMainWindow();
     void EarDetectionTrackerSurvivesStateLoss();
     void PackagesCompatibleLowLatencySilence();
     void LoadsSettingsThroughRepository();
@@ -867,9 +869,72 @@ void AirPodsDomainTests::TracksLidWhilePodsAreOut()
     QCOMPARE(
         tracker.Update(Lid::Unobservable, Lid::Closed, start + 3s), std::optional<bool>{false});
     QCOMPARE(tracker.Update(Lid::Closed, Lid::Unobservable, start + 4s), std::nullopt);
-    QCOMPARE(tracker.Update(Lid::Unobservable, Lid::Opened, start + 5s), std::optional<bool>{true});
+    // Pods back in with the lid still open is a re-open inside the popup cooldown (blueprint
+    // 2.6): no second announcement.
+    QCOMPARE(tracker.Update(Lid::Unobservable, Lid::Opened, start + 5s), std::nullopt);
+    // A close still releases the popup while opens are suppressed.
+    QCOMPARE(tracker.Update(Lid::Opened, Lid::Closed, start + 6s), std::optional<bool>{false});
+    // Once the cooldown measured from the announced popup has passed, the same transition
+    // announces again.
+    QCOMPARE(tracker.Update(Lid::Closed, Lid::Opened, start + 61s), std::optional<bool>{true});
     tracker.Reset();
-    QCOMPARE(tracker.Update(std::nullopt, Lid::Closed, start + 6s), std::nullopt);
+    QCOMPARE(tracker.Update(std::nullopt, Lid::Closed, start + 62s), std::nullopt);
+}
+
+void AirPodsDomainTests::LidPopupCooldownBlocksRapidRepeats()
+{
+    using Lid = LidTracker::Lid;
+    const LidTracker::Timestamp start{};
+    LidTracker tracker;
+
+    // The first lid open announces the popup and starts the 60 s cooldown.
+    QCOMPARE(tracker.Update(std::nullopt, Lid::Opened, start), std::optional<bool>{true});
+
+    // Rapid open/close cycles inside the cooldown window announce nothing, while every close
+    // still hides the visible popup.
+    for (const auto offset : {10s, 20s, 30s, 45s}) {
+        QCOMPARE(
+            tracker.Update(Lid::Opened, Lid::Closed, start + offset), std::optional<bool>{false});
+        QCOMPARE(tracker.Update(Lid::Closed, Lid::Opened, start + offset + 1s), std::nullopt);
+    }
+
+    // Suppressed re-opens do not extend the cooldown: from the announced popup at `start`, the
+    // next open beyond 60 s pops again.
+    QCOMPARE(tracker.Update(Lid::Opened, Lid::Closed, start + 59s), std::optional<bool>{false});
+    QCOMPARE(tracker.Update(Lid::Closed, Lid::Opened, start + 61s), std::optional<bool>{true});
+
+    // Rebinding or disconnecting resets the tracker, so a freshly connected device is never
+    // muted by the previous session's popup.
+    QCOMPARE(tracker.Update(Lid::Opened, Lid::Closed, start + 62s), std::optional<bool>{false});
+    tracker.Reset();
+    QCOMPARE(tracker.Update(std::nullopt, Lid::Opened, start + 63s), std::optional<bool>{true});
+}
+
+void AirPodsDomainTests::LidPopupWiringLivesInMainWindow()
+{
+    const auto readSource = [](const char *relativePath) {
+        QFile file{QString{APD_SOURCE_DIR} + "/" + relativePath};
+        if (!file.open(QIODevice::ReadOnly)) {
+            return QString{};
+        }
+        return QString::fromUtf8(file.readAll());
+    };
+
+    // The application must install the tested seam rather than keep a private copy of the
+    // popup policy, so the UI integration test exercises the production wiring (D6).
+    const auto application = readSource("Source/Application.cpp");
+    QVERIFY(!application.isEmpty());
+    QVERIFY(application.count("ConnectLidPopup(manager)") == 1);
+    QVERIFY(!application.contains("popup_on_lid_open"));
+    QVERIFY(!application.contains("LidToggled"));
+
+    const auto mainWindow = readSource("Source/Gui/MainWindow.cpp");
+    QVERIFY(!mainWindow.isEmpty());
+    QVERIFY(mainWindow.contains("&Core::AirPods::Manager::LidToggled"));
+    QVERIFY(mainWindow.contains("Core::Settings::GetCurrent().popup_on_lid_open"));
+    QVERIFY(mainWindow.contains("emit ShowWithoutActivatingSafely();"));
+    QVERIFY(mainWindow.contains("emit HideSafely();"));
+    QVERIFY(mainWindow.contains("&Core::AirPods::Manager::Disconnected"));
 }
 
 void AirPodsDomainTests::EarDetectionTrackerSurvivesStateLoss()

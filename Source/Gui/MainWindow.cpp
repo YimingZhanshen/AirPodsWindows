@@ -224,6 +224,26 @@ void MainWindow::Disconnect()
     SetHoldForOpenLid(false);
 }
 
+void MainWindow::ConnectLidPopup(Core::AirPods::Manager *manager)
+{
+    connect(
+        manager, &Core::AirPods::Manager::LidToggled, this,
+        [this](bool opened) {
+            if (opened) {
+                if (Core::Settings::GetCurrent().popup_on_lid_open) {
+                    emit ShowWithoutActivatingSafely();
+                }
+            }
+            else {
+                emit HideSafely();
+            }
+        },
+        Qt::QueuedConnection);
+    // A disconnected or lost device can no longer report the lid closing, so release the hold an
+    // opened lid set; the auto-hide then takes the popup away.
+    connect(manager, &Core::AirPods::Manager::Disconnected, this, &MainWindow::Disconnect);
+}
+
 void MainWindow::Bind()
 {
     LOG(Info, "MainWindow::Bind");
