@@ -543,6 +543,26 @@ Precisa primeiro de emparelhar os seus AirPods nas definições de Bluetooth do 
         <translation>Detecção automática de ouvidos</translation>
     </message>
     <message>
+        <source>Ear detection sensitivity</source>
+        <translation>Sensibilidade da deteção no ouvido</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>Baixa</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Normal</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>Alta</translation>
+    </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>Debounce da deteção no ouvido: baixa 600 ms, normal 300 ms, alta 150 ms. A sensibilidade maior reage mais cedo.</translation>
+    </message>
+    <message>
         <source>Low audio latency</source>
         <translation>Baixa latência de áudio</translation>
     </message>

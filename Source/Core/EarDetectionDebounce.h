@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <optional>
 
 namespace Core {
 
@@ -16,6 +17,10 @@ public:
     explicit EarDetectionDebounce(EarDetectSensitivity sensitivity = EarDetectSensitivity::Normal);
 
     EarState Update(EarState candidate, std::chrono::milliseconds now);
+    // Re-evaluates an unchanged candidate without requiring another packet.
+    EarState Advance(std::chrono::milliseconds now);
+    std::optional<EarState> PendingCandidate() const;
+    std::optional<std::chrono::milliseconds> Deadline(std::chrono::milliseconds now) const;
     void Reset();
 
     // Preserves the stable state but discards pending work when the timing policy changes.

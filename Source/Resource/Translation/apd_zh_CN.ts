@@ -527,6 +527,26 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <translation>自动入耳检测</translation>
     </message>
     <message>
+        <source>Ear detection sensitivity</source>
+        <translation>入耳检测灵敏度</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>低</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>标准</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>高</translation>
+    </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>入耳检测防抖：低 600 毫秒、标准 300 毫秒、高 150 毫秒。灵敏度越高，反应越快。</translation>
+    </message>
+    <message>
         <source>Low audio latency</source>
         <translation>低音频延迟</translation>
     </message>

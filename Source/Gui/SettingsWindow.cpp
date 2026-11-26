@@ -93,8 +93,8 @@ void ConfigureComboBoxPopup(QComboBox *comboBox)
 SettingsWindow::SettingsWindow(
     std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect,
     std::function<Core::AirPods::Manager &()> getAirPodsManager, QWidget *parent)
-    : QDialog{parent}, _getCurrentLocaleIndex{std::move(getCurrentLocaleIndex)}, _quickConnect{
-                                                                                     quickConnect}
+    : QDialog{parent}, _getCurrentLocaleIndex{std::move(getCurrentLocaleIndex)},
+      _quickConnect{quickConnect}
 {
     // getAirPodsManager is deliberately NOT stored here: this window is built
     // by the tray icon before the application's AirPods manager exists, so any
@@ -133,9 +133,14 @@ SettingsWindow::SettingsWindow(
     _ui.cbAppearanceMode->setItemDelegate(new QStyledItemDelegate{_ui.cbAppearanceMode});
     _ui.cbTrayQuickConnectDevice->setItemDelegate(
         new QStyledItemDelegate{_ui.cbTrayQuickConnectDevice});
+    _ui.cbEarDetectSensitivity->setItemDelegate(
+        new QStyledItemDelegate{_ui.cbEarDetectSensitivity});
     ConfigureComboBoxPopup(_ui.cbLanguages);
     ConfigureComboBoxPopup(_ui.cbAppearanceMode);
     ConfigureComboBoxPopup(_ui.cbTrayQuickConnectDevice);
+    ConfigureComboBoxPopup(_ui.cbEarDetectSensitivity);
+    _ui.lbEarDetectSensitivity->setBuddy(_ui.cbEarDetectSensitivity);
+    _ui.cbEarDetectSensitivity->setAccessibleName(_ui.lbEarDetectSensitivity->text());
     _ui.lbAppearance->setBuddy(_ui.cbAppearanceMode);
     _ui.cbAppearanceMode->setAccessibleName(_ui.lbAppearance->text());
 
@@ -184,6 +189,10 @@ SettingsWindow::SettingsWindow(
     _ui.cbNoiseControlMode->addItem(tr("Noise Cancellation"));
     _ui.cbNoiseControlMode->addItem(tr("Transparency"));
     _ui.cbNoiseControlMode->addItem(tr("Adaptive"));
+
+    _ui.cbEarDetectSensitivity->addItem(tr("Low"));
+    _ui.cbEarDetectSensitivity->addItem(tr("Normal"));
+    _ui.cbEarDetectSensitivity->addItem(tr("High"));
 
     _ui.hsMaxReceivingRange->setMinimum(50);
     _ui.hsMaxReceivingRange->setMaximum(100);
@@ -264,6 +273,14 @@ SettingsWindow::SettingsWindow(
             On_cbAutoEarDetection_toggled(checked);
         }
     });
+
+    connect(
+        _ui.cbEarDetectSensitivity, qOverload<int>(&QComboBox::currentIndexChanged), this,
+        [this](int index) {
+            if (_trigger) {
+                On_cbEarDetectSensitivity_currentIndexChanged(index);
+            }
+        });
 
     connect(_ui.cbConversationalAwareness, &QCheckBox::toggled, this, [this](bool checked) {
         if (_trigger) {
@@ -402,6 +419,7 @@ void SettingsWindow::UpdateDescriptions()
 
     _ui.lbDescLowAudioLatency->setText(constMetaFields.low_audio_latency.Description());
     _ui.lbDescAutoEarDetection->setText(constMetaFields.automatic_ear_detection.Description());
+    _ui.lbDescEarDetectSensitivity->setText(constMetaFields.ear_detect_sensitivity.Description());
     _ui.lbDescLidPopup->setText(constMetaFields.popup_on_lid_open.Description());
     _ui.lbDescTrayQuickConnect->setText(constMetaFields.tray_quick_connect_enabled.Description());
     _ui.lbDescAudioAutoConnect->setText(constMetaFields.audio_auto_connect_enabled.Description());
@@ -597,6 +615,8 @@ void SettingsWindow::Update(const Fields &fields, bool trigger)
     _ui.cbLowAudioLatency->setChecked(fields.low_audio_latency);
 
     _ui.cbAutoEarDetection->setChecked(fields.automatic_ear_detection);
+    _ui.cbEarDetectSensitivity->setCurrentIndex(static_cast<int>(fields.ear_detect_sensitivity));
+    _ui.cbEarDetectSensitivity->setEnabled(fields.automatic_ear_detection);
     _ui.cbLidPopup->setChecked(fields.popup_on_lid_open);
 
     _ui.cbConversationalAwareness->setChecked(fields.conversational_awareness);
@@ -801,6 +821,17 @@ void SettingsWindow::On_cbLowAudioLatency_toggled(bool checked)
 void SettingsWindow::On_cbAutoEarDetection_toggled(bool checked)
 {
     ModifiableAccess()->automatic_ear_detection = checked;
+    _ui.cbEarDetectSensitivity->setEnabled(checked);
+}
+
+void SettingsWindow::On_cbEarDetectSensitivity_currentIndexChanged(int index)
+{
+    if (index < static_cast<int>(Core::EarDetectSensitivity::Low) ||
+        index > static_cast<int>(Core::EarDetectSensitivity::High))
+    {
+        return;
+    }
+    ModifiableAccess()->ear_detect_sensitivity = static_cast<Core::EarDetectSensitivity>(index);
 }
 
 void SettingsWindow::On_cbConversationalAwareness_toggled(bool checked)

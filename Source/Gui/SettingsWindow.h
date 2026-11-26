@@ -102,6 +102,7 @@ private:
     void On_cbLidPopup_toggled(bool checked);
     void On_cbTrayQuickConnectDevice_currentIndexChanged(int index);
     void On_cbAutoEarDetection_toggled(bool checked);
+    void On_cbEarDetectSensitivity_currentIndexChanged(int index);
     void On_cbConversationalAwareness_toggled(bool checked);
     void On_sliderConversationalAwarenessVolume_valueChanged(int value);
     void On_cbPersonalizedVolume_toggled(bool checked);
@@ -122,6 +123,10 @@ private:
         _ui.retranslateUi(this);
         _ui.cbLowAudioLatency->setAccessibleName(_ui.lbLowAudioLatency->text());
         _ui.cbAutoEarDetection->setAccessibleName(_ui.lbAutoEarDetection->text());
+        _ui.cbEarDetectSensitivity->setAccessibleName(_ui.lbEarDetectSensitivity->text());
+        _ui.cbEarDetectSensitivity->setItemText(0, tr("Low"));
+        _ui.cbEarDetectSensitivity->setItemText(1, tr("Normal"));
+        _ui.cbEarDetectSensitivity->setItemText(2, tr("High"));
         _ui.cbConversationalAwareness->setAccessibleName(_ui.lbConversationalAwareness->text());
         _ui.cbPersonalizedVolume->setAccessibleName(_ui.lbPersonalizedVolume->text());
         _ui.cbLoudSoundReduction->setAccessibleName(_ui.lbLoudSoundReduction->text());

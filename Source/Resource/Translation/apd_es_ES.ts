@@ -571,6 +571,26 @@ Primero debes emparejar tus AirPods en la configuración de Bluetooth de Windows
         <translation>Detección automática de oreja</translation>
     </message>
     <message>
+        <source>Ear detection sensitivity</source>
+        <translation>Sensibilidad de detección en el oído</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>Baja</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Normal</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>Alta</translation>
+    </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>Antirrebote de detección en el oído: baja 600 ms, normal 300 ms, alta 150 ms. Una sensibilidad mayor reacciona antes.</translation>
+    </message>
+    <message>
         <source>Low audio latency</source>
         <translation>Baja latencia de audio</translation>
     </message>

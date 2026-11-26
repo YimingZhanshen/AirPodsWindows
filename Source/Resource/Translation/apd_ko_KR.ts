@@ -531,6 +531,26 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
         <translation>자동으로 착용 감지</translation>
     </message>
     <message>
+        <source>Ear detection sensitivity</source>
+        <translation>귀 감지 민감도</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>낮음</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>보통</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>높음</translation>
+    </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>귀 감지 디바운스: 낮음 600ms, 보통 300ms, 높음 150ms. 민감도가 높을수록 더 빨리 반응합니다.</translation>
+    </message>
+    <message>
         <source>Low audio latency</source>
         <translation>오디오 지연 최소화</translation>
     </message>

@@ -544,6 +544,26 @@ Devi prima abbinare le tue AirPods nelle impostazioni Bluetooth di Windows.</tra
         <translation>Rilevamento automatico dell&apos;orecchio</translation>
     </message>
     <message>
+        <source>Ear detection sensitivity</source>
+        <translation>Sensibilità del rilevamento nell'orecchio</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>Bassa</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Normale</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>Alta</translation>
+    </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>Debounce del rilevamento nell'orecchio: bassa 600 ms, normale 300 ms, alta 150 ms. Una sensibilità maggiore reagisce prima.</translation>
+    </message>
+    <message>
         <source>Low audio latency</source>
         <translation>Audio a bassa latenza</translation>
     </message>

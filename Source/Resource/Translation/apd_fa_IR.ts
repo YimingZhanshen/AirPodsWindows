@@ -543,6 +543,26 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <translation>تشخیص خودکار قرارگرفتن در گوش</translation>
     </message>
     <message>
+        <source>Ear detection sensitivity</source>
+        <translation>حساسیت تشخیص داخل گوش</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>کم</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>معمولی</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>زیاد</translation>
+    </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>تأخیر تشخیص داخل گوش: کم ۶۰۰ میلی‌ثانیه، معمولی ۳۰۰ میلی‌ثانیه، زیاد ۱۵۰ میلی‌ثانیه. حساسیت بالاتر سریع‌تر واکنش نشان می‌دهد.</translation>
+    </message>
+    <message>
         <source>Low audio latency</source>
         <translation>تأخیر صوتی کم</translation>
     </message>

@@ -125,6 +125,7 @@ public:
 
     bool IsLeftInEar() const;
     bool IsRightInEar() const;
+    bool IsPrimaryLeft() const;
 
     AirPods Desensitize() const;
 

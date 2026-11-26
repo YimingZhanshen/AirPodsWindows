@@ -158,6 +158,8 @@ QString ResolveDisplayName(QString deviceName, Model model)
 
 namespace {
 
+using EarDetectionClock = Details::EarDetectionTracker::Clock;
+
 EarState EarStateFromBle(const PodState &pod)
 {
     if (!pod.battery.Available()) {
@@ -184,12 +186,13 @@ EarState EarStateFromAap(AAP::EarStatus status)
     }
 }
 
-EarState FuseEarState(const std::optional<EarState> &aap, const std::optional<EarState> &ble)
+EarState CombineEarStates(EarState left, EarState right);
+
+EarState FuseAggregateEarState(EarState aap, EarState ble)
 {
-    if (aap.has_value() && *aap != EarState::Unknown) {
-        return *aap;
-    }
-    return ble.value_or(EarState::Unknown);
+    // A complete/known AAP aggregate describes both physical pods regardless of role order.
+    // Partial/unknown AAP aggregates fall back to BLE rather than inventing an ear mapping.
+    return aap == EarState::Unknown ? ble : aap;
 }
 
 EarState CombineEarStates(EarState left, EarState right)
@@ -210,29 +213,72 @@ EarState CombineEarStates(EarState left, EarState right)
 
 } // namespace
 
-std::optional<EarState> Details::EarDetectionTracker::UpdateBle(const State &state, Timestamp now)
+std::optional<EarState> Details::EarDetectionTracker::UpdateBle(
+    const State &state, Timestamp now, std::optional<uint64_t> expectedEpoch)
 {
     std::lock_guard<std::mutex> lock{_mutex};
+    if (expectedEpoch.has_value() && *expectedEpoch != _epoch) {
+        return std::nullopt;
+    }
+    if (_bleAt.has_value() && now < *_bleAt) {
+        return std::nullopt; // An out-of-order reading cannot refresh the source.
+    }
     _ble.left = EarStateFromBle(state.pods.left);
     _ble.right = EarStateFromBle(state.pods.right);
+    _bleAt = now;
+    _bleConfirmed = true;
     return UpdateCandidate(now);
 }
 
 std::optional<EarState>
-Details::EarDetectionTracker::UpdateAap(EarState left, EarState right, Timestamp now)
+Details::EarDetectionTracker::UpdateAap(EarState primary, EarState secondary, Timestamp now)
 {
     std::lock_guard<std::mutex> lock{_mutex};
-    _aap.left = left;
-    _aap.right = right;
+    _aapPrimary = primary;
+    _aapSecondary = secondary;
+    _aapPrimarySide.reset();
+    _aapSession.reset();
+    return UpdateCandidate(now);
+}
+
+std::optional<EarState> Details::EarDetectionTracker::UpdateAap(
+    EarState primary, EarState secondary, std::optional<Side> primarySide, AAP::AAPAttempt session,
+    std::optional<uint64_t> expectedEpoch, Timestamp now)
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    if (expectedEpoch.has_value() && *expectedEpoch != _epoch) {
+        return std::nullopt;
+    }
+    _aapPrimary = primary;
+    _aapSecondary = secondary;
+    _aapPrimarySide = primarySide;
+    _aapSession = session;
     return UpdateCandidate(now);
 }
 
 std::optional<EarState> Details::EarDetectionTracker::UpdateCandidate(Timestamp now)
 {
-    const auto candidate =
-        CombineEarStates(FuseEarState(_aap.left, _ble.left), FuseEarState(_aap.right, _ble.right));
-    const auto state = _debounce.Update(
-        candidate, std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()));
+    const auto bleLeft = _bleConfirmed ? _ble.left.value_or(EarState::Unknown) : EarState::Unknown;
+    const auto bleRight =
+        _bleConfirmed ? _ble.right.value_or(EarState::Unknown) : EarState::Unknown;
+    const auto aapPrimary = _aapPrimary.value_or(EarState::Unknown);
+    const auto aapSecondary = _aapSecondary.value_or(EarState::Unknown);
+    EarState candidate = EarState::Unknown;
+    if (_aapPrimarySide.has_value()) {
+        // Map roles only when BLE supplied the physical primary identity for this report.
+        const auto aapLeft = *_aapPrimarySide == Side::Left ? aapPrimary : aapSecondary;
+        const auto aapRight = *_aapPrimarySide == Side::Left ? aapSecondary : aapPrimary;
+        const auto fuse = [](EarState aap, EarState ble) {
+            return aap == EarState::Unknown ? ble : aap;
+        };
+        candidate = CombineEarStates(fuse(aapLeft, bleLeft), fuse(aapRight, bleRight));
+    }
+    else {
+        // Role order is not left/right. Fuse two physical aggregates conservatively instead.
+        candidate = FuseAggregateEarState(
+            CombineEarStates(aapPrimary, aapSecondary), CombineEarStates(bleLeft, bleRight));
+    }
+    const auto state = _debounce.Update(candidate, now);
     if (!_publishedState.has_value()) {
         if (state == EarState::Unknown) {
             return std::nullopt;
@@ -248,17 +294,60 @@ std::optional<EarState> Details::EarDetectionTracker::UpdateCandidate(Timestamp 
     return std::nullopt;
 }
 
+std::optional<EarState> Details::EarDetectionTracker::Reevaluate(Timestamp now)
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    return UpdateCandidate(now);
+}
+
+std::optional<Details::EarDetectionTracker::Clock::time_point>
+Details::EarDetectionTracker::Deadline() const
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    const auto now = Clock::now();
+    const auto remaining = _debounce.Deadline(
+        std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()));
+    if (!remaining.has_value()) {
+        return std::nullopt;
+    }
+    return now + *remaining;
+}
+
+uint64_t Details::EarDetectionTracker::Epoch() const
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    return _epoch;
+}
+
+void Details::EarDetectionTracker::InvalidateAapReadings()
+{
+    _aapPrimary.reset();
+    _aapSecondary.reset();
+    _aapPrimarySide.reset();
+    _aapSession.reset();
+    // Cached BLE values are retained for display/fusion, but cannot authorize a source-switch
+    // transition until a newly timestamped BLE reading confirms them after the disconnect.
+    _bleConfirmed = false;
+    _debounce.CancelPending();
+    ++_epoch;
+}
+
+bool Details::EarDetectionTracker::ResetAap(AAP::AAPAttempt session, uint64_t expectedEpoch)
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    if (expectedEpoch != _epoch || !_aapSession.has_value() ||
+        _aapSession->generation != session.generation || _aapSession->address != session.address)
+    {
+        return false;
+    }
+    InvalidateAapReadings();
+    return true;
+}
+
 void Details::EarDetectionTracker::ResetAap()
 {
     std::lock_guard<std::mutex> lock{_mutex};
-    const bool hadAap = _aap.left.has_value() || _aap.right.has_value();
-    _aap.left.reset();
-    _aap.right.reset();
-    if (hadAap) {
-        // Do not let an AAP disconnect manufacture a BLE transition. The next BLE report starts
-        // a fresh debounce interval while the last fused stable state remains the baseline.
-        _debounce.CancelPending();
-    }
+    InvalidateAapReadings();
 }
 
 void Details::EarDetectionTracker::Reset()
@@ -266,8 +355,9 @@ void Details::EarDetectionTracker::Reset()
     std::lock_guard<std::mutex> lock{_mutex};
     _ble.left.reset();
     _ble.right.reset();
-    _aap.left.reset();
-    _aap.right.reset();
+    _bleAt.reset();
+    _bleConfirmed = false;
+    InvalidateAapReadings();
     _publishedState.reset();
     _debounce.Reset();
 }
@@ -287,6 +377,10 @@ EarState Details::EarDetectionTracker::CurrentState() const
 Manager::Manager(QObject *parent) : QObject{parent}
 {
     StartAAPConnectWorker();
+    _earDebounceTimer.setSingleShot(true);
+    _earDebounceTimer.setTimerType(Qt::PreciseTimer);
+    connect(&_earDebounceTimer, &QTimer::timeout, this, &Manager::ReevaluateEarDetection);
+
     _stateMgr.SetOnDiscardState([this] {
         _lidTracker.OnLost(Details::LidTracker::Clock::now());
         // The BLE baseline is gone; battery events must not republish a stale state.
@@ -488,9 +582,15 @@ void Manager::OnAutomaticEarDetectionChanged(bool enable)
 
 void Manager::OnEarDetectSensitivityChanged(EarDetectSensitivity sensitivity)
 {
-    std::lock_guard<std::mutex> lock{_mutex};
-    _earDetectSensitivity = sensitivity;
-    _earDetection.SetSensitivity(sensitivity);
+    QMetaObject::invokeMethod(
+        this,
+        [this, sensitivity] {
+            std::lock_guard<std::mutex> lock{_mutex};
+            _earDetectSensitivity = sensitivity;
+            _earDetection.SetSensitivity(sensitivity);
+            ScheduleEarDeadline();
+        },
+        Qt::QueuedConnection);
 }
 
 void Manager::OnBoundDeviceAddressChanged(uint64_t address)
@@ -514,7 +614,7 @@ void Manager::OnBoundDeviceAddressChanged(uint64_t address)
     _deviceConnected = false;
     _stateMgr.Disconnect();
     _lidTracker.Reset();
-    _earDetection.Reset();
+    ResetEarDetection();
 
     emit DeviceConnectionChanged(false);
     QMetaObject::invokeMethod(this, [this] { StopScanner(); }, Qt::QueuedConnection);
@@ -915,16 +1015,65 @@ void Manager::OnStateChanged(Details::StateManager::UpdateEvent updateEvent)
         OnLidOpened(*lidOpened);
     }
 
-    // BLE and queued AAP reports share this one fusion/debounce path. Only its stable result
-    // reaches media control; raw per-source packets and StateManager rebuilds never do.
-    if (auto changed = _earDetection.UpdateBle(newState, std::chrono::steady_clock::now())) {
-        OnEarStateChanged(*changed);
-    }
+    // BLE and queued AAP reports share this one fusion/debounce path. Revalidate on the owner
+    // thread: advertisement callbacks may run on a worker, where starting QTimer is unsafe.
+    const auto receivedAt = Details::EarDetectionTracker::Clock::now();
+    const auto epoch = _earDetection.Epoch();
+    QMetaObject::invokeMethod(
+        this,
+        [this, newState = std::move(newState), receivedAt, epoch] {
+            std::optional<EarState> changed;
+            {
+                std::lock_guard<std::mutex> lock{_mutex};
+                changed = _earDetection.UpdateBle(
+                    newState,
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        receivedAt.time_since_epoch()),
+                    epoch);
+            }
+            if (changed.has_value()) {
+                OnEarStateChanged(*changed);
+            }
+            ScheduleEarDeadline();
+        },
+        Qt::QueuedConnection);
 }
 
 void Manager::OnLidOpened(bool opened)
 {
     emit LidToggled(opened);
+}
+
+void Manager::ScheduleEarDeadline()
+{
+    const auto deadline = _earDetection.Deadline();
+    if (!deadline.has_value()) {
+        _earDebounceTimer.stop();
+        return;
+    }
+    const auto delay =
+        std::chrono::ceil<std::chrono::milliseconds>(*deadline - EarDetectionClock::now());
+    _earDebounceTimer.start(delay.count() > 0 ? delay.count() : 1);
+}
+
+void Manager::ReevaluateEarDetection()
+{
+    std::optional<EarState> changed;
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        changed = _earDetection.Reevaluate(std::chrono::duration_cast<std::chrono::milliseconds>(
+            EarDetectionClock::now().time_since_epoch()));
+    }
+    if (changed.has_value()) {
+        OnEarStateChanged(*changed);
+    }
+    ScheduleEarDeadline();
+}
+
+void Manager::ResetEarDetection()
+{
+    _earDetection.Reset();
+    ScheduleEarDeadline();
 }
 
 void Manager::OnEarStateChanged(EarState state)
@@ -1230,24 +1379,35 @@ void Manager::OnEarDetectionChanged(
     LOG(Info, "Ear detection changed - Primary: {}, Secondary: {}", static_cast<int>(primary),
         static_cast<int>(secondary));
 
-    // AAP callbacks run on its reader/connect worker. Revalidate on the owner thread and queue
-    // the report; the worker must not mutate the tracker or touch media/GUI state directly.
+    // AAP callbacks run on its reader/connect worker. Capture the tracker epoch before queueing
+    // so a state-loss reset invalidates this report even if it was already in the event loop.
+    const auto epoch = _earDetection.Epoch();
     QMetaObject::invokeMethod(
         this,
-        [this, primary, secondary, attempt] {
+        [this, primary, secondary, attempt, epoch] {
             if (!IsCurrentAAPAttempt(attempt)) {
                 return;
+            }
+            std::optional<Side> primarySide;
+            {
+                std::lock_guard<std::mutex> lock{_mutex};
+                if (const auto ble = _stateMgr.GetCurrentState()) {
+                    primarySide = ble->primarySide;
+                }
             }
             std::optional<EarState> changed;
             {
                 std::lock_guard<std::mutex> lock{_mutex};
                 changed = _earDetection.UpdateAap(
-                    EarStateFromAap(primary), EarStateFromAap(secondary),
-                    std::chrono::steady_clock::now());
+                    EarStateFromAap(primary), EarStateFromAap(secondary), primarySide, attempt,
+                    epoch,
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        EarDetectionClock::now().time_since_epoch()));
             }
             if (changed.has_value()) {
                 OnEarStateChanged(*changed);
             }
+            ScheduleEarDeadline();
         },
         Qt::QueuedConnection);
 }
@@ -1473,21 +1633,16 @@ void Manager::OnAAPDisconnected(AAP::AAPAttempt attempt)
     LOG(Info, "AAP connection lost - ANC features unavailable");
     emit AapConnectionStateChangedSafely(false);
 
+    // Cleanup is keyed to the disconnected session and tracker epoch, not to whichever session
+    // happens to be connected when this callback reaches the owner thread. The tracker makes
+    // duplicate/late cleanup a no-op, so a replacement overlay cannot be erased.
+    const auto epoch = _earDetection.Epoch();
     QMetaObject::invokeMethod(
         this,
-        [this, attempt] {
-            {
-                std::lock_guard lock{_aapWorkerMutex};
-                const auto lastAttempt = _aapMgr.GetLastAttempt();
-                if (_aapConnection.State() == AAP::AAPConnectionState::Connected ||
-                    lastAttempt.generation != attempt.generation ||
-                    lastAttempt.address != attempt.address)
-                {
-                    return;
-                }
-            }
+        [this, attempt, epoch] {
             std::lock_guard<std::mutex> lock{_mutex};
-            _earDetection.ResetAap();
+            _earDetection.ResetAap(attempt, epoch);
+            ScheduleEarDeadline();
         },
         Qt::QueuedConnection);
 }

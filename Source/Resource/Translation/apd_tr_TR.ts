@@ -531,6 +531,26 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <translation>Otomatik kulak algılama</translation>
     </message>
     <message>
+        <source>Ear detection sensitivity</source>
+        <translation>Kulaklık algılama hassasiyeti</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>Düşük</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Normal</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>Yüksek</translation>
+    </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>Kulaklık algılama gecikmesi: düşük 600 ms, normal 300 ms, yüksek 150 ms. Daha yüksek hassasiyet daha hızlı tepki verir.</translation>
+    </message>
+    <message>
         <source>Low audio latency</source>
         <translation>Düşük ses gecikmesi</translation>
     </message>

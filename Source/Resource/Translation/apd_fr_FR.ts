@@ -543,6 +543,26 @@ Vous devez d&apos;abord appairer vos AirPods dans les paramètres Bluetooth de W
         <translation>Détection automatique des oreilles</translation>
     </message>
     <message>
+        <source>Ear detection sensitivity</source>
+        <translation>Sensibilité de la détection des oreilles</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>Faible</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Normale</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>Élevée</translation>
+    </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>Anti-rebond de la détection des oreilles : faible 600 ms, normale 300 ms, élevée 150 ms. Une sensibilité plus élevée réagit plus vite.</translation>
+    </message>
+    <message>
         <source>Low audio latency</source>
         <translation>Faible latence audio</translation>
     </message>

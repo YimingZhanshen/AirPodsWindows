@@ -543,6 +543,26 @@ Najpierw sparuj słuchawki AirPods w ustawieniach Bluetooth systemu Windows.</tr
         <translation>Automatyczne wykrywanie ucha</translation>
     </message>
     <message>
+        <source>Ear detection sensitivity</source>
+        <translation>Czułość wykrywania w uchu</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>Niska</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Normalna</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>Wysoka</translation>
+    </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>Wyhamowanie wykrywania w uchu: niska 600 ms, normalna 300 ms, wysoka 150 ms. Wyższa czułość reaguje szybciej.</translation>
+    </message>
+    <message>
         <source>Low audio latency</source>
         <translation>Niskie opóźnienie dźwięku</translation>
     </message>

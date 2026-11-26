@@ -547,6 +547,26 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
         <translation>Deteksi telinga otomatis</translation>
     </message>
     <message>
+        <source>Ear detection sensitivity</source>
+        <translation>Kepekaan deteksi telinga</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>Rendah</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Normal</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>Tinggi</translation>
+    </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>Penundaan deteksi telinga: rendah 600 ms, normal 300 ms, tinggi 150 ms. Kepekaan lebih tinggi bereaksi lebih cepat.</translation>
+    </message>
+    <message>
         <source>Low audio latency</source>
         <translation>Latensi audio rendah</translation>
     </message>

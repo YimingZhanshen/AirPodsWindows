@@ -531,6 +531,26 @@ Kopple deine AirPods zuerst in den Windows Bluetooth-Einstellungen.</translation
         <translation>Automatische Trageerkennung</translation>
     </message>
     <message>
+        <source>Ear detection sensitivity</source>
+        <translation>Empfindlichkeit der Ohrerkennung</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>Niedrig</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Normal</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>Hoch</translation>
+    </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>Entprellung der Ohrerkennung: Niedrig 600 ms, Normal 300 ms, Hoch 150 ms. Höhere Empfindlichkeit reagiert schneller.</translation>
+    </message>
+    <message>
         <source>Low audio latency</source>
         <translation>Niedrige Audiolatenz</translation>
     </message>

@@ -543,6 +543,26 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <translation>Автоматично разпознаване на ухото</translation>
     </message>
     <message>
+        <source>Ear detection sensitivity</source>
+        <translation>Чувствителност на откриването в ухото</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>Ниска</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Нормална</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>Висока</translation>
+    </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>Забавяне при откриване в ухото: ниска 600 ms, нормална 300 ms, висока 150 ms. По-високата чувствителност реагира по-бързо.</translation>
+    </message>
+    <message>
         <source>Low audio latency</source>
         <translation>Ниско закъснение на звука</translation>
     </message>
