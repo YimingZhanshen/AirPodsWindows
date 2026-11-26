@@ -24,6 +24,7 @@
 #include "Source/Core/AAP.h"
 #include "Source/Core/AAPAtt.h"
 #include "Source/Core/AAPBattery.h"
+#include "Source/Core/AAPDeviceInfo.h"
 #include "Source/Core/ConnectionDiagnostics.h"
 
 // Table-driven coverage for the AAP protocol layer (blueprint items 0.1 / 0.2 / 0.5):
@@ -44,6 +45,43 @@ std::vector<uint8_t> Hex(std::initializer_list<int> bytes)
         result.push_back(static_cast<uint8_t>(byte));
     }
     return result;
+}
+
+std::vector<uint8_t> FromHex(const QByteArray &hex)
+{
+    const auto bytes = QByteArray::fromHex(hex);
+    return std::vector<uint8_t>(bytes.begin(), bytes.end());
+}
+
+// Byte-exact 222-byte 0x001D device-information record from librepods'
+// "AAP Definitions.md" example packet (the reference capture also documented in
+// Docs/AAP-Protocol-Spec.md §3). Values verified against the same table:
+// name, model, manufacturer, serial, firmware x2, hardware revision, updater id,
+// left/right serials, numeric version, a 35-byte encrypted blob, and a trailing
+// numeric string.
+const std::vector<uint8_t> &DeviceInfoSample()
+{
+    static const std::vector<uint8_t> sample = FromHex(QByteArrayLiteral(
+        "040004001d0002d5000400416972506f64732050726f004133303438004170706c6520496e632e0051584e52"
+        "4848595850360036312e313836383034303030323030303030302e323731330036312e313836383034303030"
+        "323030303030302e3237313300312e302e3000636f6d2e6170706c652e6163636573736f72792e7570646174"
+        "65722e6170702e3731004859394c5432454632364a59004833504c5748444a32364b3000363335373533360089"
+        "312a6567a5400f84a3ca234947efd40b90d78436ae5946748d70273e66066a258930003533393530363036340"
+        "0"));
+    return sample;
+}
+
+// Builds a syntactically shaped 0x001D record carrying the given NUL-separated
+// fields behind the standard header and `02 D5 00 04 00` preamble.
+std::vector<uint8_t> BuildDeviceInfoPacket(std::initializer_list<QByteArray> fields)
+{
+    std::vector<uint8_t> packet =
+        Hex({0x04, 0x00, 0x04, 0x00, 0x1D, 0x00, 0x02, 0xD5, 0x00, 0x04, 0x00});
+    for (const auto &field : fields) {
+        packet.insert(packet.end(), field.constData(), field.constData() + field.size());
+        packet.push_back(0x00);
+    }
+    return packet;
 }
 
 } // namespace
@@ -521,6 +559,180 @@ private slots:
 
         frame.resize(55);
         QVERIFY(!ParseHeadTrackingData(frame).has_value());
+    }
+
+    //////////////////////////////////////////////////
+    // Device information records (opcode 0x001D, blueprint 2.1)
+    //
+
+    void DeviceInfoSampleRecordParsesEveryField()
+    {
+        // Byte-exact 222-byte capture from librepods "AAP Definitions.md"; this
+        // is the same packet the offset table in Docs/AAP-Protocol-Spec.md §3 was
+        // measured from. The strings are documented as null-terminated UTF-8.
+        const auto &sample = DeviceInfoSample();
+        QCOMPARE(sample.size(), size_t{222});
+
+        const auto info = ParseDeviceInfo(sample);
+        QVERIFY(info.has_value());
+        QCOMPARE(info->name, std::string{"AirPods Pro"});
+        QCOMPARE(info->model, std::string{"A3048"});
+        QCOMPARE(info->manufacturer, std::string{"Apple Inc."});
+        QCOMPARE(info->serial, std::string{"QXNRHHYXP6"});
+        QCOMPARE(info->firmware1, std::string{"61.1868040002000000.2713"});
+        QCOMPARE(info->firmware2, std::string{"61.1868040002000000.2713"});
+        QCOMPARE(info->hardwareRevision, std::string{"1.0.0"});
+        QCOMPARE(info->leftSerial, std::string{"HY9LT2EF26JY"});
+        QCOMPARE(info->rightSerial, std::string{"H3PLWHDJ26K0"});
+    }
+
+    void DeviceInfoIgnoresEverythingAfterTheEleventhField()
+    {
+        // The record continues with a 35-byte opaque blob (0x89 0x31 …) and a
+        // trailing numeric string. Random high/low binary bytes behind the 11th
+        // separator must not influence the parse.
+        const auto &sample = DeviceInfoSample();
+        const auto baseline = ParseDeviceInfo(sample);
+        QVERIFY(baseline.has_value());
+
+        auto extended = sample;
+        extended.insert(extended.end(), {0x00, 0xFF, 0x80, 0x01, 0x7F, 0xC3, 0x28, 'x', 0x00});
+        const auto parsed = ParseDeviceInfo(extended);
+        QVERIFY(parsed.has_value());
+        QCOMPARE(*parsed, *baseline);
+    }
+
+    void DeviceInfoRejectsTruncatedRecords()
+    {
+        const auto &sample = DeviceInfoSample();
+        // Every prefix that ends before the eleventh NUL delimiter is truncated,
+        // including a packet containing all ten mapped fields but no field 11.
+        for (size_t length = 0; length < 168; ++length) {
+            const std::vector<uint8_t> prefix(
+                sample.begin(), sample.begin() + static_cast<ptrdiff_t>(length));
+            QVERIFY2(
+                !ParseDeviceInfo(prefix).has_value(),
+                qPrintable(QString{"prefix of %1 bytes was accepted"}.arg(length)));
+        }
+
+        // The first eleven fields end at byte 175. A record ending here is
+        // complete even without the optional trailing encrypted blob.
+        const std::vector<uint8_t> fieldsOnly(sample.begin(), sample.begin() + 176);
+        const auto info = ParseDeviceInfo(fieldsOnly);
+        QVERIFY(info.has_value());
+        QCOMPARE(info->rightSerial, std::string{"H3PLWHDJ26K0"});
+    }
+
+    void DeviceInfoRejectsWrongHeaderAndOpcode()
+    {
+        auto packet = DeviceInfoSample();
+        packet[4] = 0x1E; // the rename opcode: docs once mislabelled metadata as 0x1E
+        QVERIFY(!ParseDeviceInfo(packet).has_value());
+
+        packet = DeviceInfoSample();
+        packet[5] = 0x01;
+        QVERIFY(!ParseDeviceInfo(packet).has_value());
+
+        packet = DeviceInfoSample();
+        packet[0] = 0x12; // ATT-SIGNATURE-shaped frame must never parse as metadata
+        QVERIFY(!ParseDeviceInfo(packet).has_value());
+
+        packet = DeviceInfoSample();
+        packet[3] = 0x01;
+        QVERIFY(!ParseDeviceInfo(packet).has_value());
+    }
+
+    void DeviceInfoRejectsBrokenPreambleSkeleton()
+    {
+        // The five unknown bytes between opcode and first string always contain
+        // NULs at offsets 8 and 10 in observed captures; without them the string
+        // offset 11 is unverifiable.
+        auto packet = DeviceInfoSample();
+        packet[8] = 0x01;
+        QVERIFY(!ParseDeviceInfo(packet).has_value());
+
+        packet = DeviceInfoSample();
+        packet[10] = 0xFF;
+        QVERIFY(!ParseDeviceInfo(packet).has_value());
+    }
+
+    void DeviceInfoRejectsInvalidUtf8()
+    {
+        struct {
+            const char *what;
+            QByteArray field;
+        } cases[] = {
+            {"truncated two-byte sequence", QByteArray::fromHex("c328")},
+            {"stray continuation byte", QByteArray::fromHex("80")},
+            {"overlong two-byte form", QByteArray::fromHex("c080")},
+            {"overlong three-byte form", QByteArray::fromHex("e08080")},
+            {"UTF-16 surrogate half", QByteArray::fromHex("eda080")},
+            {"beyond U+10FFFF", QByteArray::fromHex("f4908080")},
+            {"C1 control as valid UTF-8", QByteArray::fromHex("c180")},
+            {"trailing byte of a cut sequence", QByteArrayLiteral("Pro\xc3")},
+        };
+
+        for (const auto &testCase : cases) {
+            const auto packet = BuildDeviceInfoPacket(
+                {"AirPods Pro" + testCase.field, "A3048", "Apple Inc.", "QXNRHHYXP6", "61.18",
+                 "61.18", "1.0.0", "com.apple.accessory.updater.app.71", "HY9LT2EF26JY",
+                 "H3PLWHDJ26K0", "6357536"});
+            QVERIFY2(
+                !ParseDeviceInfo(packet).has_value(),
+                qPrintable(QString{"accepted invalid encoding: %1"}.arg(testCase.what)));
+        }
+    }
+
+    void DeviceInfoRejectsControlCharactersInFields()
+    {
+        // Control bytes are display-hostile and a strong hint of a misaligned
+        // record (the binary blob leaking into a string slot).
+        const auto packet = BuildDeviceInfoPacket(
+            {QByteArray{"Air\tpods"}, "A3048", "Apple Inc.", "QXNRHHYXP6", "61.18", "61.18",
+             "1.0.0", "updater", "HY9LT2EF26JY", "H3PLWHDJ26K0", "6357536"});
+        QVERIFY(!ParseDeviceInfo(packet).has_value());
+
+        const auto del = BuildDeviceInfoPacket(
+            {QByteArray{"Air\x7Fpods"}, "A3048", "Apple Inc.", "QXNRHHYXP6", "61.18", "61.18",
+             "1.0.0", "updater", "HY9LT2EF26JY", "H3PLWHDJ26K0", "6357536"});
+        QVERIFY(!ParseDeviceInfo(del).has_value());
+    }
+
+    void DeviceInfoAcceptsMultibyteUtf8Names()
+    {
+        // UTF-8 (not UTF-16) evidence: "AAP Definitions.md" states the strings are
+        // null-terminated UTF-8, linux/main.cpp parseMetadata uses
+        // QString::fromUtf8, and this app renames through UTF-8 opcode 0x001A.
+        // Multi-byte text with embedded 0x00-free UTF-16 would fail here anyway.
+        const auto utf8Name = QString::fromUtf8("AirPods Pro 旺来 💤").toUtf8();
+        const auto packet = BuildDeviceInfoPacket(
+            {utf8Name, "A3048", "Apple Inc.", "QXNRHHYXP6", "61.18", "61.18", "1.0.0", "updater",
+             "HY9LT2EF26JY", "H3PLWHDJ26K0", "6357536"});
+        const auto info = ParseDeviceInfo(packet);
+        QVERIFY(info.has_value());
+        QCOMPARE(QString::fromStdString(info->name), QString::fromUtf8("AirPods Pro 旺来 💤"));
+    }
+
+    void DeviceInfoAcceptsEmptyFieldValues()
+    {
+        // An all-NUL record is a device that omits every value: legal, mapped to
+        // empty strings; the card then hides those rows.
+        const auto packet = BuildDeviceInfoPacket({"", "", "", "", "", "", "", "", "", "", ""});
+        const auto info = ParseDeviceInfo(packet);
+        QVERIFY(info.has_value());
+        QCOMPARE(info->name, std::string{});
+        QCOMPARE(info->serial, std::string{});
+        QCOMPARE(info->leftSerial, std::string{});
+        QCOMPARE(info->rightSerial, std::string{});
+    }
+
+    void DeviceInfoMinimumSizeMatchesTransportValidationFloor()
+    {
+        // AAPMessage::Validate lets any >= 11-byte 0x001D record through; the
+        // parser (not the framing layer) is the gate that must reject the rest.
+        const auto shortPacket = Hex({0x04, 0x00, 0x04, 0x00, 0x1D, 0x00, 0x02, 0xD5, 0x00, 0x04});
+        QCOMPARE(shortPacket.size(), size_t{10});
+        QVERIFY(!ParseDeviceInfo(shortPacket).has_value());
     }
 
     //////////////////////////////////////////////////

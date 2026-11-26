@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <atomic>
+#include <optional>
+#include <vector>
 
 #include <QApplication>
 #include <QCheckBox>
@@ -2254,6 +2256,138 @@ private Q_SLOTS:
 
         QCoreApplication::removeTranslator(&second);
         Gui::Theme::ApplyApplicationTypography(QLocale{"en_US"});
+    }
+
+    // Blueprint 2.1 device information card: hidden while the provider has no
+    // record, visible with the mapped rows once one arrives, hidden again when
+    // the session cache dies (disconnect/rebind). All pulls happen through the
+    // provider on the GUI thread; the card exposes no way for workers to touch
+    // its widgets.
+    void DeviceInfoCardHiddenWithoutProviderData()
+    {
+        Gui::DeviceInfoCard card;
+        card.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&card));
+        card.Refresh();
+        QVERIFY(!card.isVisible());
+
+        Core::AAP::AAPDeviceInfo info;
+        info.name = "AirPods Pro";
+        info.serial = "QXNRHHYXP6";
+        const std::optional<Core::AAP::AAPDeviceInfo> present{info};
+        const std::optional<Core::AAP::AAPDeviceInfo> absent{};
+        std::optional<Core::AAP::AAPDeviceInfo> current;
+        card.SetInfoProvider([&current] { return current; });
+        QVERIFY(!card.isVisible());
+
+        current = present;
+        card.Refresh();
+        QVERIFY(card.isVisible());
+
+        // A disconnect clears the manager cache; the card must hide itself.
+        current = absent;
+        card.Refresh();
+        QVERIFY(!card.isVisible());
+    }
+
+    void DeviceInfoCardRendersProviderRows()
+    {
+        Gui::DeviceInfoCard card;
+        card.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&card));
+
+        Core::AAP::AAPDeviceInfo info;
+        info.name = "AirPods Pro";
+        info.model = "A3048";
+        info.manufacturer = "Apple Inc.";
+        info.serial = "QXNRHHYXP6";
+        info.firmware1 = "61.1868040002000000.2713";
+        info.firmware2 = "61.1868040002000000.2713";
+        info.hardwareRevision = "1.0.0";
+        info.leftSerial = "HY9LT2EF26JY";
+        info.rightSerial = "H3PLWHDJ26K0";
+        card.SetInfoProvider([info] { return std::optional{info}; });
+
+        const auto hasText = [](const QList<QLabel *> &labels, const QString &wanted) {
+            return std::any_of(labels.begin(), labels.end(), [wanted](const QLabel *label) {
+                return label->text() == wanted;
+            });
+        };
+
+        auto labels = card.findChildren<QLabel *>();
+        // Title + one label pair per populated field; the duplicate firmware
+        // revision collapses into a single row (8 rows => 17 labels).
+        QCOMPARE(labels.size(), qsizetype{17});
+        QVERIFY(hasText(labels, QStringLiteral("QXNRHHYXP6")));
+        QVERIFY(hasText(labels, QStringLiteral("HY9LT2EF26JY")));
+        QVERIFY(hasText(labels, QStringLiteral("H3PLWHDJ26K0")));
+        QVERIFY(!hasText(labels, QStringLiteral("Firmware version 2")));
+
+        // Distinct second firmware value adds its row on the next refresh.
+        // ClearRows() defers deletion, so run the pending deletions before
+        // recounting the children.
+        Core::AAP::AAPDeviceInfo split = info;
+        split.firmware2 = "62.0.1";
+        card.SetInfoProvider([split] { return std::optional{split}; });
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        labels = card.findChildren<QLabel *>();
+        QCOMPARE(labels.size(), qsizetype{19});
+        QVERIFY(hasText(labels, QStringLiteral("Firmware version 2")));
+        QVERIFY(hasText(labels, QStringLiteral("62.0.1")));
+
+        // Values stay mouse-selectable only (no focus capture, no automatic
+        // clipboard access - blueprint rule 5 privacy contract).
+        for (const auto *label : labels) {
+            QVERIFY(
+                label->textInteractionFlags().testFlag(Qt::TextSelectableByMouse) ||
+                label->textInteractionFlags() == Qt::NoTextInteraction);
+        }
+    }
+
+    void DeviceInfoCardRowsSkipEmptyFields()
+    {
+        using Rows = std::vector<Gui::DeviceInfoCard::Row>;
+        QVERIFY(Gui::DeviceInfoCard::RowsFor(std::optional<Core::AAP::AAPDeviceInfo>{}).empty());
+
+        Core::AAP::AAPDeviceInfo empty;
+        QVERIFY(Gui::DeviceInfoCard::RowsFor(std::optional{empty}).empty());
+
+        Core::AAP::AAPDeviceInfo partial;
+        partial.model = "A3048";
+        partial.serial = "QXNRHHYXP6";
+        const Rows rows = Gui::DeviceInfoCard::RowsFor(std::optional{partial});
+        QCOMPARE(rows.size(), size_t{2});
+        QCOMPARE(rows[0].label, QStringLiteral("Model"));
+        QCOMPARE(rows[0].value, QStringLiteral("A3048"));
+        QCOMPARE(rows[1].label, QStringLiteral("Serial number"));
+        QCOMPARE(rows[1].value, QStringLiteral("QXNRHHYXP6"));
+    }
+
+    void SettingsWindowInsertsDeviceInfoCardAfterDeviceCards()
+    {
+        auto backend = std::make_shared<Core::QuickConnect::NullBackend>();
+        Core::QuickConnect::Controller quickConnect{backend};
+        Gui::SettingsWindow window{[] { return 0; }, quickConnect};
+
+        auto *deviceCard = window.findChild<QFrame *>("cardDevice");
+        auto *driverCard = window.findChild<Gui::DriverStatusCard *>();
+        auto *infoCard = window.findChild<Gui::DeviceInfoCard *>();
+        QVERIFY(deviceCard != nullptr);
+        QVERIFY(driverCard != nullptr);
+        QVERIFY(infoCard != nullptr);
+        auto *layout = infoCard->parentWidget()->layout();
+        QVERIFY(layout != nullptr);
+
+        // cardDevice -> device information -> driver status. The information
+        // card is hidden until a manager provider supplies cached data.
+        const auto deviceIndex = layout->indexOf(deviceCard);
+        QVERIFY(deviceIndex >= 0);
+        QCOMPARE(layout->indexOf(infoCard), deviceIndex + 1);
+        QCOMPARE(layout->indexOf(driverCard), deviceIndex + 2);
+        // The window itself is never shown here, so assert the card's explicit
+        // hidden flag rather than inherited visibility.
+        QVERIFY(infoCard->isHidden());
+        QCOMPARE(infoCard->objectName(), QStringLiteral("cardDeviceInfo"));
     }
 };
 

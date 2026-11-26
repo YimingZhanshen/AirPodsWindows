@@ -55,6 +55,49 @@ Keyfini çıkarın.</translation>
     </message>
 </context>
 <context>
+    <name>Gui::DeviceInfoCard</name>
+    <message>
+        <source>Device information</source>
+        <translation>Cihaz bilgileri</translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation>Ad</translation>
+    </message>
+    <message>
+        <source>Model</source>
+        <translation>Model</translation>
+    </message>
+    <message>
+        <source>Manufacturer</source>
+        <translation>Üretici</translation>
+    </message>
+    <message>
+        <source>Serial number</source>
+        <translation>Seri numarası</translation>
+    </message>
+    <message>
+        <source>Firmware version</source>
+        <translation>Aygıt yazılımı sürümü</translation>
+    </message>
+    <message>
+        <source>Firmware version 2</source>
+        <translation>Aygıt yazılımı sürümü 2</translation>
+    </message>
+    <message>
+        <source>Hardware revision</source>
+        <translation>Donanım revizyonu</translation>
+    </message>
+    <message>
+        <source>Left earbud serial</source>
+        <translation>Sol kulaklık seri numarası</translation>
+    </message>
+    <message>
+        <source>Right earbud serial</source>
+        <translation>Sağ kulaklık seri numarası</translation>
+    </message>
+</context>
+<context>
     <name>Gui::DriverStatusCard</name>
     <message>
         <source>Driver (MagicAAP)</source>

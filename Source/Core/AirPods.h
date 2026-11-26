@@ -284,6 +284,11 @@ public:
     AAP::AttPathState GetAAPAttPathState() const;
     AAP::ConnectFailure GetLastAAPConnectFailure() const;
 
+    // Read-only device information cache (blueprint 2.1). AAP reader callbacks
+    // refresh it under the worker generation guard; GUI code pulls a copy on
+    // the main thread. Values are display-only and never logged or exported.
+    std::optional<AAP::AAPDeviceInfo> GetAAPDeviceInfo() const;
+
     // Head tracking
     bool StartHeadTracking();
     bool StopHeadTracking();
@@ -298,6 +303,10 @@ private:
     std::mutex _mutex;
     // Declared before the scanner and workers it feeds so its timer callbacks cannot outlive
     // these trackers. The destructor first drains workers, then member destruction converges.
+    // AAP reader callbacks and GUI pulls share this snapshot. A dedicated mutex
+    // avoids waiting on _mutex while DisconnectAAP joins the reader thread.
+    mutable std::mutex _deviceInfoMutex;
+    std::optional<AAP::AAPDeviceInfo> _aapDeviceInfo;
     Details::LidTracker _lidTracker;
     Details::EarDetectionTracker _earDetection;
     Details::StateManager _stateMgr;
@@ -380,6 +389,7 @@ private:
     void OnAAPBatteryChanged(const AAP::AAPBatterySnapshot &snapshot, AAP::AAPAttempt attempt);
     void OnHeadTrackingData(AAP::HeadTrackingData data, AAP::AAPAttempt attempt);
     void OnAttProbeResult(AAP::AttPathState state, AAP::AAPAttempt attempt);
+    void OnAAPDeviceInfoChanged(AAP::AAPAttempt attempt);
     void OnAAPConnected(AAP::AAPAttempt attempt);
     void OnAAPDisconnected(AAP::AAPAttempt attempt);
     void SetupAAPCallbacks();
@@ -415,6 +425,11 @@ Q_SIGNALS:
     // Payload is Core::AAP::ConnectFailure cast to int (registered metatypes
     // stay free of AAP enums).
     void AapConnectionFailedSafely(int failure);
+    // Blueprint 2.1: raised from the AAP reader thread when the accessory
+    // pushes its 0x001D record. Deliberately payload-free: the privacy-
+    // sensitive device information stays in the manager cache and GUI code
+    // pulls it via GetAAPDeviceInfo() on the main thread.
+    void DeviceInfoChangedSafely();
 };
 
 std::vector<Core::Bluetooth::Device> GetDevices();

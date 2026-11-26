@@ -93,8 +93,8 @@ void ConfigureComboBoxPopup(QComboBox *comboBox)
 SettingsWindow::SettingsWindow(
     std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect,
     std::function<Core::AirPods::Manager &()> getAirPodsManager, QWidget *parent)
-    : QDialog{parent}, _getCurrentLocaleIndex{std::move(getCurrentLocaleIndex)}, _quickConnect{
-                                                                                     quickConnect}
+    : QDialog{parent}, _getCurrentLocaleIndex{std::move(getCurrentLocaleIndex)},
+      _quickConnect{quickConnect}
 {
     // getAirPodsManager is deliberately NOT stored here: this window is built
     // by the tray icon before the application's AirPods manager exists, so any
@@ -364,6 +364,7 @@ SettingsWindow::SettingsWindow(
     });
 
     SetupDriverStatusCard();
+    SetupDeviceInfoCard();
 }
 
 int SettingsWindow::GetTabCount() const
@@ -477,6 +478,17 @@ void SettingsWindow::SetupDriverStatusCard()
     });
 }
 
+// Inserts the device information card (blueprint 2.1) immediately after the
+// device card. It stays hidden until the injected manager provider supplies a
+// parsed 0x001D record, so unsupported devices show no empty shell.
+void SettingsWindow::SetupDeviceInfoCard()
+{
+    _deviceInfoCard = new DeviceInfoCard{_ui.general};
+    const auto deviceCardIndex = _ui.generalLayout->indexOf(_ui.cardDevice);
+    _ui.generalLayout->insertWidget(deviceCardIndex + 1, _deviceInfoCard);
+    _deviceInfoCard->setVisible(false);
+}
+
 // Called by the application layer once the AirPods manager exists; see the
 // header for why this cannot happen during construction.
 void SettingsWindow::SetAirPodsManagerProvider(
@@ -499,6 +511,32 @@ void SettingsWindow::SetAirPodsManagerProvider(
             &manager, &Core::AirPods::Manager::AapConnectionFailedSafely, _driverStatusCard,
             [this](int) { _driverStatusCard->Refresh(); });
         _driverCardSignalConnected = true;
+    }
+
+    if (_deviceInfoCard != nullptr) {
+        // The signal is payload-free by design: the card pulls the manager
+        // cache on the GUI thread (Qt queues the emission from the AAP
+        // reader), so no privacy-sensitive string ever crosses threads in a
+        // signal and worker code never touches widgets.
+        _deviceInfoCard->SetInfoProvider([this] {
+            if (!_getAirPodsManager) {
+                return std::optional<Core::AAP::AAPDeviceInfo>{};
+            }
+            return _getAirPodsManager().GetAAPDeviceInfo();
+        });
+
+        if (!_infoCardSignalConnected) {
+            auto &manager = _getAirPodsManager();
+            connect(
+                &manager, &Core::AirPods::Manager::DeviceInfoChangedSafely, _deviceInfoCard,
+                [this] { _deviceInfoCard->Refresh(); });
+            // Clearing events (disconnect, EOF, rebind) hide the card again;
+            // the connection-state signal already fires for all of them.
+            connect(
+                &manager, &Core::AirPods::Manager::AapConnectionStateChangedSafely, _deviceInfoCard,
+                [this](bool) { _deviceInfoCard->Refresh(); });
+            _infoCardSignalConnected = true;
+        }
     }
 }
 

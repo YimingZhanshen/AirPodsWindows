@@ -30,6 +30,7 @@
 #include "AAPAtt.h"
 #include "AAPBattery.h"
 #include "AAPConnectionStateMachine.h"
+#include "AAPDeviceInfo.h"
 #include "AAPTransport.h"
 #include "Base.h"
 #include "../Helper.h"
@@ -79,6 +80,9 @@ struct Callbacks {
     using FnOnAutomaticEarDetectionChangedT = std::function<void(bool, AAPAttempt)>;
     using FnOnPpeCapLevelChangedT = std::function<void(uint8_t, AAPAttempt)>;
     using FnOnBatteryChangedT = std::function<void(AAPBatterySnapshot, AAPAttempt)>;
+    // Payload-free apart from the session identity: consumers pull the parsed
+    // record from GetDeviceInfo(). Never log its serials or the raw record.
+    using FnOnDeviceInfoChangedT = std::function<void(AAPAttempt)>;
     using FnOnConnectedT = std::function<void(AAPAttempt)>;
     using FnOnDisconnectedT = std::function<void(AAPAttempt)>;
     using FnOnAttProbeResultT = std::function<void(AttPathState, AAPAttempt)>;
@@ -93,6 +97,7 @@ struct Callbacks {
     FnOnAutomaticEarDetectionChangedT onAutomaticEarDetectionChanged;
     FnOnPpeCapLevelChangedT onPpeCapLevelChanged;
     FnOnBatteryChangedT onBatteryChanged;
+    FnOnDeviceInfoChangedT onDeviceInfoChanged;
     FnOnConnectedT onConnected;
     FnOnDisconnectedT onDisconnected;
     FnOnAttProbeResultT onAttProbeResult;
@@ -173,6 +178,12 @@ public:
         return _lastConnectFailure.load();
     }
 
+    // Read-only device information cache (blueprint 2.1). Empty until the
+    // accessory pushes its 0x001D record; cleared on disconnect, reader EOF,
+    // and every new connect attempt (rebind). GUI code pulls this from a
+    // queued signal instead of touching widgets from worker threads.
+    std::optional<AAPDeviceInfo> GetDeviceInfo() const;
+
 private:
     // Hardware-free tests need to inject a transport and observe the validation
     // gate; neither behavior is reachable through the public connection API.
@@ -197,6 +208,9 @@ private:
     std::optional<LoudSoundReductionState> _loudSoundReductionState;
     std::optional<uint8_t> _ppeCapLevel;
     std::optional<AAPBatterySnapshot> _batterySnapshot;
+    // Device information (blueprint 2.1) from the accessory-pushed 0x001D
+    // record. Privacy: never written to logs or the diagnostics report.
+    std::optional<AAPDeviceInfo> _deviceInfo;
 
     // ATT path probe (blueprint 0.3): deadline in steady_clock milliseconds,
     // 0 when no probe is outstanding. GetAttPathState flips Pending to

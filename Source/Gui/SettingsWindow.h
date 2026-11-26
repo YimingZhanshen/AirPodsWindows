@@ -33,6 +33,7 @@
 // DriverStatusCard::Refresh(), and the constructor signature names
 // Core::AirPods::Manager.
 #include "Widget/DriverStatusCard.h"
+#include "Widget/DeviceInfoCard.h"
 
 #include "ui_SettingsWindow.h"
 
@@ -73,9 +74,12 @@ private:
     std::function<Core::AirPods::Manager &()> _getAirPodsManager;
     DriverStatusCard *_driverStatusCard{nullptr};
     bool _driverCardSignalConnected{false};
+    DeviceInfoCard *_deviceInfoCard{nullptr};
+    bool _infoCardSignalConnected{false};
 
     void InitCreditsText();
     void SetupDriverStatusCard();
+    void SetupDeviceInfoCard();
     void RestoreDefaults();
     void Update(const Fields &fields, bool trigger);
     void UpdateQuickConnectDevices(const Fields &fields);
@@ -134,6 +138,9 @@ private:
         UpdateDescriptions();
         if (_driverStatusCard != nullptr) {
             _driverStatusCard->Refresh();
+        }
+        if (_deviceInfoCard != nullptr) {
+            _deviceInfoCard->Refresh();
         }
         // QDialogButtonBox handles LanguageChange after its parent and resets standard-button
         // labels to Qt's platform text. Apply our app translations once propagation ends.

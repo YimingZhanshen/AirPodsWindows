@@ -55,6 +55,49 @@ Aproveite.</translation>
     </message>
 </context>
 <context>
+    <name>Gui::DeviceInfoCard</name>
+    <message>
+        <source>Device information</source>
+        <translation>Informações do dispositivo</translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation>Nome</translation>
+    </message>
+    <message>
+        <source>Model</source>
+        <translation>Modelo</translation>
+    </message>
+    <message>
+        <source>Manufacturer</source>
+        <translation>Fabricante</translation>
+    </message>
+    <message>
+        <source>Serial number</source>
+        <translation>Número de série</translation>
+    </message>
+    <message>
+        <source>Firmware version</source>
+        <translation>Versão do firmware</translation>
+    </message>
+    <message>
+        <source>Firmware version 2</source>
+        <translation>Versão do firmware 2</translation>
+    </message>
+    <message>
+        <source>Hardware revision</source>
+        <translation>Revisão do hardware</translation>
+    </message>
+    <message>
+        <source>Left earbud serial</source>
+        <translation>Número de série do auricular esquerdo</translation>
+    </message>
+    <message>
+        <source>Right earbud serial</source>
+        <translation>Número de série do auricular direito</translation>
+    </message>
+</context>
+<context>
     <name>Gui::DriverStatusCard</name>
     <message>
         <source>Driver (MagicAAP)</source>
