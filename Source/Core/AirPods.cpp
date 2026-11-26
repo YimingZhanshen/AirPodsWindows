@@ -32,6 +32,7 @@
 
 #include "ConnectionDiagnostics.h"
 #include "GlobalMedia.h"
+#include "Settings.h"
 #include "../Error.h"
 #include "../Helper.h"
 #include "../Logger.h"
@@ -472,7 +473,9 @@ void Manager::OnBoundDeviceConnectionStateChanged(Bluetooth::DeviceState state)
 
         if (doDisconnect) {
             _stateMgr.Disconnect();
-            _lidTracker.Reset();
+            // A transient service disconnect retains the popup rate limit; only an unbind/rebind
+            // resets it.
+            _lidTracker.ForgetDevice();
             _earDetection.Reset();
         }
 
@@ -747,8 +750,9 @@ void Manager::OnStateChanged(Details::StateManager::UpdateEvent updateEvent)
     if (oldState.has_value()) {
         oldLid = lidOf(*oldState);
     }
-    if (auto lidOpened =
-            _lidTracker.Update(oldLid, lidOf(newState), Details::LidTracker::Clock::now());
+    if (auto lidOpened = _lidTracker.Update(
+            oldLid, lidOf(newState), Details::LidTracker::Clock::now(),
+            Core::Settings::GetCurrent().popup_on_lid_open);
         lidOpened.has_value())
     {
         OnLidOpened(*lidOpened);

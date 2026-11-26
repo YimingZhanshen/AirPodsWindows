@@ -903,11 +903,22 @@ void AirPodsDomainTests::LidPopupCooldownBlocksRapidRepeats()
     QCOMPARE(tracker.Update(Lid::Opened, Lid::Closed, start + 59s), std::optional<bool>{false});
     QCOMPARE(tracker.Update(Lid::Closed, Lid::Opened, start + 61s), std::optional<bool>{true});
 
-    // Rebinding or disconnecting resets the tracker, so a freshly connected device is never
+    // An explicit unbind/rebind resets the tracker, so a freshly connected device is never
     // muted by the previous session's popup.
     QCOMPARE(tracker.Update(Lid::Opened, Lid::Closed, start + 62s), std::optional<bool>{false});
     tracker.Reset();
     QCOMPARE(tracker.Update(std::nullopt, Lid::Opened, start + 63s), std::optional<bool>{true});
+
+    // Transient disconnects forget the lid baseline but retain the rate limit.
+    QCOMPARE(tracker.Update(Lid::Opened, Lid::Closed, start + 64s), std::optional<bool>{false});
+    tracker.ForgetDevice();
+    QCOMPARE(tracker.Update(std::nullopt, Lid::Opened, start + 65s), std::nullopt);
+
+    // Disabled popups do not consume the cooldown; the first open after enabling announces.
+    QCOMPARE(tracker.Update(Lid::Opened, Lid::Closed, start + 66s), std::optional<bool>{false});
+    QCOMPARE(tracker.Update(Lid::Closed, Lid::Opened, start + 67s, false), std::nullopt);
+    QCOMPARE(tracker.Update(Lid::Opened, Lid::Closed, start + 68s), std::optional<bool>{false});
+    QCOMPARE(tracker.Update(Lid::Closed, Lid::Opened, start + 124s), std::optional<bool>{true});
 }
 
 void AirPodsDomainTests::LidPopupWiringLivesInMainWindow()

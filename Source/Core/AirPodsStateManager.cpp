@@ -351,7 +351,8 @@ void StateManager::DoStateReset(Side side)
     }
 }
 
-std::optional<bool> LidTracker::Update(std::optional<Lid> oldLid, Lid newLid, Timestamp now)
+std::optional<bool>
+LidTracker::Update(std::optional<Lid> oldLid, Lid newLid, Timestamp now, bool popupAllowed)
 {
     std::lock_guard<std::mutex> lock{_mutex};
 
@@ -365,6 +366,9 @@ std::optional<bool> LidTracker::Update(std::optional<Lid> oldLid, Lid newLid, Ti
     _lostAt.reset();
 
     if (newLid == Lid::Opened && previous != Lid::Opened) {
+        if (!popupAllowed) {
+            return std::nullopt;
+        }
         // The cooldown starts from the popup that was actually announced, not from these
         // transitions: a suppressed re-open must not extend it, and a close still hides the
         // window even while opens are suppressed.
@@ -386,6 +390,13 @@ void LidTracker::OnLost(Timestamp now)
 {
     std::lock_guard<std::mutex> lock{_mutex};
     _lostAt = now;
+}
+
+void LidTracker::ForgetDevice()
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    _lastLid.reset();
+    _lostAt.reset();
 }
 
 void LidTracker::Reset()

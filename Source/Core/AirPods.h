@@ -209,8 +209,13 @@ public:
     // rapid open/close cycling cannot bombard the desktop. Closes are reported regardless.
     static constexpr std::chrono::seconds kCooldown{60};
 
-    std::optional<bool> Update(std::optional<Lid> oldLid, Lid newLid, Timestamp now);
+    std::optional<bool>
+    Update(std::optional<Lid> oldLid, Lid newLid, Timestamp now, bool popupAllowed = true);
     void OnLost(Timestamp now);
+    // Drops learned lid state while retaining popup-rate limits. Used when a link briefly drops
+    // and the same device may reconnect.
+    void ForgetDevice();
+    // Drops all lid memory for an explicit unbind or rebind to another device.
     void Reset();
 
 private:
