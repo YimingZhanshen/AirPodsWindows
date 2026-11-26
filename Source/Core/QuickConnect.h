@@ -128,6 +128,7 @@ public:
     void RefreshDevices();
     Outcome Request();
     Outcome OnEndpointStateChanged(const QString &id, bool connected);
+    void OnDeviceConnectionChanged(bool connected);
     Outcome ResolveTimedOut();
 
     // Explicit link control (blueprint 2.8, tray "connect / disconnect").
@@ -154,6 +155,10 @@ public:
     {
         return _linkSuppressed;
     }
+    bool IsLinkDisconnectPending() const
+    {
+        return _linkDisconnectRequested;
+    }
     std::optional<bool> IsLinkConnected() const
     {
         return _lastLinkConnected;
@@ -165,6 +170,8 @@ signals:
     void DevicesChanged();
     void OutcomeChanged(Core::QuickConnect::Outcome outcome, QString deviceName);
     void LinkOutcomeChanged(Core::BluetoothLink::Outcome outcome, int failure);
+    void LinkBusyChanged(bool busy);
+    void LinkConnectionChanged();
 
 private:
     // Lets a worker post back without ever dereferencing a Controller that has started tearing
@@ -193,6 +200,7 @@ private:
     std::vector<Device> _devices;
     std::atomic<bool> _deviceRefreshRunning{};
     std::atomic<bool> _requestRunning{};
+    uint64_t _requestGeneration{};
     std::jthread _deviceRefreshThread;
     std::stop_source _requestStop;
     std::thread _requestThread;
@@ -205,6 +213,7 @@ private:
     uint64_t _linkAddress{};
     uint64_t _linkGeneration{};
     bool _linkRunning{};
+    bool _linkDisconnectRequested{};
     bool _linkSuppressed{};
     std::optional<bool> _lastLinkConnected;
     std::thread _linkThread;
@@ -219,6 +228,7 @@ private:
     Outcome Complete(Outcome outcome);
     void EmitOutcome(Outcome outcome, const QString &deviceName);
     Core::BluetoothLink::Outcome RequestLink(bool connect);
+    void CancelQuickConnectRequests();
     void FinishLink(uint64_t generation, Core::BluetoothLink::AttemptResult result);
     void ResolveLinkTimedOut();
     void

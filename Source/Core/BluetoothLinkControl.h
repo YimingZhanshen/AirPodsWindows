@@ -45,11 +45,13 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <stop_token>
 
 namespace Core::BluetoothLink {
@@ -65,9 +67,54 @@ enum class Service : uint8_t { A2DP, HFP };
 enum class ServiceStatus : uint8_t {
     Unsupported,  // device does not expose it, or its driver failed the KS basicsupport probe
     Unavailable,  // present but user-disabled / inactive - never toggled
-    Disconnected, // usable endpoint whose link is down
-    Connected,    // endpoint active right now
+    Unknown,      // controllable, but the driver did not provide profile connection evidence
+    Disconnected, // driver evidence proves the profile link is down
+    Connected,    // validated driver evidence proves the profile link is up
 };
+
+// One endpoint's contribution to profile state. MMDevice ACTIVE alone is not
+// connection proof: `connected` comes from jack/pin driver evidence, or from an
+// explicitly unplugged/absent endpoint. `controllable` means the filter exposed
+// at least one BtAudio one-shot operation.
+struct EndpointEvidence {
+    bool present{};
+    bool controllable{};
+    std::optional<bool> connected;
+    bool available{true}; // disabled/unknown MMDevice states are never reconnect targets
+};
+
+inline ServiceStatus AggregateEndpointEvidence(std::span<const EndpointEvidence> evidence)
+{
+    bool anyPresent{};
+    bool anyControllable{};
+    bool anyConnected{};
+    bool anyDisconnected{};
+    bool anyUnknown{};
+    for (const auto &item : evidence) {
+        anyPresent = anyPresent || item.present;
+        anyControllable = anyControllable || item.controllable;
+        anyConnected =
+            anyConnected || (item.available && item.connected == std::optional<bool>{true});
+        anyDisconnected =
+            anyDisconnected || (item.available && item.connected == std::optional<bool>{false});
+        anyUnknown =
+            anyUnknown || (item.available && item.controllable && !item.connected.has_value());
+    }
+
+    if (!anyPresent || !anyControllable) {
+        return ServiceStatus::Unsupported;
+    }
+    if (anyConnected) {
+        return ServiceStatus::Connected;
+    }
+    if (anyUnknown) {
+        return ServiceStatus::Unknown;
+    }
+    if (anyDisconnected) {
+        return ServiceStatus::Disconnected;
+    }
+    return ServiceStatus::Unavailable;
+}
 
 struct DeviceLinkState {
     bool deviceKnown{false};   // paired/remembered on a local radio (bthprops)
@@ -76,6 +123,78 @@ struct DeviceLinkState {
     ServiceStatus a2dp{ServiceStatus::Unsupported};
     ServiceStatus hfp{ServiceStatus::Unsupported};
 };
+
+struct RadioEnumerationResult {
+    bool started{};
+    bool completed{};
+    std::size_t count{};
+    uint32_t lastError{};
+};
+
+namespace Details {
+
+// Generic seam for the Win32 radio walk. Keeping ownership here makes the
+// cleanup rules testable with fake handles: every opened radio is closed, and
+// the search handle is closed on normal completion, errors, and early stop.
+template <
+    typename SearchHandle, typename RadioHandle, typename FindFirst, typename FindNext,
+    typename CloseSearch, typename CloseRadio, typename GetLastError, typename Visit>
+RadioEnumerationResult EnumerateRadioHandles(
+    FindFirst findFirst, FindNext findNext, CloseSearch closeSearch, CloseRadio closeRadio,
+    GetLastError getLastError, Visit visit)
+{
+    struct SearchGuard {
+        SearchHandle handle;
+        CloseSearch close;
+        ~SearchGuard()
+        {
+            if (handle) {
+                close(handle);
+            }
+        }
+    };
+    struct RadioGuard {
+        RadioHandle handle;
+        CloseRadio close;
+        ~RadioGuard()
+        {
+            if (handle) {
+                close(handle);
+            }
+        }
+    };
+
+    RadioHandle radio{};
+    SearchHandle search = findFirst(&radio);
+    if (!search) {
+        const auto error = getLastError();
+        if (radio) {
+            closeRadio(radio);
+        }
+        return {false, false, 0, error};
+    }
+    SearchGuard searchGuard{search, closeSearch};
+
+    std::size_t count{};
+    for (;;) {
+        RadioGuard radioGuard{radio, closeRadio};
+        ++count;
+        if (!visit(radio)) {
+            return {true, true, count, 0};
+        }
+        RadioHandle next{};
+        if (!findNext(search, &next)) {
+            const auto error = getLastError();
+            if (next) {
+                closeRadio(next);
+            }
+            return {true, error == 259 /* ERROR_NO_MORE_ITEMS */, count, error};
+        }
+        radio = next;
+    }
+}
+
+} // namespace Details
 
 enum class Decision : uint8_t {
     DeviceNotFound,     // no such paired device - refuse
@@ -205,26 +324,29 @@ inline ActionPlan BuildPlan(const DeviceLinkState &state, bool connect)
         return plan;
     }
 
-    const bool a2dpUsable =
-        state.a2dp == ServiceStatus::Disconnected || state.a2dp == ServiceStatus::Connected;
-    const bool hfpUsable =
-        state.hfp == ServiceStatus::Disconnected || state.hfp == ServiceStatus::Connected;
+    const auto usable = [](ServiceStatus status) {
+        return status == ServiceStatus::Unknown || status == ServiceStatus::Disconnected ||
+               status == ServiceStatus::Connected;
+    };
+    const auto provenConnected = [&](ServiceStatus status) {
+        return status == ServiceStatus::Connected && state.linkReadable && state.linkConnected;
+    };
 
     if (connect) {
-        if (state.a2dp == ServiceStatus::Connected) {
+        if (provenConnected(state.a2dp)) {
             plan.decision = Decision::AlreadySatisfied;
             return plan;
         }
-        if (a2dpUsable) {
+        if (usable(state.a2dp)) {
             plan.decision = Decision::Proceed;
             plan.connectA2DP = true;
             return plan;
         }
-        if (state.hfp == ServiceStatus::Connected) {
+        if (provenConnected(state.hfp)) {
             plan.decision = Decision::AlreadySatisfied;
             return plan;
         }
-        if (hfpUsable) {
+        if (usable(state.hfp)) {
             plan.decision = Decision::Proceed;
             plan.connectHFP = true;
             return plan;
@@ -233,14 +355,20 @@ inline ActionPlan BuildPlan(const DeviceLinkState &state, bool connect)
         return plan;
     }
 
-    if (state.a2dp == ServiceStatus::Connected) {
+    if (state.a2dp == ServiceStatus::Connected || state.a2dp == ServiceStatus::Unknown) {
         plan.disconnectA2DP = true;
     }
-    if (state.hfp == ServiceStatus::Connected) {
+    if (state.hfp == ServiceStatus::Connected || state.hfp == ServiceStatus::Unknown) {
         plan.disconnectHFP = true;
     }
     if (!plan.TouchesAny()) {
-        plan.decision = Decision::AlreadySatisfied;
+        // Unsupported means the profile is absent and Disconnected is explicit
+        // driver proof. A merely disabled/unavailable endpoint is not proof.
+        const bool positiveProof =
+            (state.a2dp == ServiceStatus::Unsupported ||
+             state.a2dp == ServiceStatus::Disconnected) &&
+            (state.hfp == ServiceStatus::Unsupported || state.hfp == ServiceStatus::Disconnected);
+        plan.decision = positiveProof ? Decision::AlreadySatisfied : Decision::NoSupportedService;
     }
     return plan;
 }
@@ -254,10 +382,9 @@ struct AttemptProgress {
 
 // Pure: fold the freshest read-back into progress against the plan. An ACTIVE
 // endpoint alone is not evidence of a Bluetooth link (the driver keeps stale
-// endpoints around), so when the radio read-back is available a connect is
-// only satisfied with the ACL link up; a disconnect is satisfied when no
-// touched profile still reports Connected, even if the device keeps the ACL
-// alive for other profiles.
+// endpoints around), so a connect is satisfied only with both validated jack
+// evidence and the ACL link up. A disconnect is satisfied only when every
+// touched profile reports explicit driver evidence that its link is down.
 inline AttemptProgress Evaluate(const ActionPlan &plan, const DeviceLinkState &latest, bool connect)
 {
     AttemptProgress progress;
@@ -270,16 +397,18 @@ inline AttemptProgress Evaluate(const ActionPlan &plan, const DeviceLinkState &l
     if (connect) {
         const bool touchedUp = (plan.connectA2DP && latest.a2dp == ServiceStatus::Connected) ||
                                (plan.connectHFP && latest.hfp == ServiceStatus::Connected);
-        const bool linkProven = !latest.linkReadable || latest.linkConnected;
-        if (touchedUp && linkProven) {
+        if (touchedUp && latest.linkReadable && latest.linkConnected) {
             progress.evaluation = Evaluation::Satisfied;
         }
         return progress;
     }
 
-    const bool stillConnected = (plan.disconnectA2DP && latest.a2dp == ServiceStatus::Connected) ||
-                                (plan.disconnectHFP && latest.hfp == ServiceStatus::Connected);
-    if (!stillConnected) {
+    // A disappeared or unreadable profile is not proof that a disconnect
+    // request worked. Every profile touched by the plan must report explicit
+    // driver evidence that its link is down.
+    const bool touchedDown = (!plan.disconnectA2DP || latest.a2dp == ServiceStatus::Disconnected) &&
+                             (!plan.disconnectHFP || latest.hfp == ServiceStatus::Disconnected);
+    if (plan.TouchesAny() && touchedDown) {
         progress.evaluation = Evaluation::Satisfied;
     }
     return progress;
@@ -310,13 +439,14 @@ inline void CancellableSleep(std::chrono::milliseconds interval, std::stop_token
     std::condition_variable_any cv;
     bool cancelled = false;
     std::stop_callback callback{stopToken, [&] {
+                                    std::lock_guard lock{mutex};
                                     cancelled = true;
                                     cv.notify_all();
                                 }};
+    std::unique_lock lock{mutex};
     if (cancelled) {
         return;
     }
-    std::unique_lock lock{mutex};
     cv.wait_for(lock, interval, [&] { return cancelled; });
 }
 
@@ -330,7 +460,13 @@ inline AttemptResult RunAttempt(
         [] { return std::chrono::steady_clock::now(); },
     const std::function<void(std::chrono::milliseconds, std::stop_token)> &wait = CancellableSleep)
 {
+    if (stopToken.stop_requested()) {
+        return {Outcome::Cancelled, Failure::Cancelled};
+    }
     auto state = adapter.Query(address, stopToken);
+    if (stopToken.stop_requested()) {
+        return {Outcome::Cancelled, Failure::Cancelled};
+    }
     if (!state.has_value()) {
         return {Outcome::Failed, Failure::Unreadable};
     }
@@ -368,14 +504,15 @@ inline AttemptResult RunAttempt(
         if (stopToken.stop_requested()) {
             return {Outcome::Cancelled, Failure::Cancelled};
         }
-        if (fresh.has_value()) {
-            const auto progress = Evaluate(plan, *fresh, connect);
-            if (progress.evaluation == Evaluation::Satisfied) {
-                return {connect ? Outcome::Connected : Outcome::Disconnected, Failure::None};
-            }
-            if (progress.evaluation == Evaluation::Failed) {
-                return {Outcome::Failed, progress.failure};
-            }
+        if (!fresh.has_value()) {
+            return {Outcome::Failed, Failure::Unreadable};
+        }
+        const auto progress = Evaluate(plan, *fresh, connect);
+        if (progress.evaluation == Evaluation::Satisfied) {
+            return {connect ? Outcome::Connected : Outcome::Disconnected, Failure::None};
+        }
+        if (progress.evaluation == Evaluation::Failed) {
+            return {Outcome::Failed, progress.failure};
         }
 
         if (now() >= end) {

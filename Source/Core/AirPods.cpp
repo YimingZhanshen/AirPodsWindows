@@ -317,6 +317,10 @@ void Manager::OnBoundDeviceAddressChanged(uint64_t address)
     _lidTracker.Reset();
     _earDetection.Reset();
 
+    {
+        std::lock_guard lock{_aapWorkerMutex};
+        _manualLinkSuppressed.BindAddress(address);
+    }
     DisconnectAAP();
 
     emit DeviceConnectionChanged(false);
@@ -431,15 +435,6 @@ void Manager::ConnectAAP()
 {
     LOG(Info, "ConnectAAP called");
 
-    if (_manualLinkSuppressed.load()) {
-        // The user asked the tray to disconnect the link. A natural
-        // device-connected edge (advertisements, status callbacks) must not
-        // re-establish the session until an explicit connect lifts the
-        // suppression; the desired-address state machine is untouched here.
-        LOG(Info, "ConnectAAP: suppressed by an explicit link disconnect");
-        return;
-    }
-
     if (!_boundDevice.has_value()) {
         LOG(Warn, "ConnectAAP: No bound device");
         return;
@@ -465,7 +460,18 @@ void Manager::ConnectAAP()
             Diagnostics::Step::AdvertisementMatched, true,
             std::string{"model="} + std::to_string(static_cast<int>(modelToCheck)) +
                 " address=" + Diagnostics::Recorder::MaskAddress(address));
-        ScheduleAAPConnection(address);
+        {
+            // Suppression and desired-address publication are one atomic
+            // operation. A Bluetooth callback cannot pass the check, lose a
+            // race to explicit disconnect, and publish afterward.
+            std::lock_guard lock{_aapWorkerMutex};
+            if (_manualLinkSuppressed.IsSuppressed() || _aapShutdown) {
+                LOG(Info, "ConnectAAP: suppressed by an explicit link disconnect");
+                return;
+            }
+            ScheduleAAPConnectionLocked(address);
+        }
+        _aapWorkerCv.notify_all();
     }
     else {
         LOG(Info, "ConnectAAP: Device does not support ANC");
@@ -482,37 +488,66 @@ void Manager::ScheduleAAPConnection(uint64_t address)
 {
     {
         std::lock_guard lock{_aapWorkerMutex};
-        if (_aapShutdown) {
-            return;
-        }
-        const bool changed = !_aapDesiredAddress || *_aapDesiredAddress != address;
-        _aapDesiredAddress = address;
-        if (changed) {
-            _aapRetryScheduled = false;
-            _aapRetryAt = {};
-        }
+        ScheduleAAPConnectionLocked(address);
     }
     _aapWorkerCv.notify_all();
 }
 
+void Manager::ScheduleAAPConnectionLocked(uint64_t address)
+{
+    if (_aapShutdown) {
+        return;
+    }
+    const bool changed = !_aapDesiredAddress || *_aapDesiredAddress != address;
+    _aapDesiredAddress = address;
+    if (changed) {
+        _aapRetryScheduled = false;
+        _aapRetryAt = {};
+    }
+}
+
 void Manager::SetLinkSuppressed(bool suppressed)
 {
-    const bool was = _manualLinkSuppressed.exchange(suppressed);
-    if (was == suppressed) {
+    bool changed = false;
+    {
+        std::lock_guard lock{_aapWorkerMutex};
+        changed = _manualLinkSuppressed.IsSuppressed() != suppressed;
+        _manualLinkSuppressed.Set(suppressed);
+        if (suppressed && changed) {
+            // Clear publication and suppression under the same mutex used by
+            // ConnectAAP's check-and-schedule critical section.
+            _aapDesiredAddress.reset();
+            _aapRetryScheduled = false;
+            _aapRetryAt = {};
+            _aapActiveAttempt = {};
+            _aapConnection.Stop();
+        }
+    }
+    _aapWorkerCv.notify_all();
+    if (!changed) {
         return;
     }
 
     if (suppressed) {
         LOG(Info, "Explicit link disconnect: tearing down AAP and suppressing reconnects");
-        // Same stop path as unbind/shutdown: clears the desired address, runs
-        // the state machine through Stop -> FinishStop, and cancels a pending
-        // connect. Re-enabling later assigns a fresh generation from Begin().
-        DisconnectAAP();
+        _aapMgr.CancelConnect();
+        _aapMgr.Disconnect();
+        {
+            std::lock_guard lock{_aapWorkerMutex};
+            _aapConnection.FinishStop();
+        }
+        _aapWorkerCv.notify_all();
     }
     else {
         LOG(Info, "Explicit link connect: resuming automatic AAP connection");
         ConnectAAP();
     }
+}
+
+bool Manager::IsLinkSuppressed() const
+{
+    std::lock_guard lock{_aapWorkerMutex};
+    return _manualLinkSuppressed.IsSuppressed();
 }
 
 void Manager::DisconnectAAP()

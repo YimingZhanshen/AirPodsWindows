@@ -125,6 +125,8 @@ private:
     void OnIconClicked(QSystemTrayIcon::ActivationReason reason);
     void OnQuickConnectOutcome(Core::QuickConnect::Outcome outcome, const QString &deviceName);
     void OnLinkToggleTriggered();
+    void OnLinkBusyChanged(bool busy);
+    void OnLinkConnectionChanged();
     void OnLinkOutcome(Core::BluetoothLink::Outcome outcome, int failure);
     void UpdateLinkAction();
     void OnTrayIconBatteryChanged(Core::Settings::TrayIconBatteryBehavior value);

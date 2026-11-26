@@ -37,6 +37,16 @@ QString NormalizeId(QString id)
     return id.toLower();
 }
 
+// Driver calls are not guaranteed to observe cancellation. Move an old worker
+// to a detached reaper instead of ever joining it on the Controller/GUI thread.
+void ReapAsync(std::thread &worker)
+{
+    if (!worker.joinable()) {
+        return;
+    }
+    std::thread{[thread = std::move(worker)]() mutable { thread.join(); }}.detach();
+}
+
 } // namespace
 
 void Backend::SetController(Controller *controller)
@@ -143,7 +153,8 @@ void Controller::OnPlaybackStateChanged(bool playing)
     const bool started = playing && !_playbackActive;
     _playbackActive = playing;
     if (!started || !_audioAutoConnectEnabled || _deviceId.isEmpty() || _pending ||
-        _requestRunning || std::chrono::steady_clock::now() < _nextAutoRetry)
+        _requestRunning || _linkDisconnectRequested ||
+        std::chrono::steady_clock::now() < _nextAutoRetry)
     {
         return;
     }
@@ -152,6 +163,9 @@ void Controller::OnPlaybackStateChanged(bool playing)
 
 void Controller::SetDeviceId(QString id)
 {
+    if (_deviceId != id) {
+        _lastLinkConnected.reset();
+    }
     _deviceId = std::move(id);
 }
 
@@ -164,14 +178,18 @@ void Controller::SetLinkAddress(uint64_t address)
     // A rebinding invalidates everything the previous device's link proved.
     // The generation bump retires an in-flight worker's post, and the stop
     // token releases it from its poll sleep.
+    const bool wasRunning = _linkRunning;
     _linkAddress = address;
     _lastLinkConnected.reset();
     _linkSuppressed = false;
+    _linkDisconnectRequested = false;
     ++_linkGeneration;
     _linkStop.request_stop();
-    if (_linkRunning) {
-        _linkRunning = false;
-        _linkDeadlineTimer.stop();
+    _linkRunning = false;
+    _linkDeadlineTimer.stop();
+    ReapAsync(_linkThread);
+    if (wasRunning) {
+        emit LinkBusyChanged(false);
     }
 }
 
@@ -220,10 +238,14 @@ Outcome Controller::Request()
 
 Outcome Controller::Request(bool automatic)
 {
-    if (automatic && _linkSuppressed) {
+    if (automatic && (_linkSuppressed || _linkDisconnectRequested)) {
         // The user explicitly disconnected this device's link during the
         // session. A playback edge must not silently undo that; only an
         // explicit connect request lifts the suppression.
+        return Outcome::Disabled;
+    }
+    if (!automatic && _linkDisconnectRequested) {
+        EmitOutcome(Outcome::Disabled, {});
         return Outcome::Disabled;
     }
     if (!automatic) {
@@ -261,16 +283,14 @@ Outcome Controller::Request(bool automatic)
     _manualRequestJoined = !automatic;
     _requestingDeviceId = _deviceId;
     _connectedDuringRequest = false;
+    const uint64_t generation = ++_requestGeneration;
 
-    if (_requestThread.joinable()) {
-        _requestThread.join();
-    }
-
+    ReapAsync(_requestThread);
     _requestStop = std::stop_source{};
 
     _requestThread =
         std::thread{[backend = _backend, link = _link, stopToken = _requestStop.get_token(),
-                     requestedDeviceId = _deviceId]() {
+                     requestedDeviceId = _deviceId, generation]() {
             const auto devices = backend->ListDevices(stopToken);
             const auto deviceIter =
                 std::find_if(devices.begin(), devices.end(), [&](const Device &device) {
@@ -296,8 +316,11 @@ Outcome Controller::Request(bool automatic)
             }
 
             PostToController(
-                link, [requestedDeviceId, deviceName = std::move(deviceName),
-                       outcome](Controller &self) mutable {
+                link, [requestedDeviceId, deviceName = std::move(deviceName), outcome,
+                       generation](Controller &self) mutable {
+                    if (generation != self._requestGeneration) {
+                        return;
+                    }
                     self._requestRunning = false;
                     self._requestingDeviceId.clear();
 
@@ -325,6 +348,16 @@ Outcome Controller::Request(bool automatic)
 
 Outcome Controller::OnEndpointStateChanged(const QString &id, bool connected)
 {
+    const bool selected = !_deviceId.isEmpty() && NormalizeId(id) == NormalizeId(_deviceId);
+    if (selected && !_linkRunning && !_linkDisconnectRequested &&
+        _lastLinkConnected != std::optional<bool>{connected})
+    {
+        _lastLinkConnected = connected;
+        emit LinkConnectionChanged();
+    }
+    if (_linkDisconnectRequested) {
+        return Outcome::RequestStarted;
+    }
     if (_requestRunning && connected && NormalizeId(id) == NormalizeId(_requestingDeviceId)) {
         _connectedDuringRequest = true;
         return Outcome::RequestStarted;
@@ -339,6 +372,16 @@ Outcome Controller::OnEndpointStateChanged(const QString &id, bool connected)
     }
 
     return Complete(Outcome::Connected);
+}
+
+void Controller::OnDeviceConnectionChanged(bool connected)
+{
+    if (!_linkRunning && !_linkDisconnectRequested &&
+        _lastLinkConnected != std::optional<bool>{connected})
+    {
+        _lastLinkConnected = connected;
+        emit LinkConnectionChanged();
+    }
 }
 
 Outcome Controller::ResolveTimedOut()
@@ -402,11 +445,22 @@ Core::BluetoothLink::Outcome Controller::RequestLinkDisconnect()
 
 Core::BluetoothLink::Outcome Controller::RequestLink(bool connect)
 {
-    // Repeated clicks while a request (or its deadline wait) is under way
-    // always join the running one: exactly one OS round trip at a time.
+    // Repeated clicks in the same direction join the logical request. An
+    // explicit opposite-direction request retires it by generation; the old
+    // driver call may still be blocked, so it is reaped asynchronously.
     if (_linkRunning) {
-        EmitLinkOutcome(Core::BluetoothLink::Outcome::Started, Core::BluetoothLink::Failure::None);
-        return Core::BluetoothLink::Outcome::Started;
+        if (_linkDisconnectRequested == !connect) {
+            EmitLinkOutcome(
+                Core::BluetoothLink::Outcome::Started, Core::BluetoothLink::Failure::None);
+            return Core::BluetoothLink::Outcome::Started;
+        }
+        ++_linkGeneration;
+        _linkStop.request_stop();
+        _linkRunning = false;
+        _linkDisconnectRequested = false;
+        _linkDeadlineTimer.stop();
+        ReapAsync(_linkThread);
+        emit LinkBusyChanged(false);
     }
 
     if (_linkAddress == 0) {
@@ -421,14 +475,16 @@ Core::BluetoothLink::Outcome Controller::RequestLink(bool connect)
         return Core::BluetoothLink::Outcome::AdapterUnavailable;
     }
 
+    if (!connect) {
+        CancelQuickConnectRequests();
+    }
+
     ++_linkGeneration;
     const uint64_t generation = _linkGeneration;
     _linkRunning = true;
+    _linkDisconnectRequested = !connect;
     _linkStop = std::stop_source{};
-
-    if (_linkThread.joinable()) {
-        _linkThread.join();
-    }
+    ReapAsync(_linkThread);
 
     // Same detach-safe contract as the reconnect worker: the thread keeps a
     // shared reference to the backend (which owns the adapter) and posts
@@ -447,7 +503,24 @@ Core::BluetoothLink::Outcome Controller::RequestLink(bool connect)
     }};
 
     _linkDeadlineTimer.start();
+    emit LinkBusyChanged(true);
     return Core::BluetoothLink::Outcome::Started;
+}
+
+void Controller::CancelQuickConnectRequests()
+{
+    ++_requestGeneration;
+    _requestStop.request_stop();
+    _resolveTimer.stop();
+    _pending = false;
+    _pendingDeviceId.clear();
+    _pendingDeviceName.clear();
+    _requestRunning = false;
+    _requestingDeviceId.clear();
+    _connectedDuringRequest = false;
+    _automaticRequest = false;
+    _manualRequestJoined = false;
+    _backend->StopObserving();
 }
 
 void Controller::FinishLink(uint64_t generation, Core::BluetoothLink::AttemptResult result)
@@ -460,6 +533,7 @@ void Controller::FinishLink(uint64_t generation, Core::BluetoothLink::AttemptRes
     }
 
     _linkRunning = false;
+    _linkDisconnectRequested = false;
     _linkDeadlineTimer.stop();
 
     if (const auto suppression = Core::BluetoothLink::SuppressionFor(result.outcome)) {
@@ -482,6 +556,7 @@ void Controller::FinishLink(uint64_t generation, Core::BluetoothLink::AttemptRes
     }
 
     EmitLinkOutcome(result.outcome, result.failure);
+    emit LinkBusyChanged(false);
 }
 
 void Controller::ResolveLinkTimedOut()
@@ -495,8 +570,10 @@ void Controller::ResolveLinkTimedOut()
     // can post nothing for this attempt, then release its poll sleep.
     ++_linkGeneration;
     _linkRunning = false;
+    _linkDisconnectRequested = false;
     _linkStop.request_stop();
     EmitLinkOutcome(Core::BluetoothLink::Outcome::TimedOut, Core::BluetoothLink::Failure::Timeout);
+    emit LinkBusyChanged(false);
 }
 
 void Controller::EmitLinkOutcome(

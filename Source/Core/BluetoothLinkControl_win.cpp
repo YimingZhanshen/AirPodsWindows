@@ -22,12 +22,19 @@
     #error "This file shouldn't be compiled."
 #endif
 
+#include <cassert>
+
+#include "OS/Windows.h"
+
 #include <bthsdpdef.h>
 #include <bluetoothapis.h>
+#include <devicetopology.h>
 #include <ks.h>
 #include <ksmedia.h>
 #include <mmdeviceapi.h>
 
+#include <cstddef>
+#include <cstring>
 #include <cwchar>
 #include <memory>
 #include <set>
@@ -36,7 +43,6 @@
 #include <utility>
 #include <vector>
 
-#include "OS/Windows.h"
 #include "../Logger.h"
 
 namespace Core::BluetoothLink {
@@ -105,7 +111,12 @@ std::string MaskAddressShort(uint64_t address)
 {
     wchar_t buffer[17]{};
     swprintf(buffer, 17, L"%012llX", static_cast<unsigned long long>(address));
-    return "***" + std::string{buffer + 8, 4};
+    std::string suffix;
+    suffix.reserve(4);
+    for (size_t i = 8; i < 12; ++i) {
+        suffix.push_back(static_cast<char>(buffer[i]));
+    }
+    return "***" + suffix;
 }
 
 Profile ClassifyFilter(const std::wstring &filterIdUpper)
@@ -213,7 +224,7 @@ std::optional<ResolvedFilter> ResolveFilter(IMMDeviceEnumerator &enumerator, IMM
 // advertises support on the GET bit before it will honour the request.
 bool SupportsOneShot(IKsControl &ksControl, ULONG propertyId)
 {
-    KSPROPERTY property{KSPROPERTYSETID_BtAudio, propertyId, KSPROPERTY_TYPE_BASICSUPPORT};
+    KSPROPERTY property{KSPROPSETID_BtAudio, propertyId, KSPROPERTY_TYPE_BASICSUPPORT};
     ULONG supported{};
     ULONG returned{};
     const HRESULT result = ksControl.KsProperty(
@@ -225,7 +236,7 @@ bool SupportsOneShot(IKsControl &ksControl, ULONG propertyId)
 
 HRESULT SendOneShot(IKsControl &ksControl, ULONG propertyId)
 {
-    KSPROPERTY property{KSPROPERTYSETID_BtAudio, propertyId, KSPROPERTY_TYPE_GET};
+    KSPROPERTY property{KSPROPSETID_BtAudio, propertyId, KSPROPERTY_TYPE_GET};
     ULONG returned{};
     return ksControl.KsProperty(
         reinterpret_cast<PKSPROPERTY>(&property), sizeof(property), nullptr, 0, &returned);
@@ -236,47 +247,131 @@ struct AudioEndpointRow {
     Profile profile{Profile::Unclassified};
     DWORD state{};
     std::wstring filterId;
+    std::optional<bool> profileConnected;
     bool reconnectSupported{};
     bool disconnectSupported{};
 };
 
-std::vector<AudioEndpointRow>
-CollectDeviceEndpoints(uint64_t address, bool probeKs, std::stop_token stopToken)
-{
+struct EndpointCollection {
     std::vector<AudioEndpointRow> rows;
+    bool readable{};
+};
+
+// KSPROPERTY_JACK_DESCRIPTION is pin-wise. Query every bridge pin and accept a
+// connected jack only when the returned KSMULTIPLE_ITEM/KSJACK_DESCRIPTION
+// buffer is structurally valid. Unsupported or malformed driver evidence stays
+// unknown; MMDevice ACTIVE is never promoted to profile proof.
+std::optional<bool> ReadJackConnection(IKsControl &ksControl, std::stop_token stopToken)
+{
+    KSP_PIN pinCountProperty{
+        KSPROPSETID_Pin, KSPROPERTY_PIN_CTYPES, KSPROPERTY_TYPE_GET, 0,
+        KSPROPERTY_PIN_FLAGS_ATTRIBUTE_RANGE_AWARE};
+    ULONG pinCount{};
+    ULONG returned{};
+    HRESULT result = ksControl.KsProperty(
+        reinterpret_cast<PKSPROPERTY>(&pinCountProperty), sizeof(pinCountProperty), &pinCount,
+        sizeof(pinCount), &returned);
+    if (FAILED(result) || returned < sizeof(pinCount) || pinCount == 0) {
+        return std::nullopt;
+    }
+
+    bool sawConnected = false;
+    bool sawDescription = false;
+    for (ULONG pinId = 0; pinId < pinCount; ++pinId) {
+        if (stopToken.stop_requested()) {
+            return std::nullopt;
+        }
+        KSP_PIN request{
+            KSPROPSETID_Jack, KSPROPERTY_JACK_DESCRIPTION, KSPROPERTY_TYPE_GET, pinId,
+            KSPROPERTY_PIN_FLAGS_ATTRIBUTE_RANGE_AWARE};
+        KSMULTIPLE_ITEM header{};
+        returned = 0;
+        result = ksControl.KsProperty(
+            reinterpret_cast<PKSPROPERTY>(&request), sizeof(request), &header, sizeof(header),
+            &returned);
+        // Variable-length KS properties report ERROR_MORE_DATA when the first
+        // pass supplies only the KSMULTIPLE_ITEM header. The returned byte
+        // count, not S_OK alone, validates that sizing pass.
+        if (returned < sizeof(header) ||
+            !(SUCCEEDED(result) || result == HRESULT_FROM_WIN32(ERROR_MORE_DATA)))
+        {
+            continue;
+        }
+        if (header.Count == 0) {
+            continue;
+        }
+        const auto descriptionSize = static_cast<size_t>(header.Count) * sizeof(KSJACK_DESCRIPTION);
+        if (header.Size < sizeof(header) || header.Size - sizeof(header) < descriptionSize ||
+            descriptionSize > 64 * 1024)
+        {
+            continue;
+        }
+
+        const auto bufferSize = static_cast<size_t>(header.Size);
+        std::vector<std::max_align_t> storage(
+            (bufferSize + sizeof(std::max_align_t) - 1) / sizeof(std::max_align_t));
+        auto *buffer = reinterpret_cast<std::byte *>(storage.data());
+        std::memcpy(buffer, &header, sizeof(header));
+        returned = 0;
+        result = ksControl.KsProperty(
+            reinterpret_cast<PKSPROPERTY>(&request), sizeof(request), buffer,
+            static_cast<ULONG>(bufferSize), &returned);
+        if (FAILED(result) || returned < bufferSize) {
+            continue;
+        }
+        const auto *descriptions =
+            reinterpret_cast<const KSJACK_DESCRIPTION *>(buffer + sizeof(KSMULTIPLE_ITEM));
+        sawDescription = true;
+        for (ULONG i = 0; i < header.Count; ++i) {
+            sawConnected = sawConnected || descriptions[i].IsConnected != FALSE;
+        }
+    }
+    return sawDescription ? std::optional<bool>{sawConnected} : std::nullopt;
+}
+
+EndpointCollection CollectDeviceEndpoints(uint64_t address, bool probeKs, std::stop_token stopToken)
+{
+    EndpointCollection collection;
+    collection.readable = true;
     const auto addressToken = AddressToken(address);
 
     auto enumerator = CreateDeviceEnumerator();
     if (!enumerator) {
-        return rows;
+        collection.readable = false;
+        return collection;
     }
 
-    OS::Windows::Com::UniquePtr<IMMDeviceCollection> collection;
-    HRESULT result = enumerator->EnumAudioEndpoints(
-        eAll, DEVICE_STATEMASK_ALL, collection.ReleaseAndAddressOf());
+    OS::Windows::Com::UniquePtr<IMMDeviceCollection> endpoints;
+    HRESULT result =
+        enumerator->EnumAudioEndpoints(eAll, DEVICE_STATEMASK_ALL, endpoints.ReleaseAndAddressOf());
     if (FAILED(result)) {
         LOG(Warn, "EnumAudioEndpoints failed. HRESULT: {:#x}", result);
-        return rows;
+        collection.readable = false;
+        return collection;
     }
 
     UINT count{};
-    if (FAILED(collection->GetCount(&count))) {
-        return rows;
+    if (FAILED(endpoints->GetCount(&count))) {
+        collection.readable = false;
+        return collection;
     }
 
     std::set<std::wstring> seenFilters;
     for (UINT i = 0; i < count; ++i) {
         if (stopToken.stop_requested()) {
-            break;
+            collection.readable = false;
+            return collection;
         }
 
         OS::Windows::Com::UniquePtr<IMMDevice> endpoint;
-        if (FAILED(collection->Item(i, endpoint.ReleaseAndAddressOf()))) {
+        if (FAILED(endpoints->Item(i, endpoint.ReleaseAndAddressOf()))) {
+            collection.readable = false;
             continue;
         }
 
         DWORD state{};
         if (FAILED(endpoint->GetState(&state))) {
+            collection.readable = false;
             continue;
         }
 
@@ -296,57 +391,38 @@ CollectDeviceEndpoints(uint64_t address, bool probeKs, std::stop_token stopToken
         if (row.profile == Profile::Unclassified) {
             continue; // Never touch endpoints whose profile we cannot name.
         }
-        if (seenFilters.insert(row.filterId).second && probeKs &&
-            (state == DEVICE_STATE_ACTIVE || state == DEVICE_STATE_NOTPRESENT))
-        {
+        if (seenFilters.insert(row.filterId).second && probeKs) {
             row.reconnectSupported = SupportsOneShot(*resolved->ksControl, kOneShotReconnectId);
             row.disconnectSupported = SupportsOneShot(*resolved->ksControl, kOneShotDisconnectId);
+            if (state == DEVICE_STATE_ACTIVE) {
+                row.profileConnected = ReadJackConnection(*resolved->ksControl, stopToken);
+            }
+            else if (state == DEVICE_STATE_UNPLUGGED || state == DEVICE_STATE_NOTPRESENT) {
+                row.profileConnected = false;
+            }
         }
-        rows.push_back(std::move(row));
+        collection.rows.push_back(std::move(row));
     }
 
-    return rows;
+    return collection;
 }
 
 void AggregateProfile(
     const std::vector<AudioEndpointRow> &rows, Profile profile, ServiceStatus &statusOut)
 {
-    bool anyConnected{};
-    bool anyDisconnectedUsable{};
-    bool anySupported{};
-    bool anyPresent{};
+    std::vector<EndpointEvidence> evidence;
     for (const auto &row : rows) {
         if (row.profile != profile) {
             continue;
         }
-        anyPresent = true;
-        // One service status per profile: "controllable at all". Asymmetric
-        // drivers (disconnect but no reconnect) are gated per operation inside
-        // Submit, which reports the refusal instead of guessing.
-        if (row.reconnectSupported || row.disconnectSupported) {
-            anySupported = true;
-        }
-        if (row.state == DEVICE_STATE_ACTIVE) {
-            anyConnected = true;
-        }
-        else if (row.state == DEVICE_STATE_NOTPRESENT) {
-            anyDisconnectedUsable = true;
-        }
+        const bool available = row.state == DEVICE_STATE_ACTIVE ||
+                               row.state == DEVICE_STATE_UNPLUGGED ||
+                               row.state == DEVICE_STATE_NOTPRESENT;
+        evidence.push_back(
+            {true, row.reconnectSupported || row.disconnectSupported, row.profileConnected,
+             available});
     }
-
-    if (!anyPresent || !anySupported) {
-        statusOut = ServiceStatus::Unsupported;
-    }
-    else if (anyConnected) {
-        statusOut = ServiceStatus::Connected;
-    }
-    else if (anyDisconnectedUsable) {
-        statusOut = ServiceStatus::Disconnected;
-    }
-    else {
-        // Present but user-disabled or otherwise inert: refused by the plan.
-        statusOut = ServiceStatus::Unavailable;
-    }
+    statusOut = AggregateEndpointEvidence(evidence);
 }
 
 struct PairedLink {
@@ -356,8 +432,9 @@ struct PairedLink {
 };
 
 // bthprops read-back of the classic link: fConnected only reports true while
-// the ACL link to this exact address is up. Without a local radio nothing is
-// readable, which the policy treats as "no proof", never as "connected".
+// the ACL link to this exact address is up. Every local radio is inspected; a
+// device paired to a later radio must not look absent merely because the first
+// radio did not contain it.
 PairedLink ReadPairedLink(uint64_t address, std::stop_token stopToken)
 {
     PairedLink link;
@@ -367,21 +444,48 @@ PairedLink ReadPairedLink(uint64_t address, std::stop_token stopToken)
 
     BLUETOOTH_FIND_RADIO_PARAMS radioSearch{};
     radioSearch.dwSize = sizeof(radioSearch);
-    HANDLE radio = nullptr;
-    if (!BluetoothFindFirstRadio(&radioSearch, &radio)) {
-        return link;
-    }
+    bool sawRadio{};
+    bool missingOnly = true;
+    const auto enumeration = Details::EnumerateRadioHandles<HBLUETOOTH_RADIO_FIND, HANDLE>(
+        [&](HANDLE *radio) { return BluetoothFindFirstRadio(&radioSearch, radio); },
+        [](HBLUETOOTH_RADIO_FIND search, HANDLE *radio) {
+            return BluetoothFindNextRadio(search, radio);
+        },
+        [](HBLUETOOTH_RADIO_FIND search) { BluetoothFindRadioClose(search); },
+        [](HANDLE radio) { CloseHandle(radio); }, [] { return GetLastError(); },
+        [&](HANDLE radio) {
+            sawRadio = true;
+            if (stopToken.stop_requested()) {
+                return false;
+            }
 
-    BLUETOOTH_DEVICE_INFO info{};
-    info.dwSize = sizeof(info);
-    info.Address.ullLong = address;
-    if (BluetoothGetDeviceInfo(radio, &info) == ERROR_SUCCESS) {
+            BLUETOOTH_DEVICE_INFO info{};
+            info.dwSize = sizeof(info);
+            info.Address.ullLong = address;
+            const auto result = BluetoothGetDeviceInfo(radio, &info);
+            if (result == ERROR_SUCCESS) {
+                link.readable = true;
+                link.known = info.fRemembered != FALSE || info.fAuthenticated != FALSE;
+                link.connected = link.connected || info.fConnected != FALSE;
+            }
+            else if (result == ERROR_NOT_FOUND) {
+                link.readable = true;
+            }
+            else {
+                missingOnly = false;
+            }
+            return true;
+        });
+
+    if (!enumeration.started || !enumeration.completed || stopToken.stop_requested()) {
+        return {};
+    }
+    if (sawRadio && missingOnly) {
         link.readable = true;
-        link.known = info.fRemembered != FALSE || info.fAuthenticated != FALSE;
-        link.connected = info.fConnected != FALSE;
     }
-
-    CloseHandle(radio);
+    if (!link.known && !missingOnly) {
+        link.readable = false;
+    }
     return link;
 }
 
@@ -400,6 +504,9 @@ public:
         if (stopToken.stop_requested()) {
             return std::nullopt;
         }
+        if (!link.readable) {
+            return std::nullopt;
+        }
         if (!link.known) {
             DeviceLinkState state;
             state.deviceKnown = false;
@@ -408,8 +515,11 @@ public:
             return state;
         }
 
-        const auto rows = CollectDeviceEndpoints(address, true, stopToken);
+        const auto endpoints = CollectDeviceEndpoints(address, true, stopToken);
         if (stopToken.stop_requested()) {
+            return std::nullopt;
+        }
+        if (!endpoints.readable) {
             return std::nullopt;
         }
 
@@ -417,8 +527,8 @@ public:
         state.deviceKnown = link.known;
         state.linkReadable = link.readable;
         state.linkConnected = link.connected;
-        AggregateProfile(rows, Profile::A2DP, state.a2dp);
-        AggregateProfile(rows, Profile::HFP, state.hfp);
+        AggregateProfile(endpoints.rows, Profile::A2DP, state.a2dp);
+        AggregateProfile(endpoints.rows, Profile::HFP, state.hfp);
         return state;
     }
 
@@ -437,11 +547,13 @@ public:
         // send one request per driver filter. A rejection on some endpoints
         // still counts as submitted when another filter accepted: the polling
         // read-back, not this return code, decides the final outcome.
-        const auto rows = CollectDeviceEndpoints(address, true, stopToken);
+        const auto endpoints = CollectDeviceEndpoints(address, true, stopToken);
         if (stopToken.stop_requested()) {
             return Failure::Cancelled;
         }
-
+        if (!endpoints.readable) {
+            return Failure::Unreadable;
+        }
         auto enumerator = CreateDeviceEnumerator();
         if (!enumerator) {
             return Failure::Unreadable;
@@ -450,7 +562,7 @@ public:
         int sent{};
         int rejected{};
         std::set<std::wstring> done;
-        for (const auto &row : rows) {
+        for (const auto &row : endpoints.rows) {
             if (stopToken.stop_requested()) {
                 return Failure::Cancelled;
             }
@@ -462,15 +574,18 @@ public:
             if (!wantConnect && !wantDisconnect) {
                 continue;
             }
-            // Never enable user-disabled or absent endpoints, and never send
-            // a request to an endpoint that already sits in the wanted state.
-            if (row.state != DEVICE_STATE_ACTIVE && row.state != DEVICE_STATE_NOTPRESENT) {
+            // Never enable user-disabled endpoints. UNPLUGGED and NOTPRESENT
+            // are valid reconnect targets (notably HFP), while ACTIVE is only
+            // skipped when driver evidence proves the profile already up.
+            if (row.state != DEVICE_STATE_ACTIVE && row.state != DEVICE_STATE_UNPLUGGED &&
+                row.state != DEVICE_STATE_NOTPRESENT)
+            {
                 continue;
             }
-            if (wantConnect && row.state == DEVICE_STATE_ACTIVE) {
+            if (wantConnect && row.profileConnected == std::optional<bool>{true}) {
                 continue;
             }
-            if (wantDisconnect && row.state == DEVICE_STATE_NOTPRESENT) {
+            if (wantDisconnect && row.profileConnected == std::optional<bool>{false}) {
                 continue;
             }
             const ULONG propertyId = wantConnect ? kOneShotReconnectId : kOneShotDisconnectId;

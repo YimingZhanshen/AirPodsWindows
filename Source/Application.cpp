@@ -295,6 +295,9 @@ void ApdApplication::ConnectAirPodsManager()
     connect(
         manager, &Core::AirPods::Manager::DeviceConnectionChanged, _lowAudioLatencyController.get(),
         &Core::LowAudioLatency::Controller::SetDeviceConnectedSafely);
+    connect(
+        manager, &Core::AirPods::Manager::DeviceConnectionChanged, _quickConnect.get(),
+        &Core::QuickConnect::Controller::OnDeviceConnectionChanged, Qt::QueuedConnection);
     // Blueprint 2.8: a successful manual link disconnect suppresses automatic
     // AAP re-establishment (the manager tears the session down through the
     // P2 stop path); an explicit connect - through the link toggle or a
@@ -310,11 +313,16 @@ void ApdApplication::ConnectAirPodsManager()
         Qt::QueuedConnection);
     connect(
         _quickConnect.get(), &Core::QuickConnect::Controller::OutcomeChanged, this,
-        [manager](Core::QuickConnect::Outcome outcome, const QString &) {
+        [manager,
+         quickConnect = _quickConnect.get()](Core::QuickConnect::Outcome outcome, const QString &) {
             if (outcome == Core::QuickConnect::Outcome::Connected ||
                 outcome == Core::QuickConnect::Outcome::AlreadyConnected)
             {
-                manager->SetLinkSuppressed(false);
+                // A queued Connected from work retired by explicit disconnect
+                // must never lift the newer manual-disconnect suppression.
+                if (!quickConnect->IsLinkDisconnectPending() && !quickConnect->IsLinkSuppressed()) {
+                    manager->SetLinkSuppressed(false);
+                }
             }
         },
         Qt::QueuedConnection);

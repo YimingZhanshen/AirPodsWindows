@@ -56,6 +56,12 @@ TrayIcon::TrayIcon(
     connect(
         &_quickConnect, &Core::QuickConnect::Controller::LinkOutcomeChanged, this,
         &TrayIcon::OnLinkOutcome);
+    connect(
+        &_quickConnect, &Core::QuickConnect::Controller::LinkBusyChanged, this,
+        &TrayIcon::OnLinkBusyChanged);
+    connect(
+        &_quickConnect, &Core::QuickConnect::Controller::LinkConnectionChanged, this,
+        &TrayIcon::OnLinkConnectionChanged);
 
     connect(
         this, &TrayIcon::OnTrayIconBatteryChangedSafely, this, &TrayIcon::OnTrayIconBatteryChanged);
@@ -610,11 +616,25 @@ void TrayIcon::OnLinkToggleTriggered()
     // through OnLinkOutcome, so no widget is ever touched from the worker.
     const auto outcome =
         connected ? _quickConnect.RequestLinkDisconnect() : _quickConnect.RequestLinkConnect();
-    if (outcome == Core::BluetoothLink::Outcome::Started && !_linkBusy) {
+    if (outcome == Core::BluetoothLink::Outcome::Started) {
         _linkBusy = true;
         _linkBusyDisconnecting = connected;
         UpdateLinkAction();
     }
+}
+
+void TrayIcon::OnLinkBusyChanged(bool busy)
+{
+    _linkBusy = busy;
+    if (!busy) {
+        _linkBusyDisconnecting = false;
+    }
+    UpdateLinkAction();
+}
+
+void TrayIcon::OnLinkConnectionChanged()
+{
+    UpdateLinkAction();
 }
 
 void TrayIcon::OnLinkOutcome(Core::BluetoothLink::Outcome outcome, int failure)
@@ -667,7 +687,9 @@ void TrayIcon::OnLinkOutcome(Core::BluetoothLink::Outcome outcome, int failure)
                    : tr("Connecting timed out. Bring the device closer and try again.");
         break;
     case Outcome::Failed:
-        text = tr("Windows refused to change the device connection. Try again.");
+        text = failure == static_cast<int>(Core::BluetoothLink::Failure::Unreadable)
+                   ? tr("Windows could not read the device connection state. Try again.")
+                   : tr("Windows refused to change the device connection. Try again.");
         break;
     case Outcome::Cancelled:
         return; // superseded by a newer request or shutdown; the newer one speaks
