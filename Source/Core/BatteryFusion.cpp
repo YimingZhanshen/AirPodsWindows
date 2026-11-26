@@ -123,6 +123,7 @@ bool BatteryFusion::Presents(AAP::BatteryComponent component) const
 const BatteryFusion::Slot *BatteryFusion::slotFor(AAP::BatteryComponent component) const
 {
     switch (component) {
+    case AAP::BatteryComponent::Headset:
     case AAP::BatteryComponent::Left:
         return &_left;
     case AAP::BatteryComponent::Right:

@@ -1189,20 +1189,38 @@ void Manager::RequestFusedStatePublish()
 
 void Manager::PublishFusedState()
 {
-    std::optional<State> fused;
-    {
-        std::lock_guard lock{_batteryFusionMutex};
-        if (!_lastBleState.has_value()) {
-            return;
-        }
-        fused = _lastBleState;
-        OverlayBattery(*fused);
-        if (_lastPublishedState == fused) {
-            return;
-        }
-        _lastPublishedState = fused;
+    if (_publishingFusedState) {
+        // A receiver may process queued events during StateUpdated. Do not let the nested
+        // publish overtake the rest of the current emission; drain the newest state below.
+        _fusedStatePublishPending = true;
+        return;
     }
-    emit StateUpdated(*fused);
+
+    _publishingFusedState = true;
+    for (;;) {
+        _fusedStatePublishPending = false;
+        std::optional<State> fused;
+        {
+            std::lock_guard lock{_batteryFusionMutex};
+            if (_lastBleState.has_value()) {
+                fused = _lastBleState;
+                OverlayBattery(*fused);
+                if (_lastPublishedState != fused) {
+                    _lastPublishedState = fused;
+                }
+                else {
+                    fused.reset();
+                }
+            }
+        }
+        if (fused.has_value()) {
+            emit StateUpdated(*fused);
+        }
+        if (!_fusedStatePublishPending) {
+            break;
+        }
+    }
+    _publishingFusedState = false;
 }
 
 void Manager::OnHeadTrackingData(AAP::HeadTrackingData data, AAP::AAPAttempt attempt)

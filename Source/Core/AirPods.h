@@ -323,6 +323,11 @@ private:
     Details::BatteryFusion _batteryFusion;
     std::optional<State> _lastBleState;
     std::optional<State> _lastPublishedState;
+    // Owner-thread-only guard. A receiver may spin nested event processing during
+    // StateUpdated; defer and coalesce those publishes until the current emission has
+    // reached every receiver, so an older state can never follow a newer one.
+    bool _publishingFusedState{false};
+    bool _fusedStatePublishPending{false};
     uint64_t _requestedDeviceAddress{0};
     std::jthread _deviceLookupThread;
 
@@ -390,7 +395,8 @@ private:
     // Posts a fused republish onto the thread that owns Manager; safe from any worker thread.
     void RequestFusedStatePublish();
     // Re-publishes the newest retained BLE state with the current fusion overlay applied.
-    // Runs on Manager's thread for both BLE and AAP battery inputs.
+    // Runs on Manager's thread for both BLE and AAP battery inputs. Nested publish requests
+    // are coalesced and drained after the current StateUpdated emission completes.
     void PublishFusedState();
     void ScheduleScannerRetry();
     void StopScannerRetry();

@@ -83,10 +83,11 @@ public:
     bool
     OnAapSnapshot(const AAP::AAPBatterySnapshot &snapshot, const BleBaseline &bleBaseline = {});
 
-    // nullopt when AAP does not present the component (pure BLE path). Unknown
-    // components never present. `bleLevel` is the current advertisement value,
-    // used only for the conflict flag; the caller keeps its own charging bit
-    // only while this component falls back to BLE.
+    // nullopt when AAP does not present the component (pure BLE path). Headset is an
+    // alias for Left, the application's single-battery presentation slot. Unknown
+    // components never present. `bleLevel` is the current advertisement value, used
+    // only for the conflict flag; the caller keeps its own charging bit only while
+    // this component falls back to BLE.
     std::optional<Reading>
     Resolve(AAP::BatteryComponent component, std::optional<uint8_t> bleLevel) const;
 

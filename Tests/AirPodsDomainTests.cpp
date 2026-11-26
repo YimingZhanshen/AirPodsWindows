@@ -259,7 +259,9 @@ private Q_SLOTS:
     void ConfirmsLargeBatteryDropOnlyAfterTwoIdenticalReadings();
     void HoldsFirstAapDropAgainstBleBaseline();
     void ClearsPendingDropWhenComponentIsOmitted();
+    void HeadsetBatteryUsesLeftPresentationSlot();
     void SerializesBleAndAapStatePublication();
+    void SerializesFusedStatePublicationAcrossNestedEventLoop();
     void AcceptsSmallBatteryDropsAndRisesImmediately();
     void MarksBatterySourceConflictBeyondBleBucket();
     void UsesAapStatusForBatteryCharging();
@@ -971,6 +973,40 @@ void AirPodsDomainTests::ClearsPendingDropWhenComponentIsOmitted()
     QCOMPARE(fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt)->level, uint8_t(40));
 }
 
+void AirPodsDomainTests::HeadsetBatteryUsesLeftPresentationSlot()
+{
+    using Fusion = Core::AirPods::Details::BatteryFusion;
+    using Component = Core::AAP::BatteryComponent;
+    Fusion fusion;
+
+    QVERIFY(!fusion.Presents(Component::Headset));
+    QVERIFY(!fusion.Resolve(Component::Headset, std::optional<uint8_t>(90)).has_value());
+
+    Core::AAP::AAPBatterySnapshot headset;
+    headset.left = AapReading(Component::Headset, 73, Core::AAP::BatteryStatus::Charging);
+    QVERIFY(fusion.OnAapSnapshot(headset));
+    QVERIFY(fusion.Presents(Component::Headset));
+    QVERIFY(fusion.Presents(Component::Left));
+    QVERIFY(!fusion.Presents(Component::Right));
+    QVERIFY(!fusion.Presents(Component::Case));
+
+    const auto resolved = fusion.Resolve(Component::Headset, std::optional<uint8_t>(90));
+    QVERIFY(resolved.has_value());
+    QCOMPARE(resolved->level, uint8_t(73));
+    QVERIFY(resolved->charging);
+    QVERIFY(resolved->conflict);
+    const auto left = fusion.Resolve(Component::Left, std::nullopt);
+    QVERIFY(left.has_value());
+    QCOMPARE(left->level, resolved->level);
+    QCOMPARE(left->charging, resolved->charging);
+
+    headset.left = AapReading(Component::Headset, 0, Core::AAP::BatteryStatus::Disconnected);
+    QVERIFY(fusion.OnAapSnapshot(headset));
+    QVERIFY(!fusion.Presents(Component::Headset));
+    QVERIFY(!fusion.Presents(Component::Left));
+    QVERIFY(!fusion.Resolve(Component::Headset, std::optional<uint8_t>(90)).has_value());
+}
+
 void AirPodsDomainTests::SerializesBleAndAapStatePublication()
 {
     using Manager = Core::AirPods::Manager;
@@ -1019,6 +1055,56 @@ void AirPodsDomainTests::SerializesBleAndAapStatePublication()
     // delivery recomputes from BLE 90 + AAP 88, and the second is suppressed as duplicate.
     QCOMPARE(published.size(), size_t{1});
     QCOMPARE(published.front(), uint8_t{88});
+}
+
+void AirPodsDomainTests::SerializesFusedStatePublicationAcrossNestedEventLoop()
+{
+    using Manager = Core::AirPods::Manager;
+    Manager manager;
+    Core::AirPods::State older;
+    older.pods.left.battery = Core::AirPods::Battery{80};
+    Core::AirPods::State newer;
+    newer.pods.left.battery = Core::AirPods::Battery{40};
+    {
+        std::lock_guard lock{manager._batteryFusionMutex};
+        manager._lastBleState = older;
+    }
+
+    std::vector<uint8_t> firstReceiver;
+    std::vector<uint8_t> secondReceiver;
+    bool spunEventLoop = false;
+    QObject::connect(&manager, &Manager::StateUpdated, &manager, [&](const auto &state) {
+        if (state.pods.left.battery.Available()) {
+            firstReceiver.push_back(static_cast<uint8_t>(state.pods.left.battery.Value()));
+        }
+        if (!spunEventLoop) {
+            spunEventLoop = true;
+            {
+                std::lock_guard lock{manager._batteryFusionMutex};
+                manager._lastBleState = newer;
+            }
+            manager.RequestFusedStatePublish();
+            QCoreApplication::processEvents();
+        }
+    });
+    QObject::connect(&manager, &Manager::StateUpdated, &manager, [&](const auto &state) {
+        if (state.pods.left.battery.Available()) {
+            secondReceiver.push_back(static_cast<uint8_t>(state.pods.left.battery.Value()));
+        }
+    });
+
+    manager.PublishFusedState();
+    QCoreApplication::processEvents();
+
+    // The nested request used to publish 40 to the first receiver and then resume the
+    // older 80 emission to the second receiver. Both receivers must now observe 80, 40.
+    QVERIFY(spunEventLoop);
+    QCOMPARE(firstReceiver.size(), size_t{2});
+    QCOMPARE(secondReceiver.size(), size_t{2});
+    QCOMPARE(firstReceiver[0], uint8_t{80});
+    QCOMPARE(firstReceiver[1], uint8_t{40});
+    QCOMPARE(secondReceiver[0], uint8_t{80});
+    QCOMPARE(secondReceiver[1], uint8_t{40});
 }
 
 void AirPodsDomainTests::AcceptsSmallBatteryDropsAndRisesImmediately()
