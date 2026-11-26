@@ -464,6 +464,16 @@ void ApdApplication::OnPpeCapLevelChanged(uint8_t level)
     _airPodsManager->OnPpeCapLevelChanged(level);
 }
 
+void ApdApplication::OnAdaptiveNoiseLevelChanged(uint8_t level)
+{
+    _airPodsManager->OnAdaptiveNoiseLevelChanged(level);
+}
+
+void ApdApplication::OnHeadTrackingChanged(bool enabled)
+{
+    _airPodsManager->OnHeadTrackingChanged(enabled);
+}
+
 void ApdApplication::OnNoiseControlModeChanged(uint32_t mode)
 {
     _airPodsManager->OnNoiseControlModeChanged(static_cast<Core::AAP::NoiseControlMode>(mode));

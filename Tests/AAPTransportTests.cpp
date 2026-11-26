@@ -673,7 +673,21 @@ private slots:
         manager._attempt = Core::AAP::AAPAttempt{1, 1};
         manager._connected = true;
 
-        QVERIFY(!manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Off));
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(1);
+        std::promise<Core::AAP::AAPCommandOutcome> settled;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onCommandSettled = [&](const Core::AAP::AAPCommandOutcome &outcome,
+                                         const Core::AAP::AAPAttempt &) {
+            settled.set_value(outcome);
+        };
+        manager.SetCallbacks(std::move(callbacks));
+
+        QVERIFY(manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Off));
+        auto future = settled.get_future();
+        QVERIFY(future.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QCOMPARE(future.get().settlement, Core::AAP::AAPCommandSettlement::Rejected);
         QCOMPARE(transport->SendCalls(), size_t{1});
         QCOMPARE(
             transport->LastSend(),
@@ -691,6 +705,7 @@ private slots:
         manager._transport.store(transport);
         manager._attempt = Core::AAP::AAPAttempt{1, 9};
         manager._connected = true;
+        manager._commandBroker->BeginSession(9);
         std::promise<Core::AAP::AAPCommandOutcome> settled;
         Core::AAP::Callbacks callbacks;
         callbacks.onCommandSettled = [&](const Core::AAP::AAPCommandOutcome &outcome,
@@ -700,6 +715,7 @@ private slots:
         manager.SetCallbacks(std::move(callbacks));
         const Core::AAP::AAPCommand command{Core::AAP::AAPCommandKind::SetNoiseControl, 0x02};
         QVERIFY(manager.SubmitCommand(command).accepted);
+        QVERIFY(transport->WaitForRecordCount(1, std::chrono::seconds{1}));
         manager.ProcessPacket({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02, 0x00, 0x00, 0x00});
         auto future = settled.get_future();
         QVERIFY(future.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
@@ -717,6 +733,7 @@ private slots:
         manager._transport.store(transport);
         manager._attempt = Core::AAP::AAPAttempt{1, 10};
         manager._connected = true;
+        manager._commandBroker->BeginSession(10);
         manager._attPathState.store(Core::AAP::AttPathState::Confirmed);
         std::promise<Core::AAP::AAPCommandOutcome> settled;
         Core::AAP::Callbacks callbacks;
@@ -729,6 +746,7 @@ private slots:
         QVERIFY(manager.SubmitCommand(command).accepted);
         QCOMPARE(
             manager.CommandMode(command.kind, command.value), Core::AAP::AAPConfirmMode::Readback);
+        QVERIFY(transport->WaitForRecordCount(2, std::chrono::seconds{1}));
         manager.ProcessAttFrame({0x0B, 0x01}, manager._attempt, callbacks);
         auto future = settled.get_future();
         QVERIFY(future.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
@@ -740,6 +758,146 @@ private slots:
         QCOMPARE(records[1], (std::vector<uint8_t>{0x0A, 0x1B, 0x00}));
         manager._connected = false;
         manager._transport.store(nullptr);
+    }
+
+    void StartupAttProbeCannotConfirmOverlappingLoudSoundCommand()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 12};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(12);
+        manager.StartAttProbe(transport, {});
+        std::promise<Core::AAP::AAPCommandOutcome> settled;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onCommandSettled = [&](const Core::AAP::AAPCommandOutcome &outcome,
+                                         const Core::AAP::AAPAttempt &) {
+            settled.set_value(outcome);
+        };
+        manager.SetCallbacks(std::move(callbacks));
+        QVERIFY(manager.SubmitCommand({Core::AAP::AAPCommandKind::SetLoudSoundReduction, 0x01})
+                    .accepted);
+        QVERIFY(transport->WaitForRecordCount(2, std::chrono::seconds{1}));
+        // This is the probe's response. It establishes the baseline but must not confirm the
+        // command whose read has not been issued yet.
+        manager.ProcessAttFrame({0x0B, 0x00}, manager._attempt, callbacks);
+        QVERIFY(transport->WaitForRecordCount(3, std::chrono::seconds{1}));
+        QCOMPARE(
+            manager.ConfirmedCommand(Core::AAP::AAPCommandKind::SetLoudSoundReduction),
+            std::optional<uint32_t>{0x00});
+        manager.ProcessAttFrame({0x0B, 0x01}, manager._attempt, callbacks);
+        auto future = settled.get_future();
+        QVERIFY(future.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QCOMPARE(future.get().settlement, Core::AAP::AAPCommandSettlement::Confirmed);
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
+    }
+
+    void AttErrorWithdrawsCapabilityAndSettlesActiveFlight()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 13};
+        manager._connected = true;
+        manager._attPathState.store(Core::AAP::AttPathState::Confirmed);
+        manager._commandBroker->BeginSession(13);
+        std::promise<Core::AAP::AAPCommandOutcome> settled;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onCommandSettled = [&](const Core::AAP::AAPCommandOutcome &outcome,
+                                         const Core::AAP::AAPAttempt &) {
+            settled.set_value(outcome);
+        };
+        manager.SetCallbacks(std::move(callbacks));
+        QVERIFY(manager.SubmitCommand({Core::AAP::AAPCommandKind::SetLoudSoundReduction, 0x01})
+                    .accepted);
+        QVERIFY(transport->WaitForRecordCount(2, std::chrono::seconds{1}));
+        manager.ProcessAttFrame({0x01, 0x0A, 0x1B, 0x00, 0x0A}, manager._attempt, callbacks);
+        auto future = settled.get_future();
+        QVERIFY(future.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QCOMPARE(future.get().settlement, Core::AAP::AAPCommandSettlement::AppliedUnconfirmed);
+        QVERIFY(!future.get().rollBackDesired);
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
+    }
+
+    void DisconnectDuringSendSettlesAsTransportClosed()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        transport->SetBlockSend(true);
+        manager._transport.store(transport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 11};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(11);
+        std::promise<Core::AAP::AAPCommandOutcome> settled;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onCommandSettled = [&](const Core::AAP::AAPCommandOutcome &outcome,
+                                         const Core::AAP::AAPAttempt &) {
+            settled.set_value(outcome);
+        };
+        manager.SetCallbacks(std::move(callbacks));
+        QVERIFY(manager.SubmitCommand({Core::AAP::AAPCommandKind::SetNoiseControl, 0x02}).accepted);
+        QVERIFY(transport->WaitForSendWaiter(std::chrono::seconds{1}));
+        manager.Disconnect();
+        auto future = settled.get_future();
+        QVERIFY(future.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        const auto outcome = future.get();
+        QCOMPARE(outcome.settlement, Core::AAP::AAPCommandSettlement::TransportClosed);
+        QVERIFY(!outcome.rollBackDesired);
+        QCOMPARE(
+            manager.DesiredCommand(Core::AAP::AAPCommandKind::SetNoiseControl),
+            std::optional<uint32_t>{0x02});
+    }
+
+    void SameGenerationHeadFrameBeforeStartCannotConfirmFlight()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 14};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(14);
+        std::promise<Core::AAP::AAPCommandOutcome> settled;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onCommandSettled = [&](const Core::AAP::AAPCommandOutcome &outcome,
+                                         const Core::AAP::AAPAttempt &) {
+            settled.set_value(outcome);
+        };
+        manager.SetCallbacks(std::move(callbacks));
+        std::vector<uint8_t> sensor(70, 0x00);
+        sensor[0] = 0x04;
+        sensor[2] = 0x04;
+        sensor[4] = 0x17;
+        sensor[10] = 0x44;
+        manager.ProcessPacket(sensor);
+        QVERIFY(manager.SubmitCommand({Core::AAP::AAPCommandKind::SetHeadTracking, 0x01}).accepted);
+        QVERIFY(transport->WaitForRecordCount(1, std::chrono::seconds{1}));
+        // A frame already queued when Start completed is inside the evidence fence.
+        manager.ProcessPacket(sensor);
+        QVERIFY(!manager.ConfirmedCommand(Core::AAP::AAPCommandKind::SetHeadTracking).has_value());
+        QVERIFY(
+            settled.get_future().wait_for(std::chrono::milliseconds{20}) ==
+            std::future_status::timeout);
+        manager._headTrackingStartedAtMs.store(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count() -
+            100);
+        manager.ProcessPacket(sensor);
+        auto future = settled.get_future();
+        QVERIFY(future.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QCOMPARE(future.get().settlement, Core::AAP::AAPCommandSettlement::Confirmed);
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
     }
 
     void ManagerConnectInitializesBeforeConnectionGateOpens()

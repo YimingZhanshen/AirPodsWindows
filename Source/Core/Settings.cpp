@@ -153,6 +153,19 @@ void OnApply_ppe_cap_level(const Fields &newFields)
         [&](ApplyObserver &observer) { observer.OnPpeCapLevelChanged(newFields.ppe_cap_level); });
 }
 
+void OnApply_adaptive_noise_level(const Fields &newFields)
+{
+    Impl::NotifyApplyObserver([&](ApplyObserver &observer) {
+        observer.OnAdaptiveNoiseLevelChanged(newFields.adaptive_noise_level);
+    });
+}
+
+void OnApply_head_tracking(const Fields &newFields)
+{
+    Impl::NotifyApplyObserver(
+        [&](ApplyObserver &observer) { observer.OnHeadTrackingChanged(newFields.head_tracking); });
+}
+
 void OnApply_noise_control_mode(const Fields &newFields)
 {
     LOG(Info, "OnApply_noise_control_mode: {}", newFields.noise_control_mode);
@@ -314,6 +327,13 @@ public:
         ApplyWithoutLock();
     }
 
+    void SaveWithoutApply(Fields newFields)
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        _fields = std::move(newFields);
+        SaveWithoutLock();
+    }
+
     void Apply()
     {
         std::lock_guard<std::mutex> lock{_mutex};
@@ -437,6 +457,11 @@ LoadResult Load()
 void Save(Fields newFields)
 {
     return Manager::GetInstance().Save(std::move(newFields));
+}
+
+void SaveWithoutApply(Fields newFields)
+{
+    return Manager::GetInstance().SaveWithoutApply(std::move(newFields));
 }
 
 void Apply()

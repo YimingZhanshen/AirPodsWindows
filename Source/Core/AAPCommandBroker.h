@@ -77,6 +77,8 @@ inline constexpr size_t kAAPCommandKindCount = 8;
 struct AAPCommand {
     AAPCommandKind kind{AAPCommandKind::SetNoiseControl};
     uint32_t value{0};
+    // Unique across submissions and preserved when a desired value is replayed after reconnect.
+    uint64_t requestId{0};
 
     bool operator==(const AAPCommand &rhs) const = default;
 };
@@ -110,6 +112,7 @@ struct AAPCommandResult {
     bool accepted{false};
     bool confirmed{false};
     std::optional<AAPCommandFailure> failure;
+    uint64_t requestId{0};
 };
 
 enum class AAPCommandSettlement : uint8_t {
@@ -125,6 +128,7 @@ enum class AAPCommandSettlement : uint8_t {
 struct AAPCommandOutcome {
     AAPCommand command;
     uint64_t generation{0};
+    uint64_t requestId{0};
     AAPConfirmMode mode{AAPConfirmMode::Unverifiable};
     AAPCommandSettlement settlement{AAPCommandSettlement::Superseded};
     std::optional<AAPCommandFailure> failure;
@@ -192,13 +196,18 @@ public:
     // the in-flight command; a stale generation is dropped outright, and a same-generation
     // value mismatch only refreshes the known device state without confirming a newer command.
     void OnEcho(AAPCommand command, uint64_t generation);
+    // ATT responses are correlated with the read owner. A response to the startup probe is
+    // baseline evidence only and cannot accidentally confirm an overlapping command.
+    void OnObserved(AAPCommand command, uint64_t generation);
+    void OnEcho(AAPCommand command, uint64_t generation, uint64_t requestId);
 
     // Opens `generation` as the current session and re-pushes every desired value in
     // declaration order. Idempotent and single-flight: repeated calls for the same generation
     // never duplicate sends.
     void ReplayDesiredState(uint64_t generation);
 
-    // Session plumbing owned by the transport layer.
+    // Opens `generation` as the current session. Confirmed baselines belong to this session only;
+    // evidence received before the first open is retained in one bounded slot per kind.
     void BeginSession(uint64_t generation);
     // Drops the in-flight and queued work as TransportClosed but keeps every desired value, so
     // the next BeginSession + ReplayDesiredState re-applies them.
@@ -212,6 +221,9 @@ public:
 
     std::optional<uint32_t> Desired(AAPCommandKind kind) const;
     std::optional<uint32_t> Confirmed(AAPCommandKind kind) const;
+    uint64_t LatestRequest(AAPCommandKind kind) const;
+    bool IsCurrentRequest(AAPCommandKind kind, uint64_t requestId) const;
+    bool HasPendingCommand(AAPCommandKind kind) const;
     // In-flight command, if any (diagnostics and tests).
     std::optional<AAPCommand> InFlight() const;
     // Values recorded but not yet on the wire.
@@ -233,9 +245,11 @@ private:
 
     struct KindState {
         std::optional<uint32_t> desired;
+        uint64_t desiredRequestId{0};
         std::optional<uint32_t> confirmed;
         // Latest value waiting for the wire; collapses every intermediate slider step.
         std::optional<uint32_t> queued;
+        uint64_t queuedRequestId{0};
         std::stop_token queuedStop;
     };
 
@@ -246,6 +260,7 @@ private:
         bool superseded{false};
         bool sessionLost{false};
         bool evidence{false};
+        bool capabilityWithdrawn{false};
         bool cancelled{false};
     };
 
@@ -265,11 +280,14 @@ private:
     std::condition_variable_any _workCondition;
     std::condition_variable_any _settleCondition;
     std::array<KindState, kAAPCommandKindCount> _kinds;
+    std::array<std::optional<std::pair<AAPCommand, uint64_t>>, kAAPCommandKindCount> _earlyEvidence;
     std::array<std::optional<AAPConfirmMode>, kAAPCommandKindCount> _overrides;
     std::deque<AAPCommandKind> _queue;
     std::optional<Flight> _flight;
     uint64_t _generation{0};
+    uint64_t _nextRequestId{1};
     bool _sessionOpen{false};
+    bool _hasOpenedSession{false};
     // Generation whose replay is queued or done; guards single-flight replay.
     uint64_t _replayedGeneration{0};
     bool _stopping{false};

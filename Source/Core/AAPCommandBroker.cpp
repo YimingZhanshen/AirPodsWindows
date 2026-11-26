@@ -80,21 +80,23 @@ AAPCommandBroker::~AAPCommandBroker()
 AAPCommandResult AAPCommandBroker::Submit(AAPCommand command, std::stop_token stop)
 {
     if (stop.stop_requested()) {
-        return {false, false, AAPCommandFailure::Rejected};
+        return {false, false, AAPCommandFailure::Rejected, 0};
     }
     if (static_cast<size_t>(command.kind) >= kAAPCommandKindCount || command.value > 0xFF) {
-        return {false, false, AAPCommandFailure::Rejected};
+        return {false, false, AAPCommandFailure::Rejected, 0};
     }
 
     std::lock_guard lock{_mutex};
     if (_stopping) {
-        return {false, false, AAPCommandFailure::Rejected};
+        return {false, false, AAPCommandFailure::Rejected, 0};
     }
+    command.requestId = _nextRequestId++;
     auto &state = _kinds[kKindIndex(command.kind)];
     // The user's intent survives transport failure so a reconnect can replay it.
     state.desired = command.value;
+    state.desiredRequestId = command.requestId;
     if (!_sessionOpen || _generation == 0) {
-        return {false, false, AAPCommandFailure::TransportClosed};
+        return {false, false, AAPCommandFailure::TransportClosed, command.requestId};
     }
 
     // Same-kind supersede: the in-flight wait ends now instead of burning the whole window,
@@ -109,39 +111,81 @@ AAPCommandResult AAPCommandBroker::Submit(AAPCommand command, std::stop_token st
         state.queued = command.value;
         _queue.push_back(command.kind);
     }
+    state.queuedRequestId = command.requestId;
     state.queuedStop = stop;
 
     _workCondition.notify_all();
     _settleCondition.notify_all();
-    return {true, false, std::nullopt};
+    return {true, false, std::nullopt, command.requestId};
 }
 
 void AAPCommandBroker::OnEcho(AAPCommand command, uint64_t generation)
 {
+    OnEcho(command, generation, 0);
+}
+
+void AAPCommandBroker::OnEcho(AAPCommand command, uint64_t generation, uint64_t requestId)
+{
     std::lock_guard lock{_mutex};
-    if (_stopping || generation == 0 || static_cast<size_t>(command.kind) >= kAAPCommandKindCount ||
-        generation != _generation)
-    {
-        // An echo from a retired session describes a device we are no longer talking to.
+    if (_stopping || generation == 0 || static_cast<size_t>(command.kind) >= kAAPCommandKindCount) {
+        return;
+    }
+    if (!_sessionOpen) {
+        if (_hasOpenedSession) {
+            return;
+        }
+        // The reader may start just before the first BeginSession. Keep one bounded piece of
+        // evidence per kind instead of dropping it or letting a retired session overwrite the
+        // next baseline.
+        _earlyEvidence[kKindIndex(command.kind)] = {command, generation};
+        return;
+    }
+    if (generation != _generation) {
         return;
     }
 
     auto &state = _kinds[kKindIndex(command.kind)];
-    const bool matchesFlight =
-        _flight && _flight->generation == generation && _flight->command.kind == command.kind;
+    const bool matchesFlight = _flight && _flight->generation == generation &&
+                               _flight->command.kind == command.kind &&
+                               (requestId == 0 || _flight->command.requestId == requestId);
     if (matchesFlight && _flight->command.value == command.value && RequiresEvidence(_flight->mode))
     {
         _flight->evidence = true;
     }
     else {
         // Either an unsolicited change or the device reporting a different value than the one
-        // we asked for. Both are the device's truth, and neither confirms the in-flight command.
+        // we asked for. Both are the device's truth, and neither confirms an in-flight command.
         state.confirmed = command.value;
     }
     // A same-generation mismatch is useful rollback evidence, but it must not end the wait for
     // the requested value: only matching evidence (or the deadline) can settle this flight.
     if (matchesFlight && _flight->command.value == command.value) {
         _settleCondition.notify_all();
+    }
+}
+
+void AAPCommandBroker::OnObserved(AAPCommand command, uint64_t generation)
+{
+    std::lock_guard lock{_mutex};
+    if (_stopping || generation == 0 || static_cast<size_t>(command.kind) >= kAAPCommandKindCount) {
+        return;
+    }
+    if (!_sessionOpen) {
+        if (_hasOpenedSession) {
+            return;
+        }
+        _earlyEvidence[kKindIndex(command.kind)] = {command, generation};
+        return;
+    }
+    if (generation == _generation) {
+        auto &state = _kinds[kKindIndex(command.kind)];
+        state.confirmed = command.value;
+        if (!state.desired) {
+            // A first-session rollback had no baseline. The refresh is now the best known desired
+            // state and must survive reconnect even though it did not originate as a new request.
+            state.desired = command.value;
+            state.desiredRequestId = 0;
+        }
     }
 }
 
@@ -157,18 +201,33 @@ void AAPCommandBroker::ReplayDesiredState(uint64_t generation)
         if (_sessionOpen && _generation != generation) {
             CloseSessionLocked(outcomes);
         }
+        if (_generation != generation) {
+            for (auto &state : _kinds) {
+                state.confirmed.reset();
+            }
+        }
         _replayedGeneration = generation;
         _generation = generation;
         _sessionOpen = true;
+        _hasOpenedSession = true;
+
+        for (size_t index = 0; index < kAAPCommandKindCount; ++index) {
+            auto &evidence = _earlyEvidence[index];
+            if (evidence && evidence->second == generation) {
+                _kinds[index].confirmed = evidence->first.value;
+            }
+            evidence.reset();
+        }
 
         // Declaration order, one entry per kind: a reconnect always re-applies the whole desired
         // state the same way, and re-running the replay for a session adds nothing.
         for (size_t index = 0; index < kAAPCommandKindCount; ++index) {
             auto &state = _kinds[index];
-            if (!state.desired || state.queued) {
+            if (!state.desired || state.queued || state.confirmed == state.desired) {
                 continue;
             }
             state.queued = state.desired;
+            state.queuedRequestId = state.desiredRequestId;
             _queue.push_back(static_cast<AAPCommandKind>(index));
         }
         _workCondition.notify_all();
@@ -184,8 +243,20 @@ void AAPCommandBroker::BeginSession(uint64_t generation)
         if (_sessionOpen && _generation != generation) {
             CloseSessionLocked(outcomes);
         }
+        if (_generation != generation) {
+            for (auto &state : _kinds) {
+                state.confirmed.reset();
+            }
+        }
         _generation = generation;
         _sessionOpen = generation != 0 && !_stopping;
+        _hasOpenedSession = _hasOpenedSession || generation != 0;
+        for (auto &evidence : _earlyEvidence) {
+            if (evidence && evidence->second == generation) {
+                _kinds[static_cast<size_t>(evidence->first.kind)].confirmed = evidence->first.value;
+            }
+            evidence.reset();
+        }
         _settleCondition.notify_all();
     }
     Publish(outcomes);
@@ -205,6 +276,10 @@ void AAPCommandBroker::EndSession()
 void AAPCommandBroker::CloseSessionLocked(std::vector<AAPCommandOutcome> &outcomes)
 {
     _sessionOpen = false;
+    for (auto &state : _kinds) {
+        state.confirmed.reset();
+    }
+    _earlyEvidence.fill(std::nullopt);
 
     // Values that never reached the wire simply go back to being desired.
     for (const auto kind : _queue) {
@@ -213,13 +288,15 @@ void AAPCommandBroker::CloseSessionLocked(std::vector<AAPCommandOutcome> &outcom
             continue;
         }
         AAPCommandOutcome outcome;
-        outcome.command = {kind, *state.queued};
+        outcome.command = {kind, *state.queued, state.queuedRequestId};
         outcome.generation = _generation;
+        outcome.requestId = state.queuedRequestId;
         outcome.mode = ModeLocked(kind, *state.queued);
         outcome.settlement = AAPCommandSettlement::TransportClosed;
         outcome.failure = AAPCommandFailure::TransportClosed;
         outcome.rollBackDesired = false;
         state.queued.reset();
+        state.queuedRequestId = 0;
         state.queuedStop = {};
         outcomes.push_back(outcome);
     }
@@ -247,6 +324,11 @@ void AAPCommandBroker::SetConfirmMode(AAPCommandKind kind, AAPConfirmMode mode)
     std::lock_guard lock{_mutex};
     if (static_cast<size_t>(kind) < kAAPCommandKindCount) {
         _overrides[kKindIndex(kind)] = mode;
+        if (_flight && _flight->command.kind == kind && _flight->generation == _generation) {
+            _flight->mode = mode;
+            _flight->capabilityWithdrawn = !RequiresEvidence(mode);
+            _settleCondition.notify_all();
+        }
     }
 }
 
@@ -267,6 +349,25 @@ std::optional<uint32_t> AAPCommandBroker::Confirmed(AAPCommandKind kind) const
 {
     std::lock_guard lock{_mutex};
     return _kinds[kKindIndex(kind)].confirmed;
+}
+
+uint64_t AAPCommandBroker::LatestRequest(AAPCommandKind kind) const
+{
+    std::lock_guard lock{_mutex};
+    return _kinds[kKindIndex(kind)].desiredRequestId;
+}
+
+bool AAPCommandBroker::IsCurrentRequest(AAPCommandKind kind, uint64_t requestId) const
+{
+    std::lock_guard lock{_mutex};
+    return requestId != 0 && _kinds[kKindIndex(kind)].desiredRequestId == requestId;
+}
+
+bool AAPCommandBroker::HasPendingCommand(AAPCommandKind kind) const
+{
+    std::lock_guard lock{_mutex};
+    return (_flight && _flight->command.kind == kind) ||
+           std::find(_queue.begin(), _queue.end(), kind) != _queue.end();
 }
 
 std::optional<AAPCommand> AAPCommandBroker::InFlight() const
@@ -293,11 +394,9 @@ bool AAPCommandBroker::WaitForIdle(std::chrono::milliseconds timeout)
 
 void AAPCommandBroker::AdvanceTimeForTesting(std::chrono::milliseconds delta)
 {
-    {
-        std::lock_guard lock{_mutex};
-        if (!_clock.advance || _stopping) {
-            return;
-        }
+    std::lock_guard lock{_mutex};
+    if (!_clock.advance || _stopping) {
+        return;
     }
     _clock.advance(delta);
     _settleCondition.notify_all();
@@ -311,6 +410,7 @@ void AAPCommandBroker::Shutdown()
         _sessionOpen = false;
         for (auto &state : _kinds) {
             state.queued.reset();
+            state.queuedRequestId = 0;
         }
         _queue.clear();
         _workCondition.notify_all();
@@ -338,10 +438,11 @@ void AAPCommandBroker::WorkerLoop(std::stop_token stopToken)
         _queue.pop_front();
         auto &state = _kinds[kKindIndex(kind)];
         const uint32_t value = state.queued.value_or(0);
+        const auto queuedRequestId = std::exchange(state.queuedRequestId, 0);
         const auto queuedStop = std::exchange(state.queuedStop, {});
 
         Flight flight;
-        flight.command = {kind, value};
+        flight.command = {kind, value, queuedRequestId};
         flight.generation = _generation;
         flight.mode = ModeLocked(kind, value);
         flight.cancelled = queuedStop.stop_requested();
@@ -358,6 +459,7 @@ void AAPCommandBroker::WorkerLoop(std::stop_token stopToken)
         std::stop_source flightStop;
         std::stop_callback workerStop{stopToken, [&flightStop] { flightStop.request_stop(); }};
         std::stop_callback callerStop{queuedStop, [this, &flightStop] {
+                                          std::lock_guard lock{_mutex};
                                           flightStop.request_stop();
                                           _settleCondition.notify_all();
                                       }};
@@ -381,8 +483,8 @@ void AAPCommandBroker::WorkerLoop(std::stop_token stopToken)
             const auto expired = [this, deadline] { return Now() >= deadline; };
             const auto settled = [live, this, &stopToken, &queuedStop, &expired] {
                 return live->evidence || live->superseded || live->sessionLost || live->cancelled ||
-                       _stopping || stopToken.stop_requested() || queuedStop.stop_requested() ||
-                       expired();
+                       live->capabilityWithdrawn || _stopping || stopToken.stop_requested() ||
+                       queuedStop.stop_requested() || expired();
             };
             if (_clock.now) {
                 // An injected clock has no timer thread. Its Advance() notifies _settleCondition,
@@ -411,18 +513,23 @@ void AAPCommandBroker::SettleLocked(
     AAPCommandOutcome outcome;
     outcome.command = flight.command;
     outcome.generation = flight.generation;
+    outcome.requestId = flight.command.requestId;
     outcome.mode = flight.mode;
     auto &state = _kinds[kKindIndex(flight.command.kind)];
 
-    const bool hasBaseline = state.confirmed.has_value();
-    const auto rollback = [&] {
-        // A value the device demonstrably does not hold: hand the caller the last value it is
-        // known to hold. Without a baseline the caller must refresh from the device instead of
-        // inventing one.
-        outcome.rollBackDesired = true;
-        outcome.rollbackValue = state.confirmed;
-        (void)hasBaseline;
-    };
+    const auto rollback =
+        [&] { // A value the device demonstrably does not hold: hand the caller the last value it is
+            // known to hold. Without a baseline the caller must refresh from the device instead of
+            // inventing one.
+            outcome.rollBackDesired = true;
+            outcome.rollbackValue = state.confirmed;
+            // Revert the broker's replay state only if no newer user request owns this kind.
+            // Keeping the request identity lets the queued UI consumer distinguish this settlement
+            // from a superseded one without racing a newer slider move.
+            if (state.desiredRequestId == flight.command.requestId) {
+                state.desired = state.confirmed;
+            }
+        };
 
     if (flight.evidence) {
         outcome.settlement = AAPCommandSettlement::Confirmed;

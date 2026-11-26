@@ -752,6 +752,154 @@ private slots:
         QCOMPARE(broker.Confirmed(AAPCommandKind::SetNoiseControl), std::optional<uint32_t>{0x01});
     }
 
+    void TimeoutRestoresDesiredAndCarriesRequestIdentity()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        OutcomeQueue outcomes;
+        std::promise<void> started;
+        auto startedFuture = started.get_future();
+        AAPCommandBroker::Config config;
+        config.clock.now = [&clock] { return clock.Now(); };
+        config.clock.advance = [&clock](std::chrono::milliseconds delta) { clock.Advance(delta); };
+        AAPCommandBroker confirmedBroker(
+            [&](const AAPCommand &, uint64_t, std::stop_token) {
+                started.set_value();
+                return true;
+            },
+            [&](const AAPCommandOutcome &outcome) { outcomes.Push(outcome); }, config);
+        confirmedBroker.BeginSession(1);
+        confirmedBroker.OnEcho({AAPCommandKind::SetPpeCapLevel, 25}, 1);
+        const auto result = confirmedBroker.Submit({AAPCommandKind::SetPpeCapLevel, 75});
+        QVERIFY(result.accepted);
+        QVERIFY(result.requestId != 0);
+        QCOMPARE(confirmedBroker.LatestRequest(AAPCommandKind::SetPpeCapLevel), result.requestId);
+        QVERIFY(startedFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        confirmedBroker.AdvanceTimeForTesting(std::chrono::milliseconds{2000});
+        const auto outcome = outcomes.Wait();
+        QVERIFY(outcome.has_value());
+        QCOMPARE(outcome->requestId, result.requestId);
+        QCOMPARE(outcome->rollbackValue, std::optional<uint32_t>{25});
+        QCOMPARE(
+            confirmedBroker.Desired(AAPCommandKind::SetPpeCapLevel), std::optional<uint32_t>{25});
+        QVERIFY(confirmedBroker.IsCurrentRequest(AAPCommandKind::SetPpeCapLevel, result.requestId));
+    }
+
+    void FirstSessionTimeoutHasNoInventedBaseline()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        OutcomeQueue outcomes;
+        std::promise<void> started;
+        auto startedFuture = started.get_future();
+        AAPCommandBroker::Config config;
+        config.clock.now = [&clock] { return clock.Now(); };
+        config.clock.advance = [&clock](std::chrono::milliseconds delta) { clock.Advance(delta); };
+        AAPCommandBroker broker(
+            [&](const AAPCommand &, uint64_t, std::stop_token) {
+                started.set_value();
+                return true;
+            },
+            [&](const AAPCommandOutcome &outcome) { outcomes.Push(outcome); }, config);
+        broker.BeginSession(1);
+        QVERIFY(broker.Submit({AAPCommandKind::SetNoiseControl, 0x02}).accepted);
+        QVERIFY(startedFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        broker.AdvanceTimeForTesting(std::chrono::milliseconds{2000});
+        const auto outcome = outcomes.Wait();
+        QVERIFY(outcome.has_value());
+        QVERIFY(outcome->rollBackDesired);
+        QVERIFY(!outcome->rollbackValue.has_value());
+        QVERIFY(!broker.Desired(AAPCommandKind::SetNoiseControl).has_value());
+    }
+
+    void ConfirmedBaselineIsScopedToSessionAndEarlyEvidenceIsAccepted()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        AAPCommandBroker broker(
+            [](const AAPCommand &, uint64_t, std::stop_token) { return true; }, {},
+            UnverifiableConfig(clock));
+        broker.OnEcho({AAPCommandKind::SetPpeCapLevel, 33}, 7);
+        broker.BeginSession(7);
+        QCOMPARE(broker.Confirmed(AAPCommandKind::SetPpeCapLevel), std::optional<uint32_t>{33});
+        broker.EndSession();
+        QVERIFY(!broker.Confirmed(AAPCommandKind::SetPpeCapLevel).has_value());
+        broker.OnEcho({AAPCommandKind::SetPpeCapLevel, 99}, 7);
+        broker.BeginSession(8);
+        QVERIFY(!broker.Confirmed(AAPCommandKind::SetPpeCapLevel).has_value());
+    }
+
+    void CapabilityWithdrawalSettlesActiveFlight()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        OutcomeQueue outcomes;
+        AAPCommandBroker::Config config;
+        config.clock.now = [&clock] { return clock.Now(); };
+        config.clock.advance = [&clock](std::chrono::milliseconds delta) { clock.Advance(delta); };
+        AAPCommandBroker broker(
+            [](const AAPCommand &, uint64_t, std::stop_token) { return true; },
+            [&](const AAPCommandOutcome &outcome) { outcomes.Push(outcome); }, config);
+        broker.BeginSession(1);
+        QVERIFY(broker.Submit({AAPCommandKind::SetLoudSoundReduction, 0x01}).accepted);
+        broker.SetConfirmMode(AAPCommandKind::SetLoudSoundReduction, AAPConfirmMode::Unverifiable);
+        const auto outcome = outcomes.Wait();
+        QVERIFY(outcome.has_value());
+        QCOMPARE(outcome->settlement, AAPCommandSettlement::AppliedUnconfirmed);
+        QVERIFY(!outcome->rollBackDesired);
+    }
+
+    void CancellationNotificationCannotBeLost()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        OutcomeQueue outcomes;
+        std::promise<void> started;
+        auto startedFuture = started.get_future();
+        AAPCommandBroker broker(
+            [&](const AAPCommand &, uint64_t, std::stop_token) {
+                started.set_value();
+                return true;
+            },
+            [&](const AAPCommandOutcome &outcome) { outcomes.Push(outcome); },
+            UnverifiableConfig(clock));
+        broker.BeginSession(1);
+        std::stop_source stop;
+        QVERIFY(broker.Submit({AAPCommandKind::SetNoiseControl, 0x02}, stop.get_token()).accepted);
+        QVERIFY(startedFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        stop.request_stop();
+        const auto outcome = outcomes.Wait();
+        QVERIFY(outcome.has_value());
+        QCOMPARE(outcome->settlement, AAPCommandSettlement::Rejected);
+    }
+
+    void ManualClockWakeupCannotBeLost()
+    {
+        using namespace Core::AAP;
+        for (int iteration = 0; iteration < 100; ++iteration) {
+            AAPTestSupport::ManualClock clock;
+            OutcomeQueue outcomes;
+            std::promise<void> started;
+            auto startedFuture = started.get_future();
+            AAPCommandBroker::Config config;
+            config.clock.now = [&clock] { return clock.Now(); };
+            config.clock.advance = [&clock](std::chrono::milliseconds delta) {
+                clock.Advance(delta);
+            };
+            AAPCommandBroker broker(
+                [&](const AAPCommand &, uint64_t, std::stop_token) {
+                    started.set_value();
+                    return true;
+                },
+                [&](const AAPCommandOutcome &outcome) { outcomes.Push(outcome); }, config);
+            broker.BeginSession(1);
+            QVERIFY(broker.Submit({AAPCommandKind::SetNoiseControl, 0x02}).accepted);
+            QVERIFY(startedFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+            broker.AdvanceTimeForTesting(std::chrono::milliseconds{2000});
+            QVERIFY(outcomes.Wait().has_value());
+        }
+    }
+
     void StaleGenerationEchoCannotConfirmNewCommand()
     {
         using namespace Core::AAP;

@@ -407,11 +407,11 @@ void MagicAAPWinRTClient::CleanupWinRTObjects()
 #endif
 }
 
-bool MagicAAPWinRTClient::SendData(const std::vector<uint8_t> &data)
+bool MagicAAPWinRTClient::SendData(const std::vector<uint8_t> &data, std::stop_token stopToken)
 {
     std::lock_guard<std::mutex> lock(_mutex);
 
-    if (!_connected.load()) {
+    if (stopToken.stop_requested() || !_connected.load()) {
         SetError(L"Not connected");
         return false;
     }
@@ -436,15 +436,26 @@ bool MagicAAPWinRTClient::SendData(const std::vector<uint8_t> &data)
             hDevice, data.data(), static_cast<DWORD>(data.size()), &bytesWritten, &overlapped);
 
         if (!result && ::GetLastError() == ERROR_IO_PENDING) {
-            // Wait for completion. On timeout, cancel and drain the operation before
-            // destroying its stack OVERLAPPED and event.
-            if (WaitForSingleObject(overlapped.hEvent, 5000) == WAIT_OBJECT_0) {
-                result = GetOverlappedResult(hDevice, &overlapped, &bytesWritten, FALSE);
+            // Wait in bounded slices so command cancellation is honored. On timeout or stop,
+            // cancel and drain the operation before destroying its stack OVERLAPPED and event.
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+            while (!result && ::GetLastError() == ERROR_IO_PENDING) {
+                if (stopToken.stop_requested() || std::chrono::steady_clock::now() >= deadline) {
+                    CancelIoEx(hDevice, &overlapped);
+                    result = GetOverlappedResult(hDevice, &overlapped, &bytesWritten, TRUE);
+                    break;
+                }
+                const auto wait = WaitForSingleObject(overlapped.hEvent, 10);
+                if (wait == WAIT_OBJECT_0) {
+                    result = GetOverlappedResult(hDevice, &overlapped, &bytesWritten, FALSE);
+                }
             }
-            else {
-                CancelIoEx(hDevice, &overlapped);
-                result = GetOverlappedResult(hDevice, &overlapped, &bytesWritten, TRUE);
-            }
+        }
+        if (stopToken.stop_requested()) {
+            CancelIoEx(hDevice, &overlapped);
+            GetOverlappedResult(hDevice, &overlapped, &bytesWritten, TRUE);
+            CloseHandle(overlapped.hEvent);
+            return false;
         }
 
         const DWORD writeError = ::GetLastError();
@@ -485,7 +496,21 @@ bool MagicAAPWinRTClient::SendData(const std::vector<uint8_t> &data)
     try {
         // Write data
         impl->writer.WriteBytes(::winrt::array_view<const uint8_t>(data));
-        impl->writer.StoreAsync().get();
+        if (stopToken.stop_requested()) {
+            return false;
+        }
+        auto operation = impl->writer.StoreAsync();
+        while (operation.Status() != ::winrt::Windows::Foundation::AsyncStatus::Completed) {
+            if (stopToken.stop_requested()) {
+                operation.Cancel();
+                return false;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        }
+        operation.get();
+        if (stopToken.stop_requested()) {
+            return false;
+        }
 
         spdlog::debug("[MagicAAPWinRT] Sent {} bytes", data.size());
         return true;

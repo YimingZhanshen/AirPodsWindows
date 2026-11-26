@@ -1356,6 +1356,80 @@
           </widget>
          </item>
          <item>
+          <widget class="QFrame" name="cardAdaptiveNoiseLevel">
+           <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+           <property name="cssClass" stdset="0"><string notr="true">settingCard</string></property>
+           <layout class="QHBoxLayout" name="cardAdaptiveNoiseLevelLayout" stretch="1,0">
+            <property name="spacing"><number>16</number></property>
+            <property name="leftMargin"><number>16</number></property>
+            <property name="topMargin"><number>12</number></property>
+            <property name="rightMargin"><number>16</number></property>
+            <property name="bottomMargin"><number>12</number></property>
+            <item>
+             <layout class="QVBoxLayout" name="cardAdaptiveNoiseLevelText">
+              <property name="spacing"><number>2</number></property>
+              <item>
+               <widget class="QLabel" name="lbAdaptiveNoiseLevel">
+                <property name="text"><string>Adaptive noise strength</string></property>
+                <property name="cssClass" stdset="0"><string notr="true">cardTitle</string></property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="lbDescAdaptiveNoiseLevel">
+                <property name="text"><string notr="true"/></property>
+                <property name="wordWrap"><bool>true</bool></property>
+                <property name="cssClass" stdset="0"><string notr="true">cardDescription</string></property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="hlAdaptiveNoiseLevel">
+              <item>
+               <widget class="QSlider" name="hsAdaptiveNoiseLevel">
+                <property name="minimumSize"><size><width>240</width><height>0</height></size></property>
+                <property name="maximum"><number>100</number></property>
+                <property name="value"><number>50</number></property>
+                <property name="orientation"><enum>Qt::Horizontal</enum></property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="lblAdaptiveNoiseLevelValue">
+                <property name="minimumSize"><size><width>40</width><height>0</height></size></property>
+                <property name="text"><string notr="true">50</string></property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QFrame" name="cardHeadTracking">
+           <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+           <property name="cssClass" stdset="0"><string notr="true">settingCard</string></property>
+           <layout class="QHBoxLayout" name="cardHeadTrackingLayout" stretch="1,0">
+            <property name="spacing"><number>16</number></property>
+            <property name="leftMargin"><number>16</number></property>
+            <property name="topMargin"><number>12</number></property>
+            <property name="rightMargin"><number>16</number></property>
+            <property name="bottomMargin"><number>12</number></property>
+            <item>
+             <widget class="QLabel" name="lbHeadTracking">
+              <property name="text"><string>Head tracking</string></property>
+              <property name="cssClass" stdset="0"><string notr="true">cardTitle</string></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="cbHeadTracking">
+              <property name="minimumSize"><size><width>32</width><height>32</height></size></property>
+              <property name="text"><string notr="true"/></property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
           <widget class="QFrame" name="cardLidPopup">
            <property name="frameShape">
             <enum>QFrame::NoFrame</enum>

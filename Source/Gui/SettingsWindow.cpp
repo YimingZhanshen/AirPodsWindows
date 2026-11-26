@@ -40,6 +40,7 @@
 #include "../Core/Debug.h"
 #include "../Core/ConnectionDiagnostics.h"
 #include "../Core/PpeCapLevel.h"
+#include "../Core/AirPods.h"
 #include "Widget/DriverStatusCard.h"
 
 using namespace std::chrono_literals;
@@ -93,8 +94,8 @@ void ConfigureComboBoxPopup(QComboBox *comboBox)
 SettingsWindow::SettingsWindow(
     std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect,
     std::function<Core::AirPods::Manager &()> getAirPodsManager, QWidget *parent)
-    : QDialog{parent}, _getCurrentLocaleIndex{std::move(getCurrentLocaleIndex)}, _quickConnect{
-                                                                                     quickConnect}
+    : QDialog{parent}, _getCurrentLocaleIndex{std::move(getCurrentLocaleIndex)},
+      _quickConnect{quickConnect}
 {
     // getAirPodsManager is deliberately NOT stored here: this window is built
     // by the tray icon before the application's AirPods manager exists, so any
@@ -303,6 +304,16 @@ SettingsWindow::SettingsWindow(
             On_hsPpeCapLevel_valueChanged(value);
         }
     });
+    connect(_ui.hsAdaptiveNoiseLevel, &QSlider::valueChanged, this, [this](int value) {
+        if (_trigger) {
+            On_hsAdaptiveNoiseLevel_valueChanged(value);
+        }
+    });
+    connect(_ui.cbHeadTracking, &QCheckBox::toggled, this, [this](bool checked) {
+        if (_trigger) {
+            On_cbHeadTracking_toggled(checked);
+        }
+    });
 
     connect(_ui.hsMaxReceivingRange, &QSlider::valueChanged, this, [this](int value) {
         if (_trigger) {
@@ -411,6 +422,7 @@ void SettingsWindow::UpdateDescriptions()
     _ui.lbDescPersonalizedVolume->setText(constMetaFields.personalized_volume.Description());
     _ui.lbDescLoudSoundReduction->setText(constMetaFields.loud_sound_reduction.Description());
     _ui.lbDescPpeCapLevel->setText(constMetaFields.ppe_cap_level.Description());
+    _ui.lbDescAdaptiveNoiseLevel->setText(constMetaFields.adaptive_noise_level.Description());
 
     // The About text carries a hard-coded link colour inside the (translated) HTML; swap it
     // for the theme accent so it stays readable in dark mode.
@@ -483,7 +495,20 @@ void SettingsWindow::SetAirPodsManagerProvider(
     std::function<Core::AirPods::Manager &()> getAirPodsManager)
 {
     _getAirPodsManager = std::move(getAirPodsManager);
-    if (_driverStatusCard == nullptr || !_getAirPodsManager) {
+    if (!_getAirPodsManager) {
+        return;
+    }
+    if (!_aapSignalConnected) {
+        auto &manager = _getAirPodsManager();
+        connect(
+            &manager, &Core::AirPods::Manager::AapCommandFailedSafely, this,
+            &SettingsWindow::OnAapCommandFailed, Qt::QueuedConnection);
+        connect(
+            &manager, &Core::AirPods::Manager::AapCommandStateSafely, this,
+            &SettingsWindow::OnAapCommandState, Qt::QueuedConnection);
+        _aapSignalConnected = true;
+    }
+    if (_driverStatusCard == nullptr) {
         return;
     }
 
@@ -500,6 +525,156 @@ void SettingsWindow::SetAirPodsManagerProvider(
             [this](int) { _driverStatusCard->Refresh(); });
         _driverCardSignalConnected = true;
     }
+}
+
+uint32_t SettingsWindow::CurrentAapCommandValue(Core::AAP::AAPCommandKind kind) const
+{
+    const auto fields = GetCurrent();
+    switch (kind) {
+    case Core::AAP::AAPCommandKind::SetNoiseControl:
+        return fields.noise_control_mode;
+    case Core::AAP::AAPCommandKind::SetConversationalAwareness:
+        return fields.conversational_awareness ? 0x01 : 0x02;
+    case Core::AAP::AAPCommandKind::SetPersonalizedVolume:
+        return fields.personalized_volume ? 0x01 : 0x02;
+    case Core::AAP::AAPCommandKind::SetLoudSoundReduction:
+        return fields.loud_sound_reduction ? 0x01 : 0x00;
+    case Core::AAP::AAPCommandKind::SetPpeCapLevel:
+        return Core::AAP::NormalizePpeCapLevel(fields.ppe_cap_level);
+    case Core::AAP::AAPCommandKind::SetAdaptiveNoiseLevel:
+        return fields.adaptive_noise_level;
+    case Core::AAP::AAPCommandKind::SetAutomaticEarDetection:
+        return fields.automatic_ear_detection ? 0x01 : 0x02;
+    case Core::AAP::AAPCommandKind::SetHeadTracking:
+        return fields.head_tracking ? 0x01 : 0x00;
+    }
+    return 0;
+}
+
+void SettingsWindow::ApplyAapCommandValue(Core::AAP::AAPCommandKind kind, uint32_t value)
+{
+    auto fields = GetCurrent();
+    switch (kind) {
+    case Core::AAP::AAPCommandKind::SetNoiseControl:
+        if (value < 0x01 || value > 0x04) {
+            return;
+        }
+        fields.noise_control_mode = value;
+        break;
+    case Core::AAP::AAPCommandKind::SetConversationalAwareness:
+        if (value < 0x01 || value > 0x02) {
+            return;
+        }
+        fields.conversational_awareness = value == 0x01;
+        break;
+    case Core::AAP::AAPCommandKind::SetPersonalizedVolume:
+        if (value < 0x01 || value > 0x02) {
+            return;
+        }
+        fields.personalized_volume = value == 0x01;
+        break;
+    case Core::AAP::AAPCommandKind::SetLoudSoundReduction:
+        if (value > 0x01) {
+            return;
+        }
+        fields.loud_sound_reduction = value == 0x01;
+        break;
+    case Core::AAP::AAPCommandKind::SetPpeCapLevel:
+        fields.ppe_cap_level = Core::AAP::NormalizePpeCapLevel(static_cast<uint8_t>(value));
+        break;
+    case Core::AAP::AAPCommandKind::SetAdaptiveNoiseLevel:
+        fields.adaptive_noise_level = static_cast<uint8_t>(std::min(value, 100U));
+        break;
+    case Core::AAP::AAPCommandKind::SetAutomaticEarDetection:
+        if (value < 0x01 || value > 0x02) {
+            return;
+        }
+        fields.automatic_ear_detection = value == 0x01;
+        break;
+    case Core::AAP::AAPCommandKind::SetHeadTracking:
+        if (value > 0x01) {
+            return;
+        }
+        fields.head_tracking = value == 0x01;
+        break;
+    }
+    SaveWithoutApply(std::move(fields));
+
+    const bool trigger = _trigger;
+    _trigger = false;
+    switch (kind) {
+    case Core::AAP::AAPCommandKind::SetNoiseControl:
+        _ui.cbNoiseControlMode->setCurrentIndex(static_cast<int>(value) - 1);
+        break;
+    case Core::AAP::AAPCommandKind::SetConversationalAwareness:
+        _ui.cbConversationalAwareness->setChecked(value == 0x01);
+        break;
+    case Core::AAP::AAPCommandKind::SetPersonalizedVolume:
+        _ui.cbPersonalizedVolume->setChecked(value == 0x01);
+        break;
+    case Core::AAP::AAPCommandKind::SetLoudSoundReduction:
+        _ui.cbLoudSoundReduction->setChecked(value == 0x01);
+        break;
+    case Core::AAP::AAPCommandKind::SetPpeCapLevel:
+        _ui.hsPpeCapLevel->setValue(Core::AAP::NormalizePpeCapLevel(static_cast<uint8_t>(value)));
+        _ui.lblPpeCapLevelValue->setText(QString::number(_ui.hsPpeCapLevel->value()));
+        break;
+    case Core::AAP::AAPCommandKind::SetAdaptiveNoiseLevel:
+        _ui.hsAdaptiveNoiseLevel->setValue(static_cast<int>(std::min(value, 100U)));
+        _ui.lblAdaptiveNoiseLevelValue->setText(QString::number(_ui.hsAdaptiveNoiseLevel->value()));
+        break;
+    case Core::AAP::AAPCommandKind::SetAutomaticEarDetection:
+        _ui.cbAutoEarDetection->setChecked(value == 0x01);
+        break;
+    case Core::AAP::AAPCommandKind::SetHeadTracking:
+        _ui.cbHeadTracking->setChecked(value == 0x01);
+        break;
+    }
+    _trigger = trigger;
+}
+
+void SettingsWindow::OnAapCommandFailed(
+    uint64_t generation, uint64_t requestId, int kind, uint32_t value, uint32_t rollbackValue,
+    bool hasRollbackValue)
+{
+    if (!_getAirPodsManager || kind < 0 ||
+        kind >= static_cast<int>(Core::AAP::kAAPCommandKindCount))
+    {
+        return;
+    }
+    auto &manager = _getAirPodsManager();
+    const auto commandKind = static_cast<Core::AAP::AAPCommandKind>(kind);
+    if (manager.GetLastAAPAttempt().generation != generation ||
+        !manager.IsCurrentAAPCommandRequest(commandKind, requestId) ||
+        CurrentAapCommandValue(commandKind) != value)
+    {
+        return;
+    }
+    if (hasRollbackValue) {
+        ApplyAapCommandValue(commandKind, rollbackValue);
+    }
+    else {
+        // No first-session baseline exists. Ask the device for its current value; the queued
+        // state consumer applies it only after the failed request is no longer pending.
+        manager.RefreshAAPCommand(commandKind);
+    }
+}
+
+void SettingsWindow::OnAapCommandState(uint64_t generation, int kind, uint32_t value)
+{
+    if (!_getAirPodsManager || kind < 0 ||
+        kind >= static_cast<int>(Core::AAP::kAAPCommandKindCount))
+    {
+        return;
+    }
+    auto &manager = _getAirPodsManager();
+    const auto commandKind = static_cast<Core::AAP::AAPCommandKind>(kind);
+    if (manager.GetLastAAPAttempt().generation != generation ||
+        manager.HasPendingAAPCommand(commandKind))
+    {
+        return;
+    }
+    ApplyAapCommandValue(commandKind, value);
 }
 
 void SettingsWindow::InitCreditsText()
@@ -619,6 +794,10 @@ void SettingsWindow::Update(const Fields &fields, bool trigger)
     const auto normalizedPpeCapLevel = Core::AAP::NormalizePpeCapLevel(fields.ppe_cap_level);
     _ui.hsPpeCapLevel->setValue(normalizedPpeCapLevel);
     _ui.lblPpeCapLevelValue->setText(QString::number(normalizedPpeCapLevel));
+
+    _ui.hsAdaptiveNoiseLevel->setValue(fields.adaptive_noise_level);
+    _ui.lblAdaptiveNoiseLevelValue->setText(QString::number(fields.adaptive_noise_level));
+    _ui.cbHeadTracking->setChecked(fields.head_tracking);
 
     _ui.hsMaxReceivingRange->setValue(-fields.rssi_min);
 
@@ -834,6 +1013,17 @@ void SettingsWindow::On_hsPpeCapLevel_valueChanged(int value)
 {
     _ui.lblPpeCapLevelValue->setText(QString::number(value));
     ModifiableAccess()->ppe_cap_level = static_cast<uint8_t>(value);
+}
+
+void SettingsWindow::On_hsAdaptiveNoiseLevel_valueChanged(int value)
+{
+    _ui.lblAdaptiveNoiseLevelValue->setText(QString::number(value));
+    ModifiableAccess()->adaptive_noise_level = static_cast<uint8_t>(value);
+}
+
+void SettingsWindow::On_cbHeadTracking_toggled(bool checked)
+{
+    ModifiableAccess()->head_tracking = checked;
 }
 
 void SettingsWindow::On_hsMaxReceivingRange_valueChanged(int value)

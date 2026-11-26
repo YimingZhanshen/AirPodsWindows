@@ -41,6 +41,7 @@
 #include "../Helper.h"
 
 class AirPodsDomainTests;
+class UiRenderingTests;
 
 namespace Core::AirPods {
 
@@ -281,6 +282,11 @@ public:
 
     bool SetAdaptiveNoiseLevel(uint8_t level);
     bool IsAAPConnected() const;
+    AAP::AAPAttempt GetLastAAPAttempt() const;
+    uint64_t LatestAAPCommandRequest(AAP::AAPCommandKind kind) const;
+    bool IsCurrentAAPCommandRequest(AAP::AAPCommandKind kind, uint64_t requestId) const;
+    bool HasPendingAAPCommand(AAP::AAPCommandKind kind) const;
+    void RefreshAAPCommand(AAP::AAPCommandKind kind);
 
     // AAP link introspection (blueprint 1.1/1.3)
     bool IsAAPConnectedViaMagicAAP() const;
@@ -297,6 +303,7 @@ public:
 
 private:
     friend class ::AirPodsDomainTests;
+    friend class ::UiRenderingTests;
 
     std::mutex _mutex;
     // Declared before the scanner and workers it feeds so its timer callbacks cannot outlive
@@ -317,6 +324,7 @@ private:
     std::atomic<bool> _loudSoundReductionEnabled{false};
     std::atomic<uint8_t> _ppeCapLevel{AAP::kPpeCapLevelDefault};
     std::atomic<uint8_t> _adaptiveNoiseLevel{50};
+    std::atomic<bool> _headTrackingEnabled{false};
     std::atomic<int> _currentNoiseControlMode{-1};
     // AAP-over-BLE battery fusion. `_batteryFusionMutex` guards the three fields
     // below and is always a leaf lock: it may be taken while `_mutex` or
@@ -420,7 +428,10 @@ Q_SIGNALS:
     // Payload is Core::AAP::ConnectFailure cast to int (registered metatypes
     // stay free of AAP enums).
     void AapConnectionFailedSafely(int failure);
-    void AapCommandFailedSafely(int kind, uint32_t rollbackValue);
+    void AapCommandFailedSafely(
+        uint64_t generation, uint64_t requestId, int kind, uint32_t value, uint32_t rollbackValue,
+        bool hasRollbackValue);
+    void AapCommandStateSafely(uint64_t generation, int kind, uint32_t value);
 };
 
 std::vector<Core::Bluetooth::Device> GetDevices();

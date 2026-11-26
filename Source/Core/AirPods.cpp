@@ -201,8 +201,10 @@ Manager::Manager(QObject *parent) : QObject{parent}
     _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetLoudSoundReduction, 0x00});
     _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetPpeCapLevel, _ppeCapLevel.load()});
     _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetAdaptiveNoiseLevel, _adaptiveNoiseLevel.load()});
+    _aapMgr.SubmitCommand(
+        {AAP::AAPCommandKind::SetHeadTracking,
+         static_cast<uint32_t>(_headTrackingEnabled ? 1 : 0)});
     _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetAutomaticEarDetection, 0x01});
-    _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetHeadTracking, 0x00});
 }
 
 void Manager::SetupAAPCallbacks()
@@ -961,8 +963,7 @@ std::optional<AAP::LoudSoundReductionState> Manager::GetLoudSoundReductionState(
 bool Manager::SetPpeCapLevel(uint8_t level)
 {
     return _aapMgr
-        .SubmitCommand(
-            {AAP::AAPCommandKind::SetPpeCapLevel, AAP::NormalizePpeCapLevel(level)})
+        .SubmitCommand({AAP::AAPCommandKind::SetPpeCapLevel, AAP::NormalizePpeCapLevel(level)})
         .accepted;
 }
 
@@ -981,6 +982,31 @@ bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
 bool Manager::IsAAPConnected() const
 {
     return _aapMgr.IsConnected();
+}
+
+AAP::AAPAttempt Manager::GetLastAAPAttempt() const
+{
+    return _aapMgr.GetLastAttempt();
+}
+
+uint64_t Manager::LatestAAPCommandRequest(AAP::AAPCommandKind kind) const
+{
+    return _aapMgr.LatestCommandRequest(kind);
+}
+
+bool Manager::IsCurrentAAPCommandRequest(AAP::AAPCommandKind kind, uint64_t requestId) const
+{
+    return _aapMgr.IsCurrentCommandRequest(kind, requestId);
+}
+
+bool Manager::HasPendingAAPCommand(AAP::AAPCommandKind kind) const
+{
+    return _aapMgr.HasPendingCommand(kind);
+}
+
+void Manager::RefreshAAPCommand(AAP::AAPCommandKind kind)
+{
+    _aapMgr.RefreshCommand(kind);
 }
 
 bool Manager::IsAAPConnectedViaMagicAAP() const
@@ -1069,6 +1095,7 @@ void Manager::OnAdaptiveNoiseLevelChanged(uint8_t level)
 
 void Manager::OnHeadTrackingChanged(bool enabled)
 {
+    _headTrackingEnabled = enabled;
     _aapMgr.SubmitCommand(
         {AAP::AAPCommandKind::SetHeadTracking, static_cast<uint32_t>(enabled ? 0x01 : 0x00)});
 }
@@ -1091,6 +1118,9 @@ void Manager::OnNoiseControlModeNotification(AAP::NoiseControlMode mode, AAP::AA
 
     // Track the current noise control mode
     _currentNoiseControlMode = static_cast<int>(mode);
+    emit AapCommandStateSafely(
+        attempt.generation, static_cast<int>(AAP::AAPCommandKind::SetNoiseControl),
+        static_cast<uint32_t>(Helper::ToUnderlying(mode)));
 }
 
 void Manager::OnConversationalAwarenessStateChanged(
@@ -1101,6 +1131,9 @@ void Manager::OnConversationalAwarenessStateChanged(
     }
     LOG(Info, "Conversational awareness state changed to: {}",
         Helper::ToString(state).toStdString());
+    emit AapCommandStateSafely(
+        attempt.generation, static_cast<int>(AAP::AAPCommandKind::SetConversationalAwareness),
+        static_cast<uint32_t>(Helper::ToUnderlying(state)));
 }
 
 void Manager::OnPersonalizedVolumeStateChanged(
@@ -1110,6 +1143,9 @@ void Manager::OnPersonalizedVolumeStateChanged(
         return;
     }
     LOG(Info, "Personalized volume state changed to: {}", static_cast<int>(state));
+    emit AapCommandStateSafely(
+        attempt.generation, static_cast<int>(AAP::AAPCommandKind::SetPersonalizedVolume),
+        static_cast<uint32_t>(Helper::ToUnderlying(state)));
 }
 
 void Manager::OnLoudSoundReductionStateChanged(
@@ -1119,6 +1155,9 @@ void Manager::OnLoudSoundReductionStateChanged(
         return;
     }
     LOG(Info, "Loud sound reduction state changed to: {}", static_cast<int>(state));
+    emit AapCommandStateSafely(
+        attempt.generation, static_cast<int>(AAP::AAPCommandKind::SetLoudSoundReduction),
+        static_cast<uint32_t>(Helper::ToUnderlying(state)));
 }
 
 void Manager::OnAutomaticEarDetectionNotification(bool enabled, AAP::AAPAttempt attempt)
@@ -1127,6 +1166,9 @@ void Manager::OnAutomaticEarDetectionNotification(bool enabled, AAP::AAPAttempt 
         return;
     }
     LOG(Info, "Automatic ear detection notification: {}", enabled ? "enabled" : "disabled");
+    emit AapCommandStateSafely(
+        attempt.generation, static_cast<int>(AAP::AAPCommandKind::SetAutomaticEarDetection),
+        enabled ? 0x01 : 0x02);
 }
 
 void Manager::OnPpeCapLevelNotification(uint8_t level, AAP::AAPAttempt attempt)
@@ -1135,18 +1177,35 @@ void Manager::OnPpeCapLevelNotification(uint8_t level, AAP::AAPAttempt attempt)
         return;
     }
     LOG(Info, "PPE cap level notification: {}", level);
+    emit AapCommandStateSafely(
+        attempt.generation, static_cast<int>(AAP::AAPCommandKind::SetPpeCapLevel), level);
 }
 
 void Manager::OnAAPCommandSettled(const AAP::AAPCommandOutcome &outcome, AAP::AAPAttempt attempt)
 {
-    if (!IsCurrentAAPAttempt(attempt) || !outcome.rollBackDesired) {
+    if (!IsCurrentAAPAttempt(attempt)) {
         return;
     }
-    // Worker threads never touch settings/widgets. UINT32_MAX means no confirmed baseline exists,
-    // so a receiver must refresh rather than inventing a rollback value.
+    if (outcome.command.kind == AAP::AAPCommandKind::SetHeadTracking &&
+        (outcome.settlement == AAP::AAPCommandSettlement::Confirmed ||
+         outcome.settlement == AAP::AAPCommandSettlement::AppliedUnconfirmed))
+    {
+        _headTrackingEnabled = outcome.command.value != 0;
+        emit AapCommandStateSafely(
+            attempt.generation, static_cast<int>(outcome.command.kind), outcome.command.value);
+    }
+    if (!outcome.rollBackDesired) {
+        return;
+    }
+    if (outcome.command.kind == AAP::AAPCommandKind::SetHeadTracking && outcome.rollbackValue) {
+        _headTrackingEnabled = *outcome.rollbackValue != 0;
+    }
+    // Worker threads never touch settings/widgets. The queued consumer verifies generation,
+    // request identity and the optimistic value before applying the confirmed baseline.
     emit AapCommandFailedSafely(
-        static_cast<int>(outcome.command.kind),
-        outcome.rollbackValue.value_or(std::numeric_limits<uint32_t>::max()));
+        attempt.generation, outcome.requestId, static_cast<int>(outcome.command.kind),
+        outcome.command.value, outcome.rollbackValue.value_or(0),
+        outcome.rollbackValue.has_value());
 }
 
 void Manager::OnAttProbeResult(AAP::AttPathState state, AAP::AAPAttempt attempt)
@@ -1294,6 +1353,8 @@ void Manager::OnHeadTrackingData(AAP::HeadTrackingData data, AAP::AAPAttempt att
     LOG(Trace, "Head tracking: o1={}, o2={}, o3={}, hAccel={}, vAccel={}", data.orientation1,
         data.orientation2, data.orientation3, data.horizontalAcceleration,
         data.verticalAcceleration);
+    emit AapCommandStateSafely(
+        attempt.generation, static_cast<int>(AAP::AAPCommandKind::SetHeadTracking), 0x01);
 }
 
 // Volume levels for conversational awareness

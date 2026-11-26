@@ -54,6 +54,8 @@ public:
     virtual void OnPersonalizedVolumeChanged(bool enable) = 0;
     virtual void OnLoudSoundReductionChanged(bool enable) = 0;
     virtual void OnPpeCapLevelChanged(uint8_t level) = 0;
+    virtual void OnAdaptiveNoiseLevelChanged(uint8_t) {}
+    virtual void OnHeadTrackingChanged(bool) {}
     virtual void OnNoiseControlModeChanged(uint32_t mode) = 0;
     virtual void OnRssiMinChanged(int16_t rssiMin) = 0;
     virtual void OnDeviceAddressChanged(uint64_t address) = 0;
@@ -132,7 +134,11 @@ void SetRepository(std::unique_ptr<Repository> repository);
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Shows the battery window when you open the case, without taking focus from the app in use. When off, open it from the tray icon.")}) \
     callback(uint8_t, ppe_cap_level, {25},                                                         \
         Impl::OnApply(&OnApply_ppe_cap_level),                                                     \
-        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Caps how loud loud sounds get, for hearing protection (0-100).")})
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Caps how loud loud sounds get, for hearing protection (0-100).")}) \
+    callback(uint8_t, adaptive_noise_level, {50},                                                   \
+        Impl::OnApply(&OnApply_adaptive_noise_level),                                                \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Adaptive noise strength (0-100), used when noise control is Adaptive.")}) \
+    callback(bool, head_tracking, {false}, Impl::OnApply(&OnApply_head_tracking))
 // clang-format on
 
 struct Fields {
@@ -304,6 +310,8 @@ void OnApply_audio_auto_connect_enabled(const Fields &newFields);
 void OnApply_tray_quick_connect_device_id(const Fields &newFields);
 void OnApply_battery_on_taskbar(const Fields &newFields);
 void OnApply_ppe_cap_level(const Fields &newFields);
+void OnApply_adaptive_noise_level(const Fields &newFields);
+void OnApply_head_tracking(const Fields &newFields);
 
 struct MetaFields {
 #define DECLARE_META_FIELD(type, name, dft, ...)                                                   \
@@ -320,6 +328,9 @@ inline const auto &GetConstMetaFields()
 
 LoadResult Load();
 void Save(Fields newFields);
+// Persists a device-confirmed correction without feeding it back through ApplyObserver as a new
+// user command. UI controls are updated separately by the queued consumer.
+void SaveWithoutApply(Fields newFields);
 void Apply();
 Fields GetCurrent();
 Fields GetDefault();

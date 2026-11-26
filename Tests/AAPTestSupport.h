@@ -87,6 +87,7 @@ public:
     bool Send(std::span<const uint8_t> data, std::stop_token stop) override
     {
         std::unique_lock<std::mutex> lock{_mutex};
+        ++_sendAttempts;
         ++_sendWaiters;
         _sendCondition.notify_all();
         _sendCondition.wait(lock, stop, [this] { return !_blockSend || _closed; });
@@ -103,6 +104,7 @@ public:
             return false;
         }
         _sentRecords.push_back(std::vector<uint8_t>(data.begin(), data.end()));
+        _sendCondition.notify_all();
         return true;
     }
 
@@ -176,6 +178,20 @@ public:
         return _sendCalls;
     }
 
+    bool WaitForRecordCount(size_t count, std::chrono::milliseconds timeout)
+    {
+        std::unique_lock lock{_mutex};
+        return _sendCondition.wait_for(
+            lock, timeout, [this, count] { return _sentRecords.size() >= count; });
+    }
+
+    bool WaitForSendAttempts(size_t count, std::chrono::milliseconds timeout)
+    {
+        std::unique_lock lock{_mutex};
+        return _sendCondition.wait_for(
+            lock, timeout, [this, count] { return _sendAttempts >= count; });
+    }
+
     std::vector<std::vector<uint8_t>> SentRecords() const
     {
         std::lock_guard<std::mutex> lock{_mutex};
@@ -215,6 +231,7 @@ private:
     std::vector<uint8_t> _lastSend;
     std::optional<size_t> _sendLimit;
     size_t _sendCalls{0};
+    size_t _sendAttempts{0};
     size_t _receiveWaiters{0};
     size_t _sendWaiters{0};
     bool _connected{false};

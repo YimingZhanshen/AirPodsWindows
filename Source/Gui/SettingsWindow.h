@@ -73,6 +73,7 @@ private:
     std::function<Core::AirPods::Manager &()> _getAirPodsManager;
     DriverStatusCard *_driverStatusCard{nullptr};
     bool _driverCardSignalConnected{false};
+    bool _aapSignalConnected{false};
 
     void InitCreditsText();
     void SetupDriverStatusCard();
@@ -82,6 +83,12 @@ private:
     void UpdateDescriptions();
     void UpdateStandardButtonTexts();
     void UpdateAdvOverride();
+    uint32_t CurrentAapCommandValue(Core::AAP::AAPCommandKind kind) const;
+    void ApplyAapCommandValue(Core::AAP::AAPCommandKind kind, uint32_t value);
+    void OnAapCommandFailed(
+        uint64_t generation, uint64_t requestId, int kind, uint32_t value, uint32_t rollbackValue,
+        bool hasRollbackValue);
+    void OnAapCommandState(uint64_t generation, int kind, uint32_t value);
 
     void showEvent(QShowEvent *event) override;
 
@@ -108,6 +115,8 @@ private:
     void On_cbLoudSoundReduction_toggled(bool checked);
     void On_cbNoiseControlMode_currentIndexChanged(int index);
     void On_hsPpeCapLevel_valueChanged(int value);
+    void On_hsAdaptiveNoiseLevel_valueChanged(int value);
+    void On_cbHeadTracking_toggled(bool checked);
     void On_hsMaxReceivingRange_valueChanged(int value);
 
     // About
@@ -125,6 +134,7 @@ private:
         _ui.cbConversationalAwareness->setAccessibleName(_ui.lbConversationalAwareness->text());
         _ui.cbPersonalizedVolume->setAccessibleName(_ui.lbPersonalizedVolume->text());
         _ui.cbLoudSoundReduction->setAccessibleName(_ui.lbLoudSoundReduction->text());
+        _ui.cbHeadTracking->setAccessibleName(_ui.lbHeadTracking->text());
         _ui.cbLidPopup->setAccessibleName(_ui.lbLidPopup->text());
         _ui.cbTrayQuickConnectEnabled->setAccessibleName(_ui.lbTrayQuickConnect->text());
         _ui.cbAudioAutoConnectEnabled->setAccessibleName(_ui.lbAudioAutoConnect->text());

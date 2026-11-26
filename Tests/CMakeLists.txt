@@ -108,6 +108,7 @@ target_link_libraries(
     UiRenderingTests
 
     PRIVATE
+    apd_core
     apd_gui
     Qt6::Test
     Qt6::Widgets

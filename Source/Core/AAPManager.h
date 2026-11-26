@@ -35,6 +35,9 @@
 #include "Base.h"
 #include "../Helper.h"
 
+class AAPTransportTests;
+class UiRenderingTests;
+
 namespace Core::AAP {
 
 //////////////////////////////////////////////////
@@ -156,10 +159,12 @@ public:
     // a connect starts and when the session ends; consumers fuse it over BLE values.
     std::optional<AAPBatterySnapshot> GetBatterySnapshot() const;
 
-    // Confirmed command path (blueprint 2.7). The setters above stay the raw wire primitive;
-    // settings callers should use SubmitCommand so a value is only reported as applied once the
-    // firmware echoes or reads it back, and so a reconnect re-applies what the user asked for.
+    // Setters above route through the broker; SubmitCommand is the public confirmed path.
     AAPCommandResult SubmitCommand(AAPCommand command, std::stop_token stopToken = {});
+    uint64_t LatestCommandRequest(AAPCommandKind kind) const;
+    bool IsCurrentCommandRequest(AAPCommandKind kind, uint64_t requestId) const;
+    bool HasPendingCommand(AAPCommandKind kind) const;
+    void RefreshCommand(AAPCommandKind kind);
     std::optional<uint32_t> DesiredCommand(AAPCommandKind kind) const;
     std::optional<uint32_t> ConfirmedCommand(AAPCommandKind kind) const;
     // Protocol evidence currently available for one concrete command value (degrades with the
@@ -195,16 +200,20 @@ private:
     // Hardware-free tests need to inject a transport and observe the validation
     // gate; neither behavior is reachable through the public connection API.
     friend class ::AAPTransportTests;
+    friend class ::UiRenderingTests;
 
     // Serializes whole Connect/Disconnect lifecycles; _mutex protects observable state and is
     // never held while joining a reader or invoking a callback.
     std::mutex _connectMutex;
     mutable std::mutex _mutex;
     std::atomic<bool> _connected{false};
+    std::atomic<bool> _disconnecting{false};
     bool _connecting{false};
     AAPAttempt _attempt;
     std::stop_source _connectStop;
     std::atomic<bool> _headTrackingActive{false};
+    std::atomic<uint64_t> _headTrackingSendEpoch{0};
+    std::atomic<int64_t> _headTrackingStartedAtMs{0};
     std::atomic<bool> _usingMagicAAP{false};
 
     // Cached states
@@ -222,6 +231,15 @@ private:
     // mutable: the lazy flip happens inside the const getter.
     mutable std::atomic<AttPathState> _attPathState{AttPathState::Unknown};
     mutable std::atomic<int64_t> _attProbeDeadlineMs{0};
+    struct AttReadOwner {
+        uint64_t generation{0};
+        uint64_t requestId{0};
+        bool probe{false};
+        std::chrono::steady_clock::time_point expiresAt{};
+    };
+    mutable std::mutex _attReadMutex;
+    mutable std::condition_variable_any _attReadCondition;
+    mutable std::optional<AttReadOwner> _attReadOwner;
 
     // Why the last Connect() attempt failed; reset to None on success.
     std::atomic<ConnectFailure> _lastConnectFailure{ConnectFailure::None};
@@ -234,6 +252,8 @@ private:
     // Atomic session snapshot: senders and the reader retain the transport even
     // while Disconnect exchanges it. P2 still owns worker/generation lifecycle.
     std::atomic<std::shared_ptr<AAPTransport>> _transport{std::shared_ptr<AAPTransport>{}};
+    // The broker serializes commands; this also serializes probe/refresh records with those writes.
+    std::mutex _sendMutex;
 
     // Retained after natural EOF so the next Connect (or Disconnect) joins it before reuse.
     std::jthread _readerThread;
@@ -271,6 +291,8 @@ private:
     // ATT path (blueprint 0.3): probe once after the handshake and route ATT
     // frames received on the AAP pipe.
     void StartAttProbe(const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken);
+    bool AcquireAttRead(uint64_t generation, uint64_t requestId, std::stop_token stopToken);
+    void ReleaseAttRead();
     void ProcessAttFrame(
         const std::vector<uint8_t> &packet, AAPAttempt attempt, const Callbacks &callbacks);
 };

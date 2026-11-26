@@ -28,6 +28,7 @@
 #include <optional>
 #include <atomic>
 #include <mutex>
+#include <stop_token>
 #include <thread>
 #include <memory>
 
@@ -78,7 +79,7 @@ public:
 
     // Send one complete record atomically. A partial device-interface write fails;
     // the unwritten suffix is never retried as a second record.
-    bool SendData(const std::vector<uint8_t> &data);
+    bool SendData(const std::vector<uint8_t> &data, std::stop_token stopToken = {});
 
     // Callbacks. In device-interface mode each data callback is exactly one
     // successful ReadFile completion; P1 performs no stream reassembly.

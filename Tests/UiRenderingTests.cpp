@@ -37,6 +37,8 @@
 
 #include "Source/Core/QuickConnect.h"
 #include "Source/Core/Settings.h"
+#include "Source/Core/AirPods.h"
+#include "AAPTestSupport.h"
 #include "Source/Core/SettingsRepository.h"
 #include "Source/Gui/MainWindow.h"
 #include "Source/Gui/Widget/ActivityIndicator.h"
@@ -469,6 +471,85 @@ private Q_SLOTS:
         QCOMPARE(child.exitCode(), 0);
     }
 
+    void ManagerRollbackRestoresSettingsControlAndPersistsBaseline()
+    {
+        Core::QuickConnect::Controller quickConnect{
+            std::make_shared<Core::QuickConnect::NullBackend>()};
+        Core::AirPods::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        transport->SetSendError(true);
+        manager._aapMgr._transport.store(transport);
+        manager._aapMgr._attempt = Core::AAP::AAPAttempt{1, 21};
+        manager._aapMgr._connected = true;
+        manager._aapMgr._commandBroker->BeginSession(21);
+        manager._aapMgr._commandBroker->OnEcho({Core::AAP::AAPCommandKind::SetPpeCapLevel, 25}, 21);
+        {
+            std::lock_guard lock{manager._aapWorkerMutex};
+            manager._aapConnectInProgress = true;
+            manager._aapActiveAttempt = manager._aapMgr._attempt;
+        }
+        Gui::SettingsWindow settings{
+            [] { return 0; }, quickConnect,
+            [&manager]() -> Core::AirPods::Manager & { return manager; }};
+        manager.OnPpeCapLevelChanged(75);
+        auto *slider = settings.findChild<QSlider *>("hsPpeCapLevel");
+        QVERIFY(slider != nullptr);
+        slider->setValue(75);
+        QTRY_COMPARE(slider->value(), 25);
+        QCOMPARE(Core::Settings::GetCurrent().ppe_cap_level, uint8_t{25});
+        QCOMPARE(
+            manager._aapMgr.DesiredCommand(Core::AAP::AAPCommandKind::SetPpeCapLevel),
+            std::optional<uint32_t>{25});
+        manager._aapMgr._connected = false;
+        manager._aapMgr._transport.store(nullptr);
+        manager._aapMgr._commandBroker->EndSession();
+        std::lock_guard lock{manager._aapWorkerMutex};
+        manager._aapConnectInProgress = false;
+        manager._aapActiveAttempt = {};
+    }
+
+    void FirstSessionRollbackRefreshesMissingBaseline()
+    {
+        Core::QuickConnect::Controller quickConnect{
+            std::make_shared<Core::QuickConnect::NullBackend>()};
+        Core::AirPods::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        transport->SetSendError(true);
+        manager._aapMgr._transport.store(transport);
+        manager._aapMgr._attempt = Core::AAP::AAPAttempt{1, 22};
+        manager._aapMgr._connected = true;
+        manager._aapMgr._commandBroker->BeginSession(22);
+        {
+            std::lock_guard lock{manager._aapWorkerMutex};
+            manager._aapConnectInProgress = true;
+            manager._aapActiveAttempt = manager._aapMgr._attempt;
+        }
+        Gui::SettingsWindow settings{
+            [] { return 0; }, quickConnect,
+            [&manager]() -> Core::AirPods::Manager & { return manager; }};
+        manager.OnPpeCapLevelChanged(75);
+        auto *slider = settings.findChild<QSlider *>("hsPpeCapLevel");
+        QVERIFY(slider != nullptr);
+        slider->setValue(75);
+        QTRY_VERIFY(transport->WaitForSendAttempts(2, std::chrono::seconds{1}));
+        transport->SetSendError(false);
+        manager._aapMgr.ProcessPacket(
+            {0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38, 40, 0x00, 0x00, 0x00});
+        QTRY_COMPARE(slider->value(), 40);
+        QCOMPARE(Core::Settings::GetCurrent().ppe_cap_level, uint8_t{40});
+        QCOMPARE(
+            manager._aapMgr.DesiredCommand(Core::AAP::AAPCommandKind::SetPpeCapLevel),
+            std::optional<uint32_t>{40});
+        manager._aapMgr._connected = false;
+        manager._aapMgr._transport.store(nullptr);
+        manager._aapMgr._commandBroker->EndSession();
+        std::lock_guard lock{manager._aapWorkerMutex};
+        manager._aapConnectInProgress = false;
+        manager._aapActiveAttempt = {};
+    }
+
     void AudioAutoConnectIsOptionalAndIndependent()
     {
         Core::QuickConnect::Controller quickConnect{
@@ -482,7 +563,7 @@ private Q_SLOTS:
         QVERIFY(driverCard->isHidden());
         for (const auto *name :
              {"cbConversationalAwareness", "cbPersonalizedVolume", "cbLoudSoundReduction",
-              "cbNoiseControlMode", "hsPpeCapLevel"})
+              "cbNoiseControlMode", "hsPpeCapLevel", "hsAdaptiveNoiseLevel", "cbHeadTracking"})
         {
             QVERIFY2(settings.findChild<QWidget *>(name) != nullptr, name);
         }

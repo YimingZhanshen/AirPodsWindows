@@ -419,7 +419,7 @@ bool MagicAAPTransport::Send(std::span<const uint8_t> data, std::stop_token stop
     if (!_client) {
         return false;
     }
-    return _client->SendData(std::vector<uint8_t>(data.begin(), data.end()));
+    return _client->SendData(std::vector<uint8_t>(data.begin(), data.end()), stop);
 }
 
 std::optional<std::vector<uint8_t>> MagicAAPTransport::Receive(std::stop_token stop)

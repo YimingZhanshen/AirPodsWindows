@@ -171,7 +171,9 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         return false;
     }
 
-    std::stop_source readerStop;
+    // Publish the transport gate before opening the broker, but start the reader only afterwards.
+    // A submission in the intervening window is retained as desired/TransportClosed rather than
+    // sent against a closed gate and misreported as Rejected.
     {
         std::lock_guard lock{_mutex};
         if (cancelled()) {
@@ -180,19 +182,39 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
             transport->Close();
             return false;
         }
-        _readerStop = std::move(readerStop);
-        _readerThread =
-            std::jthread{[attempt, transport, callbacks, token = _readerStop.get_token(), this] {
-                ReaderLoop(attempt, transport, token, callbacks);
-            }};
+        _disconnecting = false;
         _connected = true;
         _connecting = false;
         _lastConnectFailure.store(ConnectFailure::None);
     }
-
-    // The session is live: the broker may now put commands on the wire, and everything the user
-    // asked for while we were disconnected goes out again in a fixed order.
     _commandBroker->BeginSession(attempt.generation);
+    bool cancelledAfterOpen = false;
+    std::stop_source readerStop;
+    {
+        std::lock_guard lock{_mutex};
+        if (cancelled()) {
+            _connecting = false;
+            _lastConnectFailure.store(ConnectFailure::TransportError);
+            cancelledAfterOpen = true;
+        }
+        else {
+            _readerStop = std::move(readerStop);
+            _readerThread =
+                std::jthread{[attempt, transport, callbacks, token = _readerStop.get_token(),
+                              this] { ReaderLoop(attempt, transport, token, callbacks); }};
+        }
+    }
+    if (cancelledAfterOpen) {
+        _commandBroker->EndSession();
+        std::lock_guard lock{_mutex};
+        _disconnecting = true;
+        _connected = false;
+        transport->Close();
+        return false;
+    }
+
+    // The session is live: everything the user asked for while disconnected goes out in a fixed
+    // order. BeginSession also accepts any evidence buffered before the reader started.
     _commandBroker->ReplayDesiredState(attempt.generation);
 
     if (callbacks.onConnected) {
@@ -275,6 +297,10 @@ void Manager::Disconnect()
 {
     CancelConnect();
     std::lock_guard connectLock{_connectMutex};
+    // Close the broker before _connected/_disconnecting make the loss observable. A submission in
+    // this window is retained as desired/TransportClosed, and active flights settle without
+    // rollback.
+    _commandBroker->EndSession();
     Callbacks::FnOnDisconnectedT callback;
     AAPAttempt attempt;
     std::shared_ptr<AAPTransport> transport;
@@ -283,6 +309,7 @@ void Manager::Disconnect()
     {
         std::lock_guard lock{_mutex};
         _readerStop.request_stop();
+        _disconnecting = true;
         attempt = _attempt;
         const bool wasConnected = _connected.exchange(false);
         _connecting = false;
@@ -303,11 +330,9 @@ void Manager::Disconnect()
         reader.join();
     }
 
-    // Close the broker session after the reader is pinned and joined; desired values survive.
-    _commandBroker->EndSession();
-
     {
         std::lock_guard lock{_mutex};
+        ReleaseAttRead();
         _noiseControlMode.reset();
         _conversationalAwarenessState.reset();
         _personalizedVolumeState.reset();
@@ -328,7 +353,7 @@ void Manager::Disconnect()
 
 bool Manager::IsConnected() const
 {
-    return _connected;
+    return _connected && !_disconnecting;
 }
 
 AAPAttempt Manager::GetLastAttempt() const
@@ -352,18 +377,9 @@ bool Manager::IsCurrentAttempt(AAPAttempt attempt) const
 
 bool Manager::SetNoiseControlMode(NoiseControlMode mode)
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot set noise control mode - not connected");
-        return false;
-    }
-
-    auto packet = Packets::BuildNoiseControlPacket(mode);
-    if (!SendPacket(packet)) {
-        return false;
-    }
-
-    LOG(Info, "AAP: Set noise control mode to {}", Helper::ToString(mode).toStdString());
-    return true;
+    return SubmitCommand(
+               {AAPCommandKind::SetNoiseControl, static_cast<uint32_t>(Helper::ToUnderlying(mode))})
+        .accepted;
 }
 
 std::optional<NoiseControlMode> Manager::GetNoiseControlMode() const
@@ -374,18 +390,9 @@ std::optional<NoiseControlMode> Manager::GetNoiseControlMode() const
 
 bool Manager::SetConversationalAwareness(bool enable)
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot set conversational awareness - not connected");
-        return false;
-    }
-
-    auto packet = Packets::BuildConversationalAwarenessPacket(enable);
-    if (!SendPacket(packet)) {
-        return false;
-    }
-
-    LOG(Info, "AAP: Set conversational awareness to {}", enable ? "enabled" : "disabled");
-    return true;
+    return SubmitCommand({AAPCommandKind::SetConversationalAwareness,
+                          static_cast<uint32_t>(enable ? 0x01 : 0x02)})
+        .accepted;
 }
 
 std::optional<ConversationalAwarenessState> Manager::GetConversationalAwarenessState() const
@@ -396,18 +403,9 @@ std::optional<ConversationalAwarenessState> Manager::GetConversationalAwarenessS
 
 bool Manager::SetPersonalizedVolume(bool enable)
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot set personalized volume - not connected");
-        return false;
-    }
-
-    auto packet = Packets::BuildPersonalizedVolumePacket(enable);
-    if (!SendPacket(packet)) {
-        return false;
-    }
-
-    LOG(Info, "AAP: Set personalized volume to {}", enable ? "enabled" : "disabled");
-    return true;
+    return SubmitCommand(
+               {AAPCommandKind::SetPersonalizedVolume, static_cast<uint32_t>(enable ? 0x01 : 0x02)})
+        .accepted;
 }
 
 std::optional<PersonalizedVolumeState> Manager::GetPersonalizedVolumeState() const
@@ -418,18 +416,9 @@ std::optional<PersonalizedVolumeState> Manager::GetPersonalizedVolumeState() con
 
 bool Manager::SetAutomaticEarDetection(bool enable)
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot set automatic ear detection - not connected");
-        return false;
-    }
-
-    auto packet = Packets::BuildAutomaticEarDetectionPacket(enable);
-    if (!SendPacket(packet)) {
-        return false;
-    }
-
-    LOG(Info, "AAP: Set automatic ear detection to {}", enable ? "enabled" : "disabled");
-    return true;
+    return SubmitCommand({AAPCommandKind::SetAutomaticEarDetection,
+                          static_cast<uint32_t>(enable ? 0x01 : 0x02)})
+        .accepted;
 }
 
 std::optional<bool> Manager::GetAutomaticEarDetectionState() const
@@ -440,26 +429,9 @@ std::optional<bool> Manager::GetAutomaticEarDetectionState() const
 
 bool Manager::SetLoudSoundReduction(bool enable)
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot set loud sound reduction - not connected");
-        return false;
-    }
-
-    auto packet = Packets::BuildLoudSoundReductionPacket(enable);
-    if (!SendPacket(packet)) {
-        return false;
-    }
-
-    // Optimistic local echo: the CCCD (0x1C) does not work, so the firmware
-    // state can only be read back. Follow the write with a read request — when
-    // the ATT path is confirmed the response refreshes the cached state; when
-    // it is not, this frame is simply ignored by the firmware.
-    if (GetAttPathState() == AttPathState::Confirmed) {
-        SendPacket(Att::BuildReadRequest(Att::kLoudSoundReductionHandle));
-    }
-
-    LOG(Info, "AAP: Set loud sound reduction to {}", enable ? "enabled" : "disabled");
-    return true;
+    return SubmitCommand(
+               {AAPCommandKind::SetLoudSoundReduction, static_cast<uint32_t>(enable ? 0x01 : 0x00)})
+        .accepted;
 }
 
 std::optional<LoudSoundReductionState> Manager::GetLoudSoundReductionState() const
@@ -470,22 +442,7 @@ std::optional<LoudSoundReductionState> Manager::GetLoudSoundReductionState() con
 
 bool Manager::SetPpeCapLevel(uint8_t level)
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot set PPE cap level - not connected");
-        return false;
-    }
-
-    // Control command 0x38 is PPE (hearing-protection) cap level, range 0-100 per
-    // Docs/AAP-Protocol-Spec.md §7. Values outside the documented range (including stale
-    // pre-P5 inputs from the old 0-50 adaptive-transparency UI) clamp at the domain edge.
-    level = NormalizePpeCapLevel(level);
-    auto packet = Packets::BuildPpeCapLevelPacket(level);
-    if (!SendPacket(packet)) {
-        return false;
-    }
-
-    LOG(Info, "AAP: Set PPE cap level to {}", level);
-    return true;
+    return SubmitCommand({AAPCommandKind::SetPpeCapLevel, NormalizePpeCapLevel(level)}).accepted;
 }
 
 std::optional<uint8_t> Manager::GetPpeCapLevel() const
@@ -496,62 +453,19 @@ std::optional<uint8_t> Manager::GetPpeCapLevel() const
 
 bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot set adaptive noise level - not connected");
-        return false;
-    }
-
-    if (level > 100) {
-        level = 100;
-    }
-
-    auto packet = Packets::BuildAdaptiveNoisePacket(level);
-    if (!SendPacket(packet)) {
-        return false;
-    }
-
-    LOG(Info, "AAP: Set adaptive noise level to {}", level);
-    return true;
+    return SubmitCommand({AAPCommandKind::SetAdaptiveNoiseLevel,
+                          static_cast<uint32_t>(std::min<uint8_t>(level, uint8_t{100}))})
+        .accepted;
 }
 
 bool Manager::StartHeadTracking()
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot start head tracking - not connected");
-        return false;
-    }
-
-    if (_headTrackingActive) {
-        LOG(Warn, "AAP: Head tracking already active");
-        return true;
-    }
-
-    if (!SendPacket(Packets::StartHeadTracking)) {
-        return false;
-    }
-
-    _headTrackingActive = true;
-    LOG(Info, "AAP: Started head tracking");
-    return true;
+    return SubmitCommand({AAPCommandKind::SetHeadTracking, 0x01}).accepted;
 }
 
 bool Manager::StopHeadTracking()
 {
-    if (!_connected) {
-        return false;
-    }
-
-    if (!_headTrackingActive) {
-        return true;
-    }
-
-    if (!SendPacket(Packets::StopHeadTracking)) {
-        return false;
-    }
-
-    _headTrackingActive = false;
-    LOG(Info, "AAP: Stopped head tracking");
-    return true;
+    return SubmitCommand({AAPCommandKind::SetHeadTracking, 0x00}).accepted;
 }
 
 bool Manager::IsHeadTrackingActive() const
@@ -573,6 +487,46 @@ std::optional<uint32_t> Manager::DesiredCommand(AAPCommandKind kind) const
 std::optional<uint32_t> Manager::ConfirmedCommand(AAPCommandKind kind) const
 {
     return _commandBroker->Confirmed(kind);
+}
+
+uint64_t Manager::LatestCommandRequest(AAPCommandKind kind) const
+{
+    return _commandBroker->LatestRequest(kind);
+}
+
+bool Manager::IsCurrentCommandRequest(AAPCommandKind kind, uint64_t requestId) const
+{
+    return _commandBroker->IsCurrentRequest(kind, requestId);
+}
+
+bool Manager::HasPendingCommand(AAPCommandKind kind) const
+{
+    return _commandBroker->HasPendingCommand(kind);
+}
+
+void Manager::RefreshCommand(AAPCommandKind kind)
+{
+    std::shared_ptr<AAPTransport> transport;
+    uint64_t generation{0};
+    {
+        std::lock_guard lock{_mutex};
+        if (!_connected || _disconnecting) {
+            return;
+        }
+        transport = _transport.load();
+        generation = _attempt.generation;
+    }
+    if (kind == AAPCommandKind::SetLoudSoundReduction) {
+        if (AcquireAttRead(generation, 0, {})) {
+            if (!SendPacket(transport, Att::BuildReadRequest(Att::kLoudSoundReductionHandle), {})) {
+                ReleaseAttRead();
+            }
+            // The response releases the owner and is treated as baseline evidence.
+        }
+        return;
+    }
+    // Re-subscribing requests current settings notifications without inventing a desired value.
+    SendPacket(transport, Packets::RequestNotifications, {});
 }
 
 AAPConfirmMode Manager::CommandMode(AAPCommandKind kind, uint32_t value) const
@@ -597,7 +551,9 @@ bool Manager::SendCommand(const AAPCommand &command, uint64_t generation, std::s
     std::shared_ptr<AAPTransport> transport;
     {
         std::lock_guard lock{_mutex};
-        if (!_connected || _attempt.generation != generation || stopToken.stop_requested()) {
+        if (!_connected || _disconnecting || _attempt.generation != generation ||
+            stopToken.stop_requested())
+        {
             return false;
         }
         transport = _transport.load();
@@ -658,11 +614,23 @@ bool Manager::SendCommand(const AAPCommand &command, uint64_t generation, std::s
     }
     if (command.kind == AAPCommandKind::SetLoudSoundReduction) {
         // The write has no response. A read in the same serial slot supplies the readback; failure
-        // to issue that read is not proof that the already-written value was rejected.
-        SendPacket(transport, Att::BuildReadRequest(Att::kLoudSoundReductionHandle), stopToken);
+        // to issue that read is not proof that the already-written value was rejected. The startup
+        // probe and this read share one pending-ATT owner so responses cannot confirm each other.
+        if (AcquireAttRead(generation, command.requestId, stopToken)) {
+            if (!SendPacket(
+                    transport, Att::BuildReadRequest(Att::kLoudSoundReductionHandle), stopToken))
+            {
+                ReleaseAttRead();
+            }
+        }
     }
     if (command.kind == AAPCommandKind::SetHeadTracking) {
-        _headTrackingActive.store(command.value != 0);
+        // Fence sensor evidence by the completed send. A frame already in the reader queue when
+        // Start was issued carries the previous epoch and cannot confirm the new flight.
+        _headTrackingSendEpoch.fetch_add(1);
+        _headTrackingStartedAtMs.store(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                           std::chrono::steady_clock::now().time_since_epoch())
+                                           .count());
     }
     return true;
 }
@@ -809,21 +777,69 @@ void Manager::SetCallbacks(Callbacks callbacks)
 
 AttPathState Manager::GetAttPathState() const
 {
+    std::unique_lock<std::mutex> lock{_attReadMutex};
     auto state = _attPathState.load();
     if (state == AttPathState::Pending) {
-        // Lazily resolve the probe outcome once its 500ms window has passed;
-        // no probe thread, no timers — whoever asks gets the final answer.
+        // Lazily resolve the probe outcome once its 500ms window has passed.
         auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                          std::chrono::steady_clock::now().time_since_epoch())
                          .count();
         if (nowMs >= _attProbeDeadlineMs.load()) {
             _attPathState.store(AttPathState::Unconfirmed);
+            if (_attReadOwner && _attReadOwner->probe) {
+                _attReadOwner.reset();
+                _attReadCondition.notify_all();
+            }
             Diagnostics::Recorder::Instance().Record(
                 Diagnostics::Step::AttProbe, false, "no ATT answer within 500ms");
             state = AttPathState::Unconfirmed;
         }
     }
     return state;
+}
+
+bool Manager::AcquireAttRead(uint64_t generation, uint64_t requestId, std::stop_token stopToken)
+{
+    std::unique_lock<std::mutex> lock{_attReadMutex};
+    while (_attReadOwner && !stopToken.stop_requested()) {
+        if (_attReadOwner->generation != generation || _disconnecting) {
+            return false;
+        }
+        const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now().time_since_epoch())
+                               .count();
+        if (_attReadOwner->probe || std::chrono::steady_clock::now() >= _attReadOwner->expiresAt) {
+            if (_attReadOwner->probe && nowMs < _attProbeDeadlineMs.load()) {
+                _attReadCondition.wait_for(lock, std::chrono::milliseconds{10});
+                continue;
+            }
+            if (!_attReadOwner->probe) {
+                _commandBroker->SetConfirmMode(
+                    AAPCommandKind::SetLoudSoundReduction, AAPConfirmMode::Unverifiable);
+                _attReadOwner.reset();
+                _attReadCondition.notify_all();
+                return false;
+            }
+            _attPathState.store(AttPathState::Unconfirmed);
+            _attReadOwner.reset();
+            _attReadCondition.notify_all();
+            break;
+        }
+        _attReadCondition.wait_for(lock, std::chrono::milliseconds{10});
+    }
+    if (stopToken.stop_requested() || _disconnecting || _attReadOwner) {
+        return false;
+    }
+    _attReadOwner = AttReadOwner{
+        generation, requestId, false, std::chrono::steady_clock::now() + std::chrono::seconds{2}};
+    return true;
+}
+
+void Manager::ReleaseAttRead()
+{
+    std::lock_guard lock{_attReadMutex};
+    _attReadOwner.reset();
+    _attReadCondition.notify_all();
 }
 
 void Manager::StartAttProbe(
@@ -833,16 +849,21 @@ void Manager::StartAttProbe(
     // (even an error response) proves the firmware accepts ATT on this pipe;
     // no answer within the window marks the path unconfirmed. Never retried.
     auto packet = Att::BuildReadRequest(Att::kLoudSoundReductionHandle);
+    const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::steady_clock::now().time_since_epoch())
+                           .count();
+    _attProbeDeadlineMs.store(nowMs + 500);
+    {
+        std::lock_guard lock{_attReadMutex};
+        _attReadOwner = AttReadOwner{_attempt.generation, 0, true};
+    }
     if (!SendPacket(transport, packet, stopToken)) {
+        ReleaseAttRead();
         _attPathState.store(AttPathState::Unconfirmed);
         Diagnostics::Recorder::Instance().Record(Diagnostics::Step::AttProbe, false, "send failed");
         return;
     }
 
-    auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                     std::chrono::steady_clock::now().time_since_epoch())
-                     .count();
-    _attProbeDeadlineMs.store(nowMs + 500);
     _attPathState.store(AttPathState::Pending);
     Diagnostics::Recorder::Instance().Record(Diagnostics::Step::AttProbe, true, "probe sent");
     LOG(Info, "AAP: Sent ATT probe (read handle 0x{:02X}), waiting up to 500ms",
@@ -859,6 +880,13 @@ void Manager::ProcessAttFrame(
     // Read response (0x0B): we only ever issue one kind of read — handle 0x1B —
     // so the value belongs to loud sound reduction.
     if (Att::IsReadResponse(packet)) {
+        AttReadOwner owner;
+        {
+            std::lock_guard lock{_attReadMutex};
+            owner = _attReadOwner.value_or(AttReadOwner{});
+            _attReadOwner.reset();
+            _attReadCondition.notify_all();
+        }
         auto previous = _attPathState.exchange(AttPathState::Confirmed);
         _commandBroker->SetConfirmMode(
             AAPCommandKind::SetLoudSoundReduction, AAPConfirmMode::Readback);
@@ -878,10 +906,15 @@ void Manager::ProcessAttFrame(
                 state = LoudSoundReductionState::Disabled;
             }
             if (state.has_value()) {
-                RouteCommandEcho(
-                    {AAPCommandKind::SetLoudSoundReduction,
-                     static_cast<uint32_t>(Helper::ToUnderlying(*state))},
-                    attempt);
+                const AAPCommand command{
+                    AAPCommandKind::SetLoudSoundReduction,
+                    static_cast<uint32_t>(Helper::ToUnderlying(*state))};
+                if (owner.probe || owner.requestId == 0 || owner.generation != attempt.generation) {
+                    _commandBroker->OnObserved(command, attempt.generation);
+                }
+                else {
+                    _commandBroker->OnEcho(command, attempt.generation, owner.requestId);
+                }
                 {
                     std::lock_guard<std::mutex> lock{_mutex};
                     _loudSoundReductionState = state;
@@ -897,6 +930,7 @@ void Manager::ProcessAttFrame(
     // Error response (0x01): the ATT stack answered, so the path itself is
     // alive even though the value is unavailable.
     if (Att::IsErrorResponse(packet)) {
+        ReleaseAttRead();
         auto previous = _attPathState.exchange(AttPathState::Confirmed);
         _commandBroker->SetConfirmMode(
             AAPCommandKind::SetLoudSoundReduction, AAPConfirmMode::Unverifiable);
@@ -957,6 +991,7 @@ bool Manager::SendPacket(
     if (!transport || stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
         return false;
     }
+    std::lock_guard sendLock{_sendMutex};
     if (!transport->Send(packet, stopToken)) {
         return false;
     }
@@ -985,6 +1020,7 @@ void Manager::ProcessPacket(
         return;
     }
 
+    const auto headEpoch = _headTrackingSendEpoch.load();
     const auto validation = AAPMessage::Validate(packet);
     if (validation != AAPMessage::ValidationResult::Valid) {
         LOG(Warn, "AAP: Rejected invalid {}-byte record before processing: {}", packet.size(),
@@ -1149,8 +1185,17 @@ void Manager::ProcessPacket(
 
     // Only opcode 0x0017 carries head-tracking data. Unknown AAP records are
     // valid for diagnostics but must never fall through into this parser.
-    if (_headTrackingActive && packet.size() >= 56 && packet[0] == 0x04 && packet[1] == 0x00 &&
-        packet[2] == 0x04 && packet[3] == 0x00 && packet[4] == 0x17 && packet[5] == 0x00)
+    const auto headFlight = _commandBroker->InFlight();
+    const auto headNowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now().time_since_epoch())
+                               .count();
+    const bool startingHeadTracking =
+        headFlight && headFlight->kind == AAPCommandKind::SetHeadTracking &&
+        headFlight->value == 0x01 && headEpoch != 0 && headEpoch == _headTrackingSendEpoch.load() &&
+        headNowMs - _headTrackingStartedAtMs.load() >= 50;
+    if ((_headTrackingActive || startingHeadTracking) && packet.size() >= 56 && packet[0] == 0x04 &&
+        packet[1] == 0x00 && packet[2] == 0x04 && packet[3] == 0x00 && packet[4] == 0x17 &&
+        packet[5] == 0x00)
     {
         auto trackingData = ParseHeadTrackingData(packet);
         if (trackingData.has_value()) {
@@ -1194,15 +1239,21 @@ void Manager::ReaderLoop(
         if (!current || !_connected) {
             return;
         }
-        _connected = false;
-        _usingMagicAAP = false;
-        _transport.store(std::shared_ptr<AAPTransport>{});
         _batterySnapshot.reset();
         active = _attempt;
         callback = _callbacks.onDisconnected;
     }
 
+    // Close the broker before publishing disconnection to senders.
     _commandBroker->EndSession();
+    {
+        std::lock_guard lock{_mutex};
+        _disconnecting = true;
+        _connected = false;
+        _usingMagicAAP = false;
+        _transport.store(std::shared_ptr<AAPTransport>{});
+        ReleaseAttRead();
+    }
     if (callback) {
         callback(active);
     }
@@ -1389,6 +1440,19 @@ AAPCommandResult Manager::SubmitCommand(AAPCommand command, std::stop_token stop
 {
     return _commandBroker->Submit(command, stopToken);
 }
+uint64_t Manager::LatestCommandRequest(AAPCommandKind kind) const
+{
+    return _commandBroker->LatestRequest(kind);
+}
+bool Manager::IsCurrentCommandRequest(AAPCommandKind kind, uint64_t requestId) const
+{
+    return _commandBroker->IsCurrentRequest(kind, requestId);
+}
+bool Manager::HasPendingCommand(AAPCommandKind kind) const
+{
+    return _commandBroker->HasPendingCommand(kind);
+}
+void Manager::RefreshCommand(AAPCommandKind) {}
 std::optional<uint32_t> Manager::DesiredCommand(AAPCommandKind kind) const
 {
     return _commandBroker->Desired(kind);
@@ -1414,6 +1478,11 @@ AttPathState Manager::GetAttPathState() const
     return AttPathState::Unconfirmed;
 }
 void Manager::StartAttProbe(const std::shared_ptr<AAPTransport> &, std::stop_token) {}
+bool Manager::AcquireAttRead(uint64_t, uint64_t, std::stop_token)
+{
+    return false;
+}
+void Manager::ReleaseAttRead() {}
 bool Manager::IsCurrentAttempt(AAPAttempt) const
 {
     return false;
