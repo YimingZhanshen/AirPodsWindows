@@ -19,12 +19,14 @@
 #include <chrono>
 #include <condition_variable>
 #include <future>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <stop_token>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #if defined(APD_OS_WIN)
@@ -43,6 +45,8 @@
     #include "Source/Core/AAPManager.h"
     #pragma comment(lib, "Ws2_32.lib")
 #endif
+
+using namespace std::chrono_literals;
 
 #if defined(APD_OS_WIN)
 // Connected UDP loopback sockets exercise the production select/recv/send path
@@ -309,54 +313,85 @@ private slots:
     void ShortWriteFailsWithoutEmittingASecondRecord()
     {
         AAPTestSupport::FakeTransport transport;
-        const std::vector<uint8_t> record{0x04, 0x00, 0x04, 0x00, 0x2B, 0x00};
+        const auto record = AAPTestSupport::Records::FeatureAck();
         QVERIFY(transport.Connect(1, {}));
         transport.SetSendLimit(record.size() - 1);
 
         QVERIFY(!transport.Send(record, {}));
         QCOMPARE(transport.SendCalls(), size_t{1});
         QCOMPARE(transport.LastSend(), record);
+        // The refused suffix must not have been written as a second record.
+        QVERIFY(transport.SentRecords().empty());
     }
 
     void CompleteWriteEmitsExactlyOneRecord()
     {
         AAPTestSupport::FakeTransport transport;
-        const std::vector<uint8_t> record{0x04, 0x00, 0x04, 0x00, 0x2B, 0x00};
+        const auto record = AAPTestSupport::Records::FeatureAck();
 
         QVERIFY(transport.Connect(1, {}));
         QVERIFY(transport.Send(record, {}));
         QCOMPARE(transport.SendCalls(), size_t{1});
-        QCOMPARE(transport.LastSend(), record);
+        QCOMPARE(transport.SentRecords(), (std::vector<std::vector<uint8_t>>{record}));
     }
 
+    // A parked Receive is observed through the transport's own waiter count, then woken by
+    // the stop request. No wall-clock wait is used to claim the worker was blocked.
     void StopInterruptsBlockedReceive()
     {
         AAPTestSupport::FakeTransport transport;
         std::stop_source stop;
-        auto result =
-            std::async(std::launch::async, [&] { return transport.Receive(stop.get_token()); });
+        std::optional<std::vector<uint8_t>> result;
+        AAPTestSupport::Worker worker{
+            [&] { result = transport.Receive(stop.get_token()); }, [&] { stop.request_stop(); }};
 
-        QVERIFY(transport.WaitForReceiveWaiter(std::chrono::seconds(1)));
+        QVERIFY(transport.WaitForReceiveWaiter(2s));
         stop.request_stop();
-        QVERIFY(result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
-        QVERIFY(!result.get().has_value());
+        QVERIFY(worker.Finished(2s));
+        QVERIFY(!result.has_value());
     }
 
     void CloseInterruptsBlockedReceive()
     {
         AAPTestSupport::FakeTransport transport;
-        auto result = std::async(std::launch::async, [&] { return transport.Receive({}); });
+        transport.SetBlockReceive(true);
+        std::optional<std::vector<uint8_t>> result;
+        AAPTestSupport::Worker worker{
+            [&] { result = transport.Receive({}); }, [&] { transport.Close(); }};
 
-        QVERIFY(transport.WaitForReceiveWaiter(std::chrono::seconds(1)));
+        QVERIFY(transport.WaitForReceiveWaiter(2s));
         transport.Close();
-        QVERIFY(result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
-        QVERIFY(!result.get().has_value());
+        QVERIFY(worker.Finished(2s));
+        QVERIFY(!result.has_value());
+        QVERIFY(transport.IsClosed());
+    }
+
+    // Leaving the scope must release the park by itself, which is what stops a failed
+    // assertion from turning into a CI hang.
+    void ScopeExitReleasesAParkedReceive()
+    {
+        AAPTestSupport::FakeTransport transport;
+        transport.SetBlockReceive(true);
+        bool returned = false;
+        {
+            AAPTestSupport::ScopedRelease unblock{transport};
+            AAPTestSupport::Worker worker{
+                [&] {
+                    transport.Receive({});
+                    returned = true;
+                },
+                [&] { transport.ReleaseAll(); }};
+            QVERIFY(transport.WaitForReceiveWaiter(2s));
+            transport.ReleaseAll();
+            QVERIFY(worker.Finished(2s));
+        }
+        QVERIFY(returned);
     }
 
     void CloseDropsQueuedRecords()
     {
         AAPTestSupport::FakeTransport transport;
-        transport.Push({0x04, 0x00, 0x04, 0x00, 0x2B, 0x00});
+        transport.Push(AAPTestSupport::Records::FeatureAck());
         transport.Close();
 
         QCOMPARE(transport.RecordCount(), size_t{0});
@@ -366,15 +401,16 @@ private slots:
     void EofReturnsNulloptAfterQueuedRecords()
     {
         AAPTestSupport::FakeTransport transport;
-        const std::vector<uint8_t> first{0x04, 0x00, 0x04, 0x00, 0x2B, 0x00};
-        const std::vector<uint8_t> second{0x0A, 0x1B, 0x00};
-        transport.Push(first);
-        transport.Push(second);
+        const auto first = AAPTestSupport::Records::FeatureAck();
+        const auto second = AAPTestSupport::Records::AttReadRequest();
+        transport.PushAll({first, second});
         transport.SetEof();
 
         QCOMPARE(transport.Receive({}), std::optional(first));
         QCOMPARE(transport.Receive({}), std::optional(second));
         QVERIFY(!transport.Receive({}).has_value());
+        // A natural end of stream is not a close: the reader keeps its joinable thread.
+        QVERIFY(!transport.IsClosed());
     }
 
     void HandshakeAckIsAcceptedAsACompleteRecord()
@@ -576,31 +612,94 @@ private slots:
         QVERIFY(transport.Connect(1, {}));
         transport.SetBlockSend(true);
         std::stop_source stop;
-        auto result = std::async(std::launch::async, [&] {
-            return transport.Send(
-                std::vector<uint8_t>{0x04, 0x00, 0x04, 0x00, 0x2B, 0x00}, stop.get_token());
-        });
+        bool result = true;
+        AAPTestSupport::Worker worker{
+            [&] {
+                result = transport.Send(AAPTestSupport::Records::FeatureAck(), stop.get_token());
+            },
+            [&] { stop.request_stop(); }};
 
-        QVERIFY(transport.WaitForSendWaiter(std::chrono::seconds(1)));
+        QVERIFY(transport.WaitForSendWaiter(2s));
         stop.request_stop();
-        QVERIFY(result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
-        QVERIFY(!result.get());
+        QVERIFY(worker.Finished(2s));
+        QVERIFY(!result);
         QCOMPARE(transport.SendCalls(), size_t{0});
     }
 
     void EachInjectedRecordRetainsItsBoundary()
     {
         AAPTestSupport::FakeTransport transport;
-        const std::vector<uint8_t> first{0x04, 0x00, 0x04, 0x00, 0x2B, 0x00};
-        const std::vector<uint8_t> second{0x0B, 0x01};
-        transport.Push(first);
-        transport.Push(second);
+        const auto first = AAPTestSupport::Records::FeatureAck();
+        const auto second = AAPTestSupport::Records::HandshakeAck();
+        transport.PushAll({first, second});
 
         QCOMPARE(transport.Receive({}), std::optional(first));
         QCOMPARE(transport.Receive({}), std::optional(second));
     }
 
+    // A peer that hands over a short record stays a short record: the transport contract
+    // is one receive equals one record, so reassembly must never be assumed downstream.
+    void FragmentedInjectionStaysAFragment()
+    {
+        AAPTestSupport::FakeTransport transport;
+        const auto fragment = AAPTestSupport::Records::Fragment(3);
+        const auto complete = AAPTestSupport::Records::HandshakeAck();
+        transport.Push(fragment);
+        transport.Push(complete);
+
+        QCOMPARE(transport.Receive({}), std::optional(fragment));
+        QCOMPARE(transport.Receive({}), std::optional(complete));
+    }
+
+    void PromiseGateTimesOutAndReleasesOnEveryExit()
+    {
+        AAPTestSupport::PromiseGate gate;
+        AAPTestSupport::PromiseGate entered;
+        bool returned = false;
+        {
+            AAPTestSupport::ScopedUnblock unblock{gate};
+            AAPTestSupport::Worker worker{
+                [&] {
+                    entered.Signal();
+                    returned = gate.Wait(2s);
+                },
+                [&] { gate.Signal(); }};
+            QVERIFY(entered.Wait(2s));
+            QVERIFY(!worker.Finished(50ms));
+            gate.Signal();
+            QVERIFY(worker.Finished(2s));
+        }
+        QVERIFY(returned);
+        QVERIFY(gate.Wait(0ms));
+    }
+
+    void AtomicGateTimesOutAndReleasesOnEveryExit()
+    {
+        AAPTestSupport::AtomicGate gate;
+        AAPTestSupport::PromiseGate entered;
+        bool returned = false;
+        {
+            AAPTestSupport::ScopedUnblock unblock{gate};
+            AAPTestSupport::Worker worker{
+                [&] {
+                    entered.Signal();
+                    returned = gate.Wait(2s);
+                },
+                [&] { gate.Open(); }};
+            QVERIFY(entered.Wait(2s));
+            QVERIFY(!worker.Finished(50ms));
+            gate.Open();
+            QVERIFY(worker.Finished(2s));
+        }
+        QVERIFY(returned);
+        QVERIFY(gate.Wait(0ms));
+    }
+
 #if defined(APD_OS_WIN)
+    // The reader and the writer must not share a lock, and a Close has to wake a parked
+    // Receive. Neither is timed: no datagram is queued before the release step, so the
+    // only way Receive returns is Close or a stop request, and every worker is waited on
+    // with a deadline and owns a release path.
     void SeqPacketSendDoesNotWaitForReceivePolling()
     {
         using Core::AAP::SeqPacketTransport;
@@ -611,27 +710,38 @@ private slots:
             reinterpret_cast<void *>(pair.ReleaseTransportSocket()));
         transport._closed = false;
 
-        const std::vector<uint8_t> record{0x04, 0x00, 0x04, 0x00, 0x2B, 0x00};
+        const auto record = AAPTestSupport::Records::FeatureAck();
         std::stop_source stop;
-        auto receive =
-            std::async(std::launch::async, [&] { return transport.Receive(stop.get_token()); });
-        const bool receiveBlocked =
-            receive.wait_for(std::chrono::milliseconds(50)) == std::future_status::timeout;
-        auto send = std::async(std::launch::async, [&] { return transport.Send(record, {}); });
-        const bool sendReady = send.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+        AAPTestSupport::EntryRendezvous entered;
+        std::optional<std::vector<uint8_t>> received;
+        AAPTestSupport::Worker reader{
+            [&] {
+                entered.Arrive();
+                received = transport.Receive(stop.get_token());
+            },
+            [&] {
+                stop.request_stop();
+                transport.Close();
+            }};
+        QVERIFY(entered.Wait(2s));
+
+        bool sent = false;
+        AAPTestSupport::EntryRendezvous sendEntered;
+        AAPTestSupport::Worker writer{
+            [&] {
+                sendEntered.Arrive();
+                sent = transport.Send(record, {});
+            },
+            [&] { transport.Close(); }};
+        QVERIFY(sendEntered.Wait(2s));
+        QVERIFY(writer.Finished(2s));
+        QVERIFY(sent);
+        QCOMPARE(pair.ReceiveOnPeer(), std::optional(record));
 
         stop.request_stop();
-        const bool receiveReady =
-            receive.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
-        QVERIFY(receiveReady);
-        QVERIFY(!receive.get().has_value());
-        if (!sendReady) {
-            QVERIFY(send.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
-        }
-        QVERIFY(receiveBlocked);
-        QVERIFY(sendReady);
-        QVERIFY(send.get());
-        QCOMPARE(pair.ReceiveOnPeer(), std::optional(record));
+        QVERIFY(reader.Finished(2s));
+        transport.Close();
+        QVERIFY(!received.has_value());
     }
 
     void SeqPacketCloseInterruptsReceivePolling()
@@ -645,28 +755,25 @@ private slots:
         transport._closed = false;
 
         std::stop_source stop;
-        auto receive =
-            std::async(std::launch::async, [&] { return transport.Receive(stop.get_token()); });
-        const bool receiveBlocked =
-            receive.wait_for(std::chrono::milliseconds(50)) == std::future_status::timeout;
-        auto close = std::async(std::launch::async, [&] { transport.Close(); });
-        const bool closeReady =
-            close.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+        AAPTestSupport::EntryRendezvous entered;
+        std::optional<std::vector<uint8_t>> received;
+        AAPTestSupport::Worker reader{
+            [&] {
+                entered.Arrive();
+                received = transport.Receive(stop.get_token());
+            },
+            [&] {
+                stop.request_stop();
+                transport.Close();
+            }};
+        QVERIFY(entered.Wait(2s));
 
-        const bool receiveClosed =
-            receive.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
-        if (!receiveClosed) {
-            stop.request_stop();
-        }
-        const bool receiveReady =
-            receive.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
-        QVERIFY(receiveReady);
-        QVERIFY(!receive.get().has_value());
-        close.wait();
+        // Close alone has to end the poll; the stop token is only the fallback here, so a
+        // regression that drops the shutdown shows up as a missed deadline, not a hang.
         transport.Close();
-        QVERIFY(receiveBlocked);
-        QVERIFY(closeReady);
-        QVERIFY(receiveClosed);
+        QVERIFY(reader.Finished(2s));
+        QVERIFY(!received.has_value());
+        transport.Close();
     }
 
     void SeqPacketCloseKeepsPinnedDescriptorOpen()
@@ -706,15 +813,24 @@ private slots:
         transport._closed = false;
 
         std::stop_source stop;
-        auto receive =
-            std::async(std::launch::async, [&] { return transport.Receive(stop.get_token()); });
-        const bool receiveBlocked =
-            receive.wait_for(std::chrono::milliseconds(50)) == std::future_status::timeout;
+        AAPTestSupport::EntryRendezvous entered;
+        std::optional<std::vector<uint8_t>> received;
+        AAPTestSupport::Worker reader{
+            [&] {
+                entered.Arrive();
+                received = transport.Receive(stop.get_token());
+            },
+            [&] {
+                stop.request_stop();
+                transport.Close();
+            }};
+        QVERIFY(entered.Wait(2s));
         stop.request_stop();
-        QVERIFY(receive.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
-        QVERIFY(!receive.get().has_value());
-        QVERIFY(receiveBlocked);
+        QVERIFY(reader.Finished(2s));
+        QVERIFY(!received.has_value());
+        // A cancelled token must short-circuit later calls without parking again.
         QVERIFY(!transport.Receive(stop.get_token()).has_value());
+        transport.Close();
     }
 
     void SeqPacketReceivePreservesRecordBoundaries()
@@ -727,12 +843,13 @@ private slots:
             reinterpret_cast<void *>(pair.ReleaseTransportSocket()));
         transport._closed = false;
 
-        const std::vector<uint8_t> first{0x04, 0x00, 0x04, 0x00, 0x2B, 0x00};
-        const std::vector<uint8_t> second{0x0B, 0x01};
+        const auto first = AAPTestSupport::Records::FeatureAck();
+        const auto second = AAPTestSupport::Records::AttReadRequest();
         QVERIFY(pair.SendFromPeer(first));
         QVERIFY(pair.SendFromPeer(second));
         QCOMPARE(transport.Receive({}), std::optional(first));
         QCOMPARE(transport.Receive({}), std::optional(second));
+        transport.Close();
     }
 
     void MalformedHeadTrackingNeverReachesManagerCallback()
@@ -818,10 +935,9 @@ private slots:
 
         QVERIFY(!manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Off));
         QCOMPARE(transport->SendCalls(), size_t{1});
-        QCOMPARE(
-            transport->LastSend(),
-            (std::vector<uint8_t>{
-                0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x01, 0x00, 0x00, 0x00}));
+        QCOMPARE(transport->LastSend(), AAPTestSupport::Records::NoiseControl(0x01));
+        // A refused write leaves no partial record behind for the peer to misread.
+        QVERIFY(transport->SentRecords().empty());
         manager._connected = false;
         manager._transport.store(nullptr);
     }
@@ -1037,6 +1153,23 @@ private slots:
         const Core::AAP::AAPAttempt attempt{1, 7};
         QVERIFY(!manager.Connect(attempt));
         QCOMPARE(transport->SendCalls(), size_t{0});
+    }
+
+    // Every harness deadline expires with a result instead of blocking forever, which is
+    // what makes the CI timeout a backstop rather than the primary guard.
+    void RendezvousDeadlinesExpireInsteadOfBlocking()
+    {
+        AAPTestSupport::FakeTransport idle;
+        QVERIFY(!idle.WaitForReceiveWaiter(50ms));
+        QVERIFY(!idle.WaitForSendWaiter(50ms));
+        QVERIFY(!idle.WaitForConnectWaiter(50ms));
+
+        AAPTestSupport::BlockingTransport parked;
+        parked.Block(AAPTestSupport::BlockingTransport::Op::Send);
+        QVERIFY(!parked.WaitForParked(AAPTestSupport::BlockingTransport::Op::Send, 50ms));
+
+        AAPTestSupport::CallbackRecorder recorder;
+        QVERIFY(!recorder.WaitForCount("never", 1, 50ms));
     }
 #endif
 };

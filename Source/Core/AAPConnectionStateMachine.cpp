@@ -71,6 +71,11 @@ AAPConnectionStateMachine::Lost(AAPAttempt attempt, TimePoint now)
     const auto multiplier = 800 + static_cast<int64_t>(jitter * 400);
     _retryDelay = std::chrono::milliseconds{static_cast<int64_t>(seconds) * multiplier};
     _state = AAPConnectionState::Backoff;
+
+    // Reserve the generation the scheduled retry will run under. Without this the retry
+    // reused the dead session's generation forever, so a late event from a retired
+    // reader stayed "current" and could overwrite the new session's state.
+    _attempt = {attempt.address, _nextGeneration++};
     return _retryDelay;
 }
 

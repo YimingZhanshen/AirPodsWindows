@@ -95,6 +95,19 @@ target_include_directories(AAPTransportTests PRIVATE "${CMAKE_SOURCE_DIR}")
 
 add_test(NAME AAPTransportTests COMMAND AAPTransportTests)
 
+add_executable(AAPManagerWorkerTests AAPManagerWorkerTests.cpp)
+
+target_link_libraries(
+    AAPManagerWorkerTests
+
+    PRIVATE
+    apd_core
+    Qt6::Test
+)
+
+target_include_directories(AAPManagerWorkerTests PRIVATE "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME AAPManagerWorkerTests COMMAND AAPManagerWorkerTests)
 
 add_executable(AnimationViewTests AnimationViewTests.cpp)
 
@@ -170,7 +183,16 @@ foreach(scale_factor 1 1.25 1.5 2)
     )
 endforeach()
 
-foreach(test_target AirPodsDomainTests QuickConnectTests AAPProtocolTests MagicAAPTests AAPConnectionStateMachineTests AAPTransportTests AnimationViewTests UiRenderingTests)
+foreach(test_target
+        AirPodsDomainTests
+        QuickConnectTests
+        AAPProtocolTests
+        MagicAAPTests
+        AAPConnectionStateMachineTests
+        AAPTransportTests
+        AAPManagerWorkerTests
+        AnimationViewTests
+        UiRenderingTests)
     add_custom_command(
         TARGET ${test_target}
         POST_BUILD
@@ -180,3 +202,10 @@ foreach(test_target AirPodsDomainTests QuickConnectTests AAPProtocolTests MagicA
         COMMENT "Deploying Qt Test runtime for ${test_target}"
     )
 endforeach()
+
+# Every registered test gets a hard 60 s ceiling. The blocking AAP transport and worker
+# suites are designed to release their own parked threads, but a regression that leaves a
+# worker parked must surface as one failed test rather than as a stalled CI job. Reading
+# the TESTS directory property means a newly registered target can never be skipped.
+get_property(apd_registered_tests DIRECTORY PROPERTY TESTS)
+set_tests_properties(${apd_registered_tests} PROPERTIES TIMEOUT 60)

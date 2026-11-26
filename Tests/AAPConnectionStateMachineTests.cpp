@@ -1,11 +1,13 @@
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <mutex>
 #include <thread>
 #include <vector>
 
 #include <QtTest>
 
+#include "AAPTestSupport.h"
 #include "Source/Core/AAPConnectionStateMachine.h"
 
 using Core::AAP::AAPAttempt;
@@ -33,7 +35,11 @@ class AAPConnectionStateMachineTests : public QObject
     Q_OBJECT
 
 private slots:
-    void SerializedConcurrentRequestsStartOneAttempt()
+    // The state machine is deliberately caller-serialized, so this exercises the policy
+    // under an external lock rather than racing it: a genuinely concurrent Begin would be
+    // a data race, not a supported use. Real thread-level single-flight is covered by
+    // AAPManagerWorkerTests::ConcurrentConnectRequestsProduceOneSession.
+    void ConcurrentConnectStartsExactlyOneAttempt()
     {
         // The state machine intentionally has no internal lock; callers serialize it.
         AAPConnectionStateMachine machine{NoJitter};
@@ -94,64 +100,90 @@ private slots:
 
     void OldGenerationCannotCompleteOrDisconnectNewAttempt()
     {
+        AAPTestSupport::ManualClock clock;
         AAPConnectionStateMachine machine{NoJitter};
         const auto old = machine.Begin(42).attempt;
         QVERIFY(machine.TransportConnected(old));
-        QVERIFY(machine.Connected(old, AAPConnectionStateMachine::Clock::now()));
+        QVERIFY(machine.Connected(old, clock.Now()));
         QVERIFY(machine.Stop());
         QVERIFY(machine.FinishStop());
         const auto current = machine.Begin(42).attempt;
         QVERIFY(current.generation > old.generation);
-        QVERIFY(!machine.Connected(old, AAPConnectionStateMachine::Clock::now()));
-        QVERIFY(!machine.Lost(old, AAPConnectionStateMachine::Clock::now()).has_value());
+        QVERIFY(!machine.Connected(old, clock.Now()));
+        QVERIFY(!machine.Lost(old, clock.Now()).has_value());
         QVERIFY(machine.IsCurrent(current));
     }
 
     void ExplicitDisconnectSuppressesRetryAndStaleResults()
     {
         AAPConnectionStateMachine machine{NoJitter};
+        AAPTestSupport::ManualClock clock;
         const auto attempt = machine.Begin(42).attempt;
         QVERIFY(machine.Stop());
-        QVERIFY(!machine.Lost(attempt, AAPConnectionStateMachine::Clock::now()).has_value());
-        QVERIFY(!machine.Connected(attempt, AAPConnectionStateMachine::Clock::now()));
+        QVERIFY(!machine.Lost(attempt, clock.Now()).has_value());
+        QVERIFY(!machine.Connected(attempt, clock.Now()));
         QVERIFY(machine.FinishStop());
         QCOMPARE(machine.State(), AAPConnectionState::Idle);
     }
 
+    // Backoff is asserted against a hand-advanced clock, so the ladder and the jitter
+    // bounds are exact instead of "somewhere near 1 s".
     void UnexpectedDisconnectsUseCappedJitteredBackoff()
     {
+        AAPTestSupport::ManualClock clock;
         AAPConnectionStateMachine machine{NoJitter};
-        auto now = AAPConnectionStateMachine::Clock::now();
         const std::vector<std::chrono::milliseconds> expected{1000ms,  2000ms,  4000ms, 8000ms,
                                                               16000ms, 30000ms, 30000ms};
         for (size_t i = 0; i < expected.size(); ++i) {
             const auto attempt = machine.Begin(42).attempt;
-            QVERIFY(machine.Connected(attempt, now));
-            QCOMPARE(machine.Lost(attempt, now + 1s), expected[i]);
+            QVERIFY(machine.Connected(attempt, clock.Now()));
+            QCOMPARE(machine.Lost(attempt, clock.Tick(1s)), expected[i]);
             QCOMPARE(machine.State(), AAPConnectionState::Backoff);
-            now += 1s;
         }
 
         AAPConnectionStateMachine low{MinimumJitter};
-        auto attempt = low.Begin(42).attempt;
-        QVERIFY(low.Connected(attempt, now));
-        QCOMPARE(low.Lost(attempt, now + 1s), 800ms);
         AAPConnectionStateMachine high{MaximumJitter};
-        attempt = high.Begin(42).attempt;
-        QVERIFY(high.Connected(attempt, now));
-        QCOMPARE(high.Lost(attempt, now + 1s), 1200ms);
+        const auto lowAttempt = low.Begin(42).attempt;
+        const auto highAttempt = high.Begin(42).attempt;
+        QVERIFY(low.Connected(lowAttempt, clock.Now()));
+        QVERIFY(high.Connected(highAttempt, clock.Now()));
+        clock.Advance(1s);
+        QCOMPARE(low.Lost(lowAttempt, clock.Now()), 800ms);
+        QCOMPARE(high.Lost(highAttempt, clock.Now()), 1200ms);
+    }
+
+    // A reconnect after an unexpected loss must run under a generation the dead session
+    // never had; otherwise a late event from the retired reader still looks current and can
+    // overwrite the new session.
+    void UnexpectedLossReservesAFreshGenerationForTheRetry()
+    {
+        AAPTestSupport::ManualClock clock;
+        AAPConnectionStateMachine machine{NoJitter};
+        const auto retired = machine.Begin(42).attempt;
+        QVERIFY(machine.Connected(retired, clock.Now()));
+        QVERIFY(machine.Lost(retired, clock.Tick(1s)).has_value());
+
+        const auto retry = machine.Begin(42).attempt;
+        QVERIFY(machine.State() == AAPConnectionState::Connecting);
+        QVERIFY(retry.generation > retired.generation);
+        QVERIFY(machine.IsCurrent(retry));
+        QVERIFY(!machine.IsCurrent(retired));
+        // Events from the retired session are now unambiguously stale.
+        QVERIFY(!machine.Connected(retired, clock.Now()));
+        QVERIFY(!machine.Lost(retired, clock.Now()).has_value());
+        QVERIFY(!machine.TransportConnected(retired));
     }
 
     void StableConnectionResetsBackoffAfterSixtySeconds()
     {
+        AAPTestSupport::ManualClock clock;
         AAPConnectionStateMachine machine{NoJitter};
-        auto now = AAPConnectionStateMachine::Clock::now();
         auto attempt = machine.Begin(42).attempt;
-        QVERIFY(machine.Connected(attempt, now));
-        QCOMPARE(machine.Lost(attempt, now + 1s), 1000ms);
+        QVERIFY(machine.Connected(attempt, clock.Now()));
+        QCOMPARE(machine.Lost(attempt, clock.Tick(1s)), 1000ms);
         attempt = machine.Begin(42).attempt;
-        QVERIFY(machine.Connected(attempt, now + 2s));
-        QCOMPARE(machine.Lost(attempt, now + 62s), 1000ms);
+        QVERIFY(machine.Connected(attempt, clock.Now()));
+        QCOMPARE(machine.Lost(attempt, clock.Tick(61s)), 1000ms);
     }
 };
 

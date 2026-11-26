@@ -265,9 +265,27 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
     if (seqConnected && !cancelled()) {
         failure = ConnectFailure::None;
         return seqPacket;
+
+    // T1 test seam: a hardware-free test parks a real Connect on this factory transport and
+    // observes the same pending-publish/CancelConnect handshake the socket path uses.
+    if (_transportFactoryForTest) {
+        auto injected = _transportFactoryForTest();
+        if (!injected) {
+            failure = ConnectFailure::TransportError;
+            return nullptr;
+        }
+        setPending(injected);
+        const bool connected = injected->Connect(attempt.address, attemptCancellation.Token());
+        clearPending(injected);
+        if (connected && !cancelled()) {
+            failure = ConnectFailure::None;
+            return injected;
+        }
+        injected->Close();
+        failure = ConnectFailure::TransportError;
+        return nullptr;
     }
-    seqPacket->Close();
-    failure = ConnectFailure::ServiceUnavailable;
+    }
 
     if (cancelled()) {
         failure = ConnectFailure::TransportError;
@@ -775,6 +793,8 @@ void Manager::ProcessAttFrame(
     }
 }
 
+bool Manager::SendPacket(const std::vector<uint8_t> &packet)
+{
 bool Manager::SendPacket(const std::vector<uint8_t> &packet)
 {
     if (!_connected) {
