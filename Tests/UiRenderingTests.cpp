@@ -376,18 +376,31 @@ private Q_SLOTS:
         state.caseBox.battery = Core::AirPods::Battery{50};
         window.UpdateState(state);
 
-        // Created (and therefore found) in the order left, right, case.
         const auto batteries = window.findChildren<Gui::Widget::Battery *>();
         QCOMPARE(batteries.size(), 3);
-        const QString conflicting = batteries.at(0)->toolTip();
+        const auto batteryFor = [&batteries](Gui::Widget::Battery::Badge badge) {
+            for (const auto *battery : batteries) {
+                if (battery->getBadge() == badge) {
+                    return battery;
+                }
+            }
+            return static_cast<const Gui::Widget::Battery *>(nullptr);
+        };
+        const auto *left = batteryFor(Gui::Widget::Battery::Badge::Left);
+        const auto *right = batteryFor(Gui::Widget::Battery::Badge::Right);
+        const auto *caseBox = batteryFor(Gui::Widget::Battery::Badge::Case);
+        QVERIFY(left != nullptr);
+        QVERIFY(right != nullptr);
+        QVERIFY(caseBox != nullptr);
+        const QString conflicting = left->toolTip();
         QVERIFY2(
             conflicting.contains(QStringLiteral("Battery source: AAP / BLE")),
             qPrintable(conflicting));
         QVERIFY(conflicting.contains(QStringLiteral("different battery values")));
-        const QString agreed = batteries.at(1)->toolTip();
+        const QString agreed = right->toolTip();
         QVERIFY(agreed.contains(QStringLiteral("Battery source: AAP")));
         QVERIFY(!agreed.contains(QStringLiteral("different")));
-        QVERIFY(batteries.at(2)->toolTip().isEmpty());
+        QVERIFY(caseBox->toolTip().isEmpty());
 
         // A BLE-only state clears the notes again.
         Core::AirPods::State bleOnly;
