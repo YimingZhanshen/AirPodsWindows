@@ -85,7 +85,7 @@ Genieße es.</translation>
     </message>
     <message>
         <source>Battery source: %1</source>
-        <translation>Akkustand: %1</translation>
+        <translation>Akkquelle: %1</translation>
     </message>
     <message>
         <source>AAP and BLE report different battery values.</source>

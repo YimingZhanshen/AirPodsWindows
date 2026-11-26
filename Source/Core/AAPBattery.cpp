@@ -40,6 +40,11 @@ std::optional<AAPBatteryReading> ParseComponent(std::span<const uint8_t> compone
 
     BatteryComponent parsedComponent;
     switch (id) {
+    case static_cast<uint8_t>(BatteryComponent::Headset):
+        // Docs/AAP-Protocol-Spec.md §1: 0x01 is the Headset/Max battery. It occupies
+        // the same left slot used by the existing single-battery presentation path.
+        parsedComponent = BatteryComponent::Headset;
+        break;
     case static_cast<uint8_t>(BatteryComponent::Right):
         parsedComponent = BatteryComponent::Right;
         break;
@@ -50,7 +55,6 @@ std::optional<AAPBatteryReading> ParseComponent(std::span<const uint8_t> compone
         parsedComponent = BatteryComponent::Case;
         break;
     default:
-        // Headset (0x01) and anything else are not presented by this parser.
         return std::nullopt;
     }
 
@@ -115,10 +119,12 @@ std::optional<AAPBatterySnapshot> ParseBatteryNotification(std::span<const uint8
             return std::nullopt;
         }
 
-        auto &slot = component->component == BatteryComponent::Left
-                         ? snapshot.left
-                         : (component->component == BatteryComponent::Right ? snapshot.right
-                                                                            : snapshot.caseBox);
+        auto &slot =
+            component->component == AAP::BatteryComponent::Left ||
+                    component->component == AAP::BatteryComponent::Headset
+                ? snapshot.left
+                : (component->component == AAP::BatteryComponent::Right ? snapshot.right
+                                                                        : snapshot.caseBox);
         // A repeated component in one notification is a protocol violation; do not guess.
         if (slot.has_value()) {
             return std::nullopt;

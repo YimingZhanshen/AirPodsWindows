@@ -317,9 +317,8 @@ private:
     // AAP-over-BLE battery fusion. `_batteryFusionMutex` guards the three fields
     // below and is always a leaf lock: it may be taken while `_mutex` or
     // `_aapWorkerMutex` is held, nothing else is locked while holding it and no
-    // signal is emitted under it. The BLE path overlays in place; the AAP path only
-    // posts RequestFusedStatePublish, so StateUpdated keeps a single producer thread
-    // and never publishes a torn or stale overlay.
+    // signal is emitted under it. BLE and AAP callbacks retain their newest inputs
+    // and post RequestFusedStatePublish; StateUpdated has one owner-thread producer.
     mutable std::mutex _batteryFusionMutex;
     Details::BatteryFusion _batteryFusion;
     std::optional<State> _lastBleState;
@@ -390,8 +389,8 @@ private:
     void OverlayBattery(State &state) const;
     // Posts a fused republish onto the thread that owns Manager; safe from any worker thread.
     void RequestFusedStatePublish();
-    // Re-publishes the retained BLE state with the current fusion overlay applied; used when
-    // the AAP battery stream changes and after the fusion was reset. Runs on Manager's thread.
+    // Re-publishes the newest retained BLE state with the current fusion overlay applied.
+    // Runs on Manager's thread for both BLE and AAP battery inputs.
     void PublishFusedState();
     void ScheduleScannerRetry();
     void StopScannerRetry();

@@ -42,9 +42,11 @@ namespace Details {
 // Rules (plan D2):
 // - Inside one AAP session the parsed value wins per component; a component that
 //   reports Disconnected, or Reset() on session end, falls back to BLE.
-// - Level rises (and drops of at most kMaxImmediateDrop) are accepted immediately.
-//   A larger drop needs two consecutive snapshots with the same candidate level
-//   before it is presented, so one bogus low reading cannot fake a sudden drain.
+// - The first AAP candidate is compared with the current BLE baseline. Rises and drops
+//   of at most kMaxImmediateDrop are accepted immediately; a larger drop needs two
+//   consecutive snapshots with the same candidate level before it is presented.
+// - Later candidates use the same guard against the presented AAP level. An omitted
+//   component retains its presented value but loses any pending drop confirmation.
 // - Source switching never depends on time windows: only snapshot content and an
 //   explicit Reset change it, so the shown source cannot flicker.
 class BatteryFusion
@@ -68,9 +70,18 @@ public:
     // Drops every AAP session state; call before the reader starts and on session end.
     void Reset();
 
+    // The current BLE values are the baseline for a component's first AAP candidate.
+    // Missing values mean there is no BLE level to compare against.
+    struct BleBaseline {
+        std::optional<uint8_t> left;
+        std::optional<uint8_t> right;
+        std::optional<uint8_t> caseBox;
+    };
+
     // Consumes one parsed snapshot of the current session. Returns true when the
     // presented view of at least one component changed (the caller republishes).
-    bool OnAapSnapshot(const AAP::AAPBatterySnapshot &snapshot);
+    bool
+    OnAapSnapshot(const AAP::AAPBatterySnapshot &snapshot, const BleBaseline &bleBaseline = {});
 
     // nullopt when AAP does not present the component (pure BLE path). Unknown
     // components never present. `bleLevel` is the current advertisement value,
@@ -92,7 +103,8 @@ private:
 
     // Accepts one reading for a presented slot, applying the drop guard. Returns
     // true when the presented view changed.
-    static bool Apply(Slot &slot, const AAP::AAPBatteryReading &reading);
+    static bool
+    Apply(Slot &slot, const AAP::AAPBatteryReading &reading, std::optional<uint8_t> bleLevel);
 
     const Slot *slotFor(AAP::BatteryComponent component) const;
 

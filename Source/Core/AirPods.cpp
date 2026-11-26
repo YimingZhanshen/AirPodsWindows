@@ -761,11 +761,10 @@ void Manager::OnStateChanged(Details::StateManager::UpdateEvent updateEvent)
     {
         std::lock_guard lock{_batteryFusionMutex};
         _lastBleState = newState;
-        OverlayBattery(newState);
-        _lastPublishedState = newState;
     }
-
-    emit StateUpdated(newState);
+    // BLE callbacks originate on the WinRT watcher thread. Queue the publish just like
+    // AAP battery events so Manager's owner thread is the only StateUpdated producer.
+    RequestFusedStatePublish();
 
     // Try to connect AAP if we have a valid model now and device is connected
     if (_deviceConnected && !_aapMgr.IsConnected() && SupportsANC(newState.model)) {
@@ -1131,7 +1130,19 @@ void Manager::OnAAPBatteryChanged(const AAP::AAPBatterySnapshot &snapshot, AAP::
     bool changed = false;
     {
         std::lock_guard lock{_batteryFusionMutex};
-        changed = _batteryFusion.OnAapSnapshot(snapshot);
+        const auto bleLevel = [](const Details::BasicState &slot) -> std::optional<uint8_t> {
+            if (!slot.battery.Available()) {
+                return std::nullopt;
+            }
+            return static_cast<uint8_t>(std::min<uint32_t>(slot.battery.Value(), 100u));
+        };
+        Details::BatteryFusion::BleBaseline baseline;
+        if (_lastBleState.has_value()) {
+            baseline.left = bleLevel(_lastBleState->pods.left);
+            baseline.right = bleLevel(_lastBleState->pods.right);
+            baseline.caseBox = bleLevel(_lastBleState->caseBox);
+        }
+        changed = _batteryFusion.OnAapSnapshot(snapshot, baseline);
     }
     if (!changed) {
         return;
@@ -1168,10 +1179,11 @@ void Manager::OverlayBattery(State &state) const
 
 void Manager::RequestFusedStatePublish()
 {
-    // Battery events are produced on the AAP worker thread. Hopping to the thread that owns
-    // Manager keeps every StateUpdated producer serialized there and makes the publish below
-    // recompute from the newest BLE baseline at delivery time, so a fused frame can never
-    // overwrite a newer advertisement-driven one. A pending hop is dropped with the object.
+    // BLE and AAP battery events arrive on different worker threads. Hopping to the thread
+    // that owns Manager makes every StateUpdated delivery serialized there. The publish
+    // recomputes from the newest BLE baseline and fusion at delivery time, so an older queued
+    // request cannot overwrite a newer advertisement-driven state. A pending hop is dropped
+    // with the object.
     QMetaObject::invokeMethod(this, [this] { PublishFusedState(); }, Qt::QueuedConnection);
 }
 

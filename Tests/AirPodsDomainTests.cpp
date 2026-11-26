@@ -10,8 +10,10 @@
 
 #include <boost/pfr.hpp>
 #include <QtTest>
+#include <QCoreApplication>
 #include <QFile>
 #include <QImage>
+#include <QMetaObject>
 #include <QTemporaryFile>
 #include <QVector>
 #include <QXmlStreamReader>
@@ -255,6 +257,9 @@ private Q_SLOTS:
     void FallsBackWhenAapComponentDisconnects();
     void FallsBackWhenAapSessionResets();
     void ConfirmsLargeBatteryDropOnlyAfterTwoIdenticalReadings();
+    void HoldsFirstAapDropAgainstBleBaseline();
+    void ClearsPendingDropWhenComponentIsOmitted();
+    void SerializesBleAndAapStatePublication();
     void AcceptsSmallBatteryDropsAndRisesImmediately();
     void MarksBatterySourceConflictBeyondBleBucket();
     void UsesAapStatusForBatteryCharging();
@@ -843,8 +848,8 @@ void AirPodsDomainTests::FusesAapBatteryOverBleWithinSession()
     QCOMPARE(left->level, uint8_t(87));
     QVERIFY(!left->conflict); // 3 points apart stays inside one advertisement bucket
 
-    // Components AAP never mentioned keep falling back to BLE; components from an earlier
-    // snapshot keep presenting even when the next snapshot omits them.
+    // Components AAP never mentioned keep falling back to BLE. Omitted components keep
+    // their presented value, but a pending drop candidate requires adjacent snapshots.
     QVERIFY(
         !fusion.Resolve(Core::AAP::BatteryComponent::Case, std::optional<uint8_t>(50)).has_value());
     Core::AAP::AAPBatterySnapshot caseOnly;
@@ -924,6 +929,96 @@ void AirPodsDomainTests::ConfirmsLargeBatteryDropOnlyAfterTwoIdenticalReadings()
     QCOMPARE(fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt)->level, uint8_t(41));
     // Re-feeding the confirmed value changes nothing further.
     QVERIFY(!fusion.OnAapSnapshot(LeftSnapshot(41)));
+}
+
+void AirPodsDomainTests::HoldsFirstAapDropAgainstBleBaseline()
+{
+    using Fusion = Core::AirPods::Details::BatteryFusion;
+    const Fusion::BleBaseline ble{.left = 90};
+
+    Fusion held;
+    QVERIFY(!held.OnAapSnapshot(LeftSnapshot(10), ble));
+    QVERIFY(!held.Presents(Core::AAP::BatteryComponent::Left));
+    QVERIFY(!held.Resolve(Core::AAP::BatteryComponent::Left, uint8_t{90}).has_value());
+    QVERIFY(held.OnAapSnapshot(LeftSnapshot(10), ble));
+    QCOMPARE(held.Resolve(Core::AAP::BatteryComponent::Left, uint8_t{90})->level, uint8_t(10));
+
+    // A rise and a drop within the two-point guard still win immediately on an empty slot.
+    Fusion rise;
+    QVERIFY(rise.OnAapSnapshot(LeftSnapshot(95), ble));
+    QCOMPARE(rise.Resolve(Core::AAP::BatteryComponent::Left, uint8_t{90})->level, uint8_t(95));
+    Fusion smallDrop;
+    QVERIFY(smallDrop.OnAapSnapshot(LeftSnapshot(88), ble));
+    QCOMPARE(smallDrop.Resolve(Core::AAP::BatteryComponent::Left, uint8_t{90})->level, uint8_t(88));
+}
+
+void AirPodsDomainTests::ClearsPendingDropWhenComponentIsOmitted()
+{
+    Core::AirPods::Details::BatteryFusion fusion;
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(90)));
+    QVERIFY(!fusion.OnAapSnapshot(LeftSnapshot(40)));
+
+    Core::AAP::AAPBatterySnapshot caseOnly;
+    caseOnly.caseBox =
+        AapReading(Core::AAP::BatteryComponent::Case, 50, Core::AAP::BatteryStatus::Discharging);
+    QVERIFY(fusion.OnAapSnapshot(caseOnly));
+    QCOMPARE(fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt)->level, uint8_t(90));
+
+    // Consecutive means consecutive snapshots, not consecutive observations of this component.
+    QVERIFY(!fusion.OnAapSnapshot(LeftSnapshot(40)));
+    QCOMPARE(fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt)->level, uint8_t(90));
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(40)));
+    QCOMPARE(fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt)->level, uint8_t(40));
+}
+
+void AirPodsDomainTests::SerializesBleAndAapStatePublication()
+{
+    using Manager = Core::AirPods::Manager;
+    Manager manager;
+    Core::AirPods::State ble;
+    ble.model = Model::AirPods_Pro_2;
+    ble.displayName = QStringLiteral("AirPods Pro");
+    ble.pods.left.battery = Core::AirPods::Battery{90};
+
+    std::vector<uint8_t> published;
+    bool pumpedQueuedEvents = false;
+    QObject::connect(&manager, &Manager::StateUpdated, &manager, [&](const auto &) {
+        // Reproduce a receiver that spins the event loop while the BLE signal is being
+        // delivered. A direct BLE emit lets the queued AAP publish overtake it and then
+        // leaves the stale BLE value as the last state observed by later receivers.
+        if (!pumpedQueuedEvents) {
+            pumpedQueuedEvents = true;
+            QCoreApplication::processEvents();
+        }
+    });
+    QObject::connect(&manager, &Manager::StateUpdated, &manager, [&](const auto &state) {
+        if (state.pods.left.battery.Available()) {
+            published.push_back(static_cast<uint8_t>(state.pods.left.battery.Value()));
+        }
+    });
+
+    const auto aap = LeftSnapshot(88);
+    const Core::AirPods::Details::BatteryFusion::BleBaseline baseline{.left = uint8_t{90}};
+    QMetaObject::invokeMethod(
+        &manager,
+        [&] {
+            {
+                std::lock_guard lock{manager._batteryFusionMutex};
+                manager._batteryFusion.OnAapSnapshot(aap, baseline);
+            }
+            manager.RequestFusedStatePublish();
+        },
+        Qt::QueuedConnection);
+
+    Core::AirPods::Details::StateManager::UpdateEvent update{std::nullopt, ble};
+    manager.OnStateChanged(std::move(update));
+    QCoreApplication::processEvents();
+    QCoreApplication::processEvents();
+
+    // Both inputs now converge through Manager's owner-thread publisher. The first
+    // delivery recomputes from BLE 90 + AAP 88, and the second is suppressed as duplicate.
+    QCOMPARE(published.size(), size_t{1});
+    QCOMPARE(published.front(), uint8_t{88});
 }
 
 void AirPodsDomainTests::AcceptsSmallBatteryDropsAndRisesImmediately()

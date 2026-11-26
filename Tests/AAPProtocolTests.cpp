@@ -305,6 +305,27 @@ private slots:
         QCOMPARE(cases[2].frame.size(), size_t{22});
     }
 
+    void BatteryParserMapsHeadsetToSingleBatterySlot()
+    {
+        // Docs/AAP-Protocol-Spec.md §1 maps 0x01 to Headset/Max. The application already
+        // presents every single-battery model through pods.left, so AAP uses that same slot.
+        auto parsed = ParseBatteryNotification(
+            Hex({0x04, 0x00, 0x04, 0x00, 0x04, 0x00, 0x01, 0x01, 0x01, 73, 0x01, 0x01}));
+        QVERIFY(parsed.has_value());
+        QVERIFY(parsed->left.has_value());
+        QCOMPARE(parsed->left->component, BatteryComponent::Headset);
+        QCOMPARE(parsed->left->level, uint8_t(73));
+        QCOMPARE(parsed->left->status, BatteryStatus::Charging);
+        QVERIFY(!parsed->right.has_value());
+        QVERIFY(!parsed->caseBox.has_value());
+
+        // Headset and Left share one presentation slot and cannot both occupy it.
+        QVERIFY(!ParseBatteryNotification(Hex(
+                                              {0x04, 0x00, 0x04, 0x00, 0x04, 0x00, 0x02, 0x01, 0x01,
+                                               73, 0x01, 0x01, 0x04, 0x01, 70, 0x01, 0x01}))
+                     .has_value());
+    }
+
     void BatteryParserKeepsComponentOrderIndependent()
     {
         // Out-of-order components (case, left, right) still land in their own slots.
@@ -387,10 +408,7 @@ private slots:
                      Hex({0x04, 0x00, 0x04, 0x00, 0x04, 0x00, 0x01, 0x04, 0x01, 101, 0x02, 0x01}))
                      .has_value());
 
-        // Unknown component ids: Headset (0x01) and anything unmapped.
-        QVERIFY(!ParseBatteryNotification(
-                     Hex({0x04, 0x00, 0x04, 0x00, 0x04, 0x00, 0x01, 0x01, 0x01, 50, 0x02, 0x01}))
-                     .has_value());
+        // Unknown component ids and anything unmapped invalidate the whole notification.
         QVERIFY(!ParseBatteryNotification(
                      Hex({0x04, 0x00, 0x04, 0x00, 0x04, 0x00, 0x01, 0x03, 0x01, 50, 0x02, 0x01}))
                      .has_value());

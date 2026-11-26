@@ -29,7 +29,8 @@ void BatteryFusion::Reset()
     _caseBox = {};
 }
 
-bool BatteryFusion::Apply(Slot &slot, const AAP::AAPBatteryReading &reading)
+bool BatteryFusion::Apply(
+    Slot &slot, const AAP::AAPBatteryReading &reading, std::optional<uint8_t> bleLevel)
 {
     if (reading.status == AAP::BatteryStatus::Disconnected) {
         // Component-level fallback to BLE; a later connection starts fresh.
@@ -41,8 +42,15 @@ bool BatteryFusion::Apply(Slot &slot, const AAP::AAPBatteryReading &reading)
     const bool charging = reading.status == AAP::BatteryStatus::Charging;
 
     if (!slot.presented) {
-        // First AAP value of this session for the component: AAP wins right away,
-        // the session priority is not something a candidate may revoke.
+        // The first AAP value replaces BLE only when it is not a suspicious drop from
+        // that baseline. A large drop is held for the same two-snapshot guard as later
+        // drops; without a BLE value there is nothing to compare, so AAP wins immediately.
+        const bool acceptDirectly =
+            !bleLevel.has_value() || reading.level + kMaxImmediateDrop >= *bleLevel;
+        if (!acceptDirectly && slot.pendingDrop != reading.level) {
+            slot.pendingDrop = reading.level;
+            return false;
+        }
         slot = {true, reading.level, charging, std::nullopt};
         return true;
     }
@@ -62,17 +70,27 @@ bool BatteryFusion::Apply(Slot &slot, const AAP::AAPBatteryReading &reading)
     return changed;
 }
 
-bool BatteryFusion::OnAapSnapshot(const AAP::AAPBatterySnapshot &snapshot)
+bool BatteryFusion::OnAapSnapshot(
+    const AAP::AAPBatterySnapshot &snapshot, const BleBaseline &bleBaseline)
 {
     bool changed = false;
     if (snapshot.left.has_value()) {
-        changed |= Apply(_left, *snapshot.left);
+        changed |= Apply(_left, *snapshot.left, bleBaseline.left);
+    }
+    else {
+        _left.pendingDrop.reset();
     }
     if (snapshot.right.has_value()) {
-        changed |= Apply(_right, *snapshot.right);
+        changed |= Apply(_right, *snapshot.right, bleBaseline.right);
+    }
+    else {
+        _right.pendingDrop.reset();
     }
     if (snapshot.caseBox.has_value()) {
-        changed |= Apply(_caseBox, *snapshot.caseBox);
+        changed |= Apply(_caseBox, *snapshot.caseBox, bleBaseline.caseBox);
+    }
+    else {
+        _caseBox.pendingDrop.reset();
     }
     return changed;
 }

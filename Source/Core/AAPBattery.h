@@ -25,7 +25,13 @@
 
 namespace Core::AAP {
 
-enum class BatteryComponent : uint8_t { Right = 0x02, Left = 0x04, Case = 0x08, Unknown = 0xFF };
+enum class BatteryComponent : uint8_t {
+    Headset = 0x01,
+    Right = 0x02,
+    Left = 0x04,
+    Case = 0x08,
+    Unknown = 0xFF
+};
 
 enum class BatteryStatus : uint8_t {
     Unknown = 0x00,
@@ -44,7 +50,8 @@ struct AAPBatteryReading {
 };
 
 // A parsed battery notification. Every component the packet carried is set; a
-// component the device did not report stays nullopt. The case member is named
+// component the device did not report stays nullopt. Headset/Max (0x01) uses `left`,
+// the application's single-battery presentation slot. The case member is named
 // `caseBox` to mirror `State::caseBox`, because `case` is a keyword.
 struct AAPBatterySnapshot {
     std::optional<AAPBatteryReading> left;
@@ -55,8 +62,8 @@ struct AAPBatterySnapshot {
 // Strictly parses a battery notification record:
 // `04 00 04 00 04 00 <count> count * [id, 0x01 spacer, level, status, 0x01 end]`.
 // - count must be 1-3 and the record length must be exactly 7 + 5 * count;
-// - component ids must be distinct values from {Right 0x02, Left 0x04, Case 0x08}
-//   (the Linux-only Headset id 0x01 is not covered; those models keep BLE);
+// - component ids must be distinct presentation slots from {Right 0x02, Left 0x04,
+//   Case 0x08, Headset/Max 0x01}; Headset/Max shares the single-battery `left` slot;
 // - spacer and end bytes must both be 0x01;
 // - level must be <= 100 and status one of 0x00/0x01/0x02/0x04, or 0x05
 //   (Android's Optimized Charging, surfaced as Charging).
