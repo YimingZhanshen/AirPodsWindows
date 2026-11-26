@@ -25,6 +25,7 @@
 #include <functional>
 #include <optional>
 #include <memory>
+#include <stop_token>
 
 #include "AAP.h"
 #include "AAPAtt.h"
@@ -129,6 +130,10 @@ public:
 
     // Noise control
     bool SetNoiseControlMode(NoiseControlMode mode);
+    // Queued stem ANC work is bound to the validated session. The transport is pinned and the
+    // attempt, connection, and cancellation are rechecked immediately before dispatch.
+    bool
+    SetNoiseControlMode(NoiseControlMode mode, AAPAttempt attempt, std::stop_token stopToken = {});
     std::optional<NoiseControlMode> GetNoiseControlMode() const;
 
     // Conversational awareness
@@ -254,9 +259,7 @@ private:
     std::atomic<uint64_t> _cancelledGeneration{0};
     // Serializes raw-gesture writes so an older handshake replay cannot overwrite a newer setting.
     std::mutex _stemConfigMutex;
-    uint8_t _stemConfigMask{kAllStemMasks};
-    uint64_t _stemConfigRevision{0};
-    std::optional<uint64_t> _stemConfigSentRevision;
+    StemConfigReplayState _stemConfigState;
     std::function<std::shared_ptr<AAPTransport>(AAPTransportKind)> _transportFactory;
 
     // Callbacks
@@ -280,6 +283,8 @@ private:
 
     // Internal methods
     bool SendPacket(const std::vector<uint8_t> &packet);
+    bool
+    SendPacket(AAPAttempt attempt, const std::vector<uint8_t> &packet, std::stop_token stopToken);
     bool SendPacket(
         const std::shared_ptr<AAPTransport> &transport, const std::vector<uint8_t> &packet,
         std::stop_token stopToken);
@@ -295,8 +300,9 @@ private:
     void ReaderLoop(
         AAPAttempt attempt, std::shared_ptr<AAPTransport> transport, std::stop_token stopToken,
         Callbacks callbacks);
-    bool
-    InitializeConnection(const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken);
+    bool InitializeConnection(
+        const std::shared_ptr<AAPTransport> &transport, AAPAttempt attempt,
+        std::stop_token stopToken);
     bool WaitCancellable(std::chrono::milliseconds delay, std::stop_token callerStop);
     std::shared_ptr<AAPTransport>
     ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, ConnectFailure &failure);

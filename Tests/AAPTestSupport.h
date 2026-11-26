@@ -98,6 +98,10 @@ public:
 
         ++_sendCalls;
         _lastSend.assign(data.begin(), data.end());
+        if (_sendFailures > 0) {
+            --_sendFailures;
+            return false;
+        }
         const size_t written =
             _sendLimit.has_value() ? std::min(data.size(), *_sendLimit) : data.size();
         if (written != data.size()) {
@@ -163,6 +167,12 @@ public:
     {
         std::lock_guard<std::mutex> lock{_mutex};
         _sendError = error;
+    }
+
+    void SetSendFailures(size_t failures)
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        _sendFailures = failures;
     }
 
     void SetBlockSend(bool block)
@@ -238,6 +248,7 @@ private:
     bool _closed{false};
     bool _eof{false};
     bool _sendError{false};
+    size_t _sendFailures{0};
     bool _blockSend{false};
 };
 

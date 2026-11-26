@@ -1081,10 +1081,10 @@ AAP::StemActionTable Manager::GetStemActions() const
     return _stemActions;
 }
 
-bool Manager::ToggleNoiseControl()
+bool Manager::ToggleNoiseControl(const AAP::StemActionRequest &request)
 {
     std::lock_guard lock{_mutex};
-    if (!_aapMgr.IsConnected()) {
+    if (!IsCurrentStemActionRequest(request)) {
         return false;
     }
 
@@ -1092,7 +1092,7 @@ bool Manager::ToggleNoiseControl()
     const auto next = current == AAP::NoiseControlMode::NoiseCancellation
                           ? AAP::NoiseControlMode::Off
                           : AAP::NoiseControlMode::NoiseCancellation;
-    if (!_aapMgr.SetNoiseControlMode(next)) {
+    if (!_aapMgr.SetNoiseControlMode(next, {request.address, request.generation})) {
         return false;
     }
     _currentNoiseControlMode = static_cast<int>(next);

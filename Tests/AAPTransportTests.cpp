@@ -976,6 +976,172 @@ private slots:
         manager.Disconnect();
     }
 
+    void FailedStemReplayRecoversInNewSessionAfterPriorSuccess()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transportFactory =
+            [transport](Core::AAP::AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            return transport;
+        };
+        QVERIFY(manager.SetStemConfig(0x05));
+        QVERIFY(manager.Connect({0x1234, 1}));
+        manager.Disconnect();
+
+        // Generation 2 must replay 0x39 even though generation 1 sent the same revision. The first
+        // replay write fails; the bounded post-handshake recovery must retry on this transport.
+        transport->SetSendFailures(1);
+        QVERIFY(manager.Connect({0x1234, 2}));
+        QCOMPARE(transport->SendCalls(), size_t{6});
+        const auto records = transport->SentRecords();
+        QCOMPARE(records.size(), size_t{5});
+        QCOMPARE(records.at(0), Core::AAP::Packets::Handshake);
+        QCOMPARE(records.at(4).at(4), uint8_t{0x09});
+        QCOMPARE(records.at(4).at(5), uint8_t{0x39});
+        QCOMPARE(records.at(4).at(7), uint8_t{0x05});
+        manager.Disconnect();
+    }
+
+    void FailedStemReplayIsBoundedAndRetriedByNextSession()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transportFactory =
+            [transport](Core::AAP::AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            return transport;
+        };
+        QVERIFY(manager.SetStemConfig(0x0A));
+        transport->SetSendFailures(2);
+        QVERIFY(manager.Connect({0x1234, 1}));
+        // Handshake, two failed 0x39 attempts, features, notifications, ATT probe. No third retry.
+        QCOMPARE(transport->SendCalls(), size_t{6});
+        QCOMPARE(transport->SentRecords().size(), size_t{4});
+        manager.Disconnect();
+
+        QVERIFY(manager.Connect({0x1234, 2}));
+        QCOMPARE(transport->SendCalls(), size_t{5});
+        const auto records = transport->SentRecords();
+        QCOMPARE(records.at(1).at(5), uint8_t{0x39});
+        QCOMPARE(records.at(1).at(7), uint8_t{0x0A});
+        manager.Disconnect();
+    }
+
+    void AttemptBoundNoiseControlRevalidatesAttemptAndCancellation()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transport.store(transport);
+        manager._attempt = {0x1234, 7};
+        manager._connected = true;
+        constexpr Core::AAP::NoiseControlMode mode = Core::AAP::NoiseControlMode::NoiseCancellation;
+
+        QVERIFY(!manager.SetNoiseControlMode(mode, {0x1234, 8}, {}));
+        QVERIFY(!manager.SetNoiseControlMode(mode, {0x5678, 7}, {}));
+        manager._connected = false;
+        QVERIFY(!manager.SetNoiseControlMode(mode, {0x1234, 7}, {}));
+        manager._connected = true;
+        manager._cancelledGeneration = 7;
+        QVERIFY(!manager.SetNoiseControlMode(mode, {0x1234, 7}, {}));
+        manager._cancelledGeneration = 0;
+        std::stop_source stop;
+        stop.request_stop();
+        QVERIFY(!manager.SetNoiseControlMode(mode, {0x1234, 7}, stop.get_token()));
+        QCOMPARE(transport->SendCalls(), size_t{0});
+
+        QVERIFY(manager.SetNoiseControlMode(mode, {0x1234, 7}, {}));
+        QCOMPARE(
+            transport->LastSend(),
+            (std::vector<uint8_t>{
+                0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02, 0x00, 0x00, 0x00}));
+        manager._connected = false;
+        manager._transport.store(nullptr);
+    }
+
+    void AttemptBoundNoiseControlRechecksGenerationAcrossReconnectBarrier()
+    {
+        Core::AAP::Manager manager;
+        auto original = std::make_shared<AAPTestSupport::FakeTransport>();
+        auto replacement = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transport.store(original);
+        manager._attempt = {0x1234, 7};
+        manager._connected = true;
+
+        // Hold the send gate after the queued request has been validated by its caller. The worker
+        // enters SetNoiseControlMode but cannot acquire _mutex until the replacement is installed.
+        std::unique_lock barrier{manager._mutex};
+        auto result = std::async(std::launch::async, [&] {
+            return manager.SetNoiseControlMode(
+                Core::AAP::NoiseControlMode::NoiseCancellation, {0x1234, 7}, {});
+        });
+        const bool blocked =
+            result.wait_for(std::chrono::milliseconds{20}) == std::future_status::timeout;
+        manager._attempt = {0x1234, 8};
+        manager._transport.store(replacement);
+        barrier.unlock();
+
+        QVERIFY(blocked);
+        QVERIFY(!result.get());
+        QCOMPARE(original->SendCalls(), size_t{0});
+        QCOMPARE(replacement->SendCalls(), size_t{0});
+        manager._connected = false;
+        manager._transport.store(nullptr);
+    }
+
+    void AttemptBoundNoiseControlRechecksCancellationAtSendBarrier()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transport.store(transport);
+        manager._attempt = {0x1234, 7};
+        manager._connected = true;
+
+        std::unique_lock barrier{manager._mutex};
+        auto result = std::async(std::launch::async, [&] {
+            return manager.SetNoiseControlMode(
+                Core::AAP::NoiseControlMode::NoiseCancellation, {0x1234, 7}, {});
+        });
+        const bool blocked =
+            result.wait_for(std::chrono::milliseconds{20}) == std::future_status::timeout;
+        manager._cancelledGeneration = 7;
+        barrier.unlock();
+
+        QVERIFY(blocked);
+        QVERIFY(!result.get());
+        QCOMPARE(transport->SendCalls(), size_t{0});
+        manager._connected = false;
+        manager._transport.store(nullptr);
+    }
+
+    void AttemptBoundNoiseControlPinsTransportDuringWrite()
+    {
+        Core::AAP::Manager manager;
+        auto original = std::make_shared<AAPTestSupport::FakeTransport>();
+        auto replacement = std::make_shared<AAPTestSupport::FakeTransport>();
+        original->SetBlockSend(true);
+        manager._transport.store(original);
+        manager._attempt = {0x1234, 7};
+        manager._connected = true;
+
+        auto result = std::async(std::launch::async, [&] {
+            return manager.SetNoiseControlMode(
+                Core::AAP::NoiseControlMode::NoiseCancellation, {0x1234, 7}, {});
+        });
+        const bool reachedSendBarrier = original->WaitForSendWaiter(std::chrono::seconds{1});
+        if (reachedSendBarrier) {
+            // Replacement after the identity gate must not redirect an in-flight write.
+            manager._attempt = {0x1234, 8};
+            manager._transport.store(replacement);
+        }
+        original->SetBlockSend(false);
+        QVERIFY(reachedSendBarrier);
+        QVERIFY(result.get());
+        QCOMPARE(original->SendCalls(), size_t{1});
+        QCOMPARE(original->LastSend().at(5), uint8_t{0x0D});
+        QCOMPARE(replacement->SendCalls(), size_t{0});
+        manager._connected = false;
+        manager._transport.store(nullptr);
+    }
+
     void ManagerRejectsStaleStemAttemptIdentity()
     {
         Core::AAP::Manager manager;

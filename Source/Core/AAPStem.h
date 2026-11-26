@@ -124,6 +124,50 @@ constexpr uint8_t kStemLongMask = 0x08;
 constexpr uint8_t kAllStemMasks =
     kStemSingleMask | kStemDoubleMask | kStemTripleMask | kStemLongMask;
 
+// Desired raw-gesture configuration plus the revision acknowledged by one connection generation.
+// The owner serializes access. A failed write never advances the acknowledgement, while a new
+// generation must replay even when its mask/revision matches a previous session's success.
+class StemConfigReplayState
+{
+public:
+    void SetMask(uint8_t mask)
+    {
+        _mask = mask & kAllStemMasks;
+        ++_revision;
+    }
+
+    uint8_t Mask() const
+    {
+        return _mask;
+    }
+
+    template <typename Send>
+    bool Replay(uint64_t generation, Send &&send)
+    {
+        if (generation == 0) {
+            return false;
+        }
+        if (_sent.has_value() && _sent->generation == generation && _sent->revision == _revision) {
+            return true;
+        }
+        if (!send(_mask)) {
+            return false;
+        }
+        _sent = SentState{generation, _revision};
+        return true;
+    }
+
+private:
+    struct SentState {
+        uint64_t generation;
+        uint64_t revision;
+    };
+
+    uint8_t _mask{kAllStemMasks};
+    uint64_t _revision{0};
+    std::optional<SentState> _sent;
+};
+
 uint8_t StemConfigMask(const StemActionTable &actions) noexcept;
 
 namespace Packets {

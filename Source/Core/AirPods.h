@@ -305,7 +305,7 @@ public:
     // never resolved against a half-applied configuration.
     void SetStemActions(const AAP::StemActionTable &actions);
     AAP::StemActionTable GetStemActions() const;
-    bool ToggleNoiseControl();
+    bool ToggleNoiseControl(const AAP::StemActionRequest &request);
 
     // Check if the model supports ANC features
     static bool SupportsANC(Model model);
@@ -350,7 +350,7 @@ private:
     bool _publishingFusedState{false};
     bool _fusedStatePublishPending{false};
     // Replaced as one snapshot on the settings thread and read on the AAP reader thread.
-    std::mutex _stemActionsMutex;
+    mutable std::mutex _stemActionsMutex;
     AAP::StemActionTable _stemActions{AAP::DefaultStemActions()};
     // Long-press/single-press deduplication state; owned by the AAP reader thread, guarded here
     // because the reconnect path resets it from the disconnect callback.

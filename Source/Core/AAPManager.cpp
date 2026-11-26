@@ -157,7 +157,7 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
     }
     LOG(Info, "AAP: Transport connected; starting handshake");
 
-    const bool initialized = InitializeConnection(transport, stopToken);
+    const bool initialized = InitializeConnection(transport, attempt, stopToken);
     const bool connectionCancelled = cancelled();
     if (!initialized || connectionCancelled) {
         transport->Close();
@@ -218,16 +218,16 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
     _commandBroker->ReplayDesiredState(attempt.generation);
 
     // A settings change can race the handshake replay. The revision check closes that window:
-    // changes made while the gate was closed are sent immediately after it opens.
+    // changes made while the gate was closed are sent immediately after it opens. This is also the
+    // single bounded recovery attempt when the handshake replay failed; a new session always starts
+    // with a fresh generation check, irrespective of an earlier session's success.
     {
         std::lock_guard lock{_stemConfigMutex};
-        if (_stemConfigSentRevision != _stemConfigRevision) {
-            if (!SendPacket(Packets::BuildStemConfigPacket(_stemConfigMask))) {
-                LOG(Warn, "AAP: Failed to send pending stem config after connection");
-            }
-            else {
-                _stemConfigSentRevision = _stemConfigRevision;
-            }
+        if (!_stemConfigState.Replay(attempt.generation, [&](uint8_t value) {
+                return SendPacket(attempt, Packets::BuildStemConfigPacket(value), stopToken);
+            }))
+        {
+            LOG(Warn, "AAP: Failed to send pending stem config after connection");
         }
     }
 
@@ -396,6 +396,15 @@ bool Manager::SetNoiseControlMode(NoiseControlMode mode)
         .accepted;
 }
 
+bool Manager::SetNoiseControlMode(
+    NoiseControlMode mode, AAPAttempt attempt, std::stop_token stopToken)
+{
+    if (stopToken.stop_requested() || _cancelledGeneration.load() == attempt.generation) {
+        return false;
+    }
+    return SendPacket(attempt, Packets::BuildNoiseControlPacket(mode), stopToken);
+}
+
 std::optional<NoiseControlMode> Manager::GetNoiseControlMode() const
 {
     std::lock_guard<std::mutex> lock{_mutex};
@@ -474,20 +483,23 @@ bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
 
 bool Manager::SetStemConfig(uint8_t mask)
 {
-    mask &= kAllStemMasks;
     std::lock_guard lock{_stemConfigMutex};
-    _stemConfigMask = mask;
-    ++_stemConfigRevision;
+    _stemConfigState.SetMask(mask);
     if (!_connected) {
-        LOG(Info, "AAP: Saved stem config mask 0x{:02X} for the next connection", mask);
+        LOG(Info, "AAP: Saved stem config mask 0x{:02X} for the next connection",
+            _stemConfigState.Mask());
         return true;
     }
-    if (!SendPacket(Packets::BuildStemConfigPacket(mask))) {
-        LOG(Warn, "AAP: Failed to send stem config mask 0x{:02X}", mask);
+
+    const auto attempt = GetLastAttempt();
+    if (!_stemConfigState.Replay(attempt.generation, [&](uint8_t value) {
+            return SendPacket(attempt, Packets::BuildStemConfigPacket(value), {});
+        }))
+    {
+        LOG(Warn, "AAP: Failed to send stem config mask 0x{:02X}", _stemConfigState.Mask());
         return false;
     }
-    _stemConfigSentRevision = _stemConfigRevision;
-    LOG(Info, "AAP: Set stem config mask to 0x{:02X}", mask);
+    LOG(Info, "AAP: Set stem config mask to 0x{:02X}", _stemConfigState.Mask());
     return true;
 }
 
@@ -1018,6 +1030,31 @@ bool Manager::SendPacket(const std::vector<uint8_t> &packet)
 }
 
 bool Manager::SendPacket(
+    AAPAttempt attempt, const std::vector<uint8_t> &packet, std::stop_token stopToken)
+{
+    std::shared_ptr<AAPTransport> transport;
+    {
+        std::lock_guard lock{_mutex};
+        if (attempt.generation == 0 || !_connected || _attempt.address != attempt.address ||
+            _attempt.generation != attempt.generation ||
+            _cancelledGeneration.load() == attempt.generation || stopToken.stop_requested())
+        {
+            return false;
+        }
+        // Pin the validated session's pipe. A later reconnect may replace _transport, but this
+        // dispatch can only reach the transport that passed the identity gate above.
+        transport = _transport.load();
+    }
+
+    // Cancellation may have arrived while the snapshot was being taken. This is the latest check
+    // before the transport write; a write already handed to the OS cannot be recalled.
+    if (stopToken.stop_requested() || _cancelledGeneration.load() == attempt.generation) {
+        return false;
+    }
+    return SendPacket(transport, packet, stopToken);
+}
+
+bool Manager::SendPacket(
     const std::shared_ptr<AAPTransport> &transport, const std::vector<uint8_t> &packet,
     std::stop_token stopToken)
 {
@@ -1322,7 +1359,7 @@ bool Manager::WaitCancellable(std::chrono::milliseconds delay, std::stop_token c
 constexpr auto kPacketProcessingDelay = std::chrono::milliseconds(100);
 
 bool Manager::InitializeConnection(
-    const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken)
+    const std::shared_ptr<AAPTransport> &transport, AAPAttempt attempt, std::stop_token stopToken)
 {
     if (stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
         return false;
@@ -1344,14 +1381,15 @@ bool Manager::InitializeConnection(
     }
 
     // Subscribe to raw stem gestures only after the handshake. Failure is non-fatal: the desired
-    // mask remains stored and is retried on the next connection.
+    // mask remains pending for one bounded recovery after the gate opens and for the next session.
     {
         std::lock_guard stemConfigLock{_stemConfigMutex};
-        if (!SendPacket(transport, Packets::BuildStemConfigPacket(_stemConfigMask), stopToken)) {
-            LOG(Warn, "AAP: Failed to replay stem config mask 0x{:02X}", _stemConfigMask);
-        }
-        else {
-            _stemConfigSentRevision = _stemConfigRevision;
+        const auto mask = _stemConfigState.Mask();
+        if (!_stemConfigState.Replay(attempt.generation, [&](uint8_t value) {
+                return SendPacket(transport, Packets::BuildStemConfigPacket(value), stopToken);
+            }))
+        {
+            LOG(Warn, "AAP: Failed to replay stem config mask 0x{:02X}", mask);
         }
     }
 
@@ -1428,6 +1466,10 @@ std::optional<AAPBatterySnapshot> Manager::GetBatterySnapshot() const
     return std::nullopt;
 }
 bool Manager::SetNoiseControlMode(NoiseControlMode)
+{
+    return false;
+}
+bool Manager::SetNoiseControlMode(NoiseControlMode, AAPAttempt, std::stop_token)
 {
     return false;
 }
@@ -1553,6 +1595,10 @@ bool Manager::SendPacket(const std::vector<uint8_t> &)
 {
     return false;
 }
+bool Manager::SendPacket(AAPAttempt, const std::vector<uint8_t> &, std::stop_token)
+{
+    return false;
+}
 bool Manager::SendPacket(
     const std::shared_ptr<AAPTransport> &, const std::vector<uint8_t> &, std::stop_token)
 {
@@ -1565,7 +1611,8 @@ bool Manager::WaitCancellable(std::chrono::milliseconds, std::stop_token)
 {
     return false;
 }
-bool Manager::InitializeConnection(const std::shared_ptr<AAPTransport> &, std::stop_token)
+bool Manager::InitializeConnection(
+    const std::shared_ptr<AAPTransport> &, AAPAttempt, std::stop_token)
 {
     return false;
 }

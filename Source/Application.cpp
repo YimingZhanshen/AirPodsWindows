@@ -557,37 +557,41 @@ void ApdApplication::ExecuteStemAction(int action, qulonglong address, qulonglon
     }
 
     const auto plan = Core::AAP::PlanStemDispatch(static_cast<Core::AAP::StemAction>(action));
+
+    // Global media calls are synchronous OS actions: once one starts, cancellation is not
+    // guaranteed. Revalidate at the latest possible point inside each media dispatch; the ANC path
+    // additionally carries the attempt through its transport send gate.
+    const auto executeMediaAction = [&](Core::GlobalMedia::Details::MediaAction mediaAction,
+                                        int volumeStepPercent) {
+        if (!_airPodsManager->IsCurrentStemActionRequest(request)) {
+            LOG(Warn, "Discard stem action {} retired immediately before media dispatch", action);
+            return;
+        }
+        if (!Core::GlobalMedia::Execute(mediaAction, volumeStepPercent)) {
+            LOG(Warn, "Stem media action {} failed", action);
+        }
+    };
+
     switch (plan.operation) {
     case Core::AAP::StemDispatchPlan::Operation::TogglePlayPause:
-        if (!Core::GlobalMedia::Execute(
-                Core::GlobalMedia::Details::MediaAction::TogglePlayPause, 0))
-        {
-            LOG(Warn, "Stem play/pause action failed");
-        }
+        executeMediaAction(Core::GlobalMedia::Details::MediaAction::TogglePlayPause, 0);
         break;
     case Core::AAP::StemDispatchPlan::Operation::NextTrack:
-        if (!Core::GlobalMedia::Execute(Core::GlobalMedia::Details::MediaAction::NextTrack, 0)) {
-            LOG(Warn, "Stem next-track action failed");
-        }
+        executeMediaAction(Core::GlobalMedia::Details::MediaAction::NextTrack, 0);
         break;
     case Core::AAP::StemDispatchPlan::Operation::PreviousTrack:
-        if (!Core::GlobalMedia::Execute(Core::GlobalMedia::Details::MediaAction::PreviousTrack, 0))
-        {
-            LOG(Warn, "Stem previous-track action failed");
-        }
+        executeMediaAction(Core::GlobalMedia::Details::MediaAction::PreviousTrack, 0);
         break;
     case Core::AAP::StemDispatchPlan::Operation::VolumeUp:
     case Core::AAP::StemDispatchPlan::Operation::VolumeDown: {
         const auto mediaAction = plan.operation == Core::AAP::StemDispatchPlan::Operation::VolumeUp
                                      ? Core::GlobalMedia::Details::MediaAction::VolumeUp
                                      : Core::GlobalMedia::Details::MediaAction::VolumeDown;
-        if (!Core::GlobalMedia::Execute(mediaAction, plan.volumeStepPercent)) {
-            LOG(Warn, "Stem volume action failed");
-        }
+        executeMediaAction(mediaAction, plan.volumeStepPercent);
         break;
     }
     case Core::AAP::StemDispatchPlan::Operation::ToggleNoiseControl:
-        if (!_airPodsManager->ToggleNoiseControl()) {
+        if (!_airPodsManager->ToggleNoiseControl(request)) {
             LOG(Warn, "Stem noise-control action could not reach the connected AirPods");
         }
         break;
