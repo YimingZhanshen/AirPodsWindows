@@ -99,6 +99,24 @@ AAPCommandResult AAPCommandBroker::Submit(AAPCommand command, std::stop_token st
         return {false, false, AAPCommandFailure::TransportClosed, command.requestId};
     }
 
+    if (state.desired == command.value && state.confirmed == command.value) {
+        // Confirmation and the manager's cached display update are separate publications. A
+        // notification between them still carries the same desired/confirmed value, not new work.
+        return {true, false, std::nullopt};
+    }
+    const bool sameFlight = _flight && _flight->generation == _generation &&
+                            _flight->command.kind == command.kind &&
+                            _flight->command.value == command.value;
+    if (sameFlight) {
+        // A repeated notification is evidence of interest, not a new user value. Keep the original
+        // flight and its echo window instead of superseding it and submitting a duplicate write.
+        return {true, false, std::nullopt};
+    }
+    if (state.queued == command.value) {
+        state.queuedStop = stop;
+        return {true, false, std::nullopt};
+    }
+
     // Same-kind supersede: the in-flight wait ends now instead of burning the whole window,
     // and the queued slot is a single value, so a slider burst collapses to the last one.
     if (_flight && _flight->generation == _generation && _flight->command.kind == command.kind) {
@@ -309,6 +327,12 @@ void AAPCommandBroker::CloseSessionLocked(std::vector<AAPCommandOutcome> &outcom
         state.confirmed.reset();
     }
     _earlyEvidence.fill(std::nullopt);
+
+    // Confirmed values describe the device behind this generation, not the user's intent. They
+    // must not become a rollback baseline (or be republished) after a reconnect/device change.
+    for (auto &state : _kinds) {
+        state.confirmed.reset();
+    }
 
     // Values that never reached the wire simply go back to being desired.
     for (const auto kind : _queue) {
@@ -560,15 +584,16 @@ void AAPCommandBroker::SettleLocked(
             }
         };
 
-    if (flight.evidence) {
-        outcome.settlement = AAPCommandSettlement::Confirmed;
-        state.confirmed = flight.command.value;
-    }
-    else if (flight.sessionLost) {
+    if (flight.sessionLost) {
         // Never a user-visible failure: a cancelled or dropped connect leaves the desired value
-        // queued, and the next successful connect replays it.
+        // queued, and the next successful connect replays it. Evidence from the retired session
+        // must not repopulate the baseline that CloseSessionLocked just cleared.
         outcome.settlement = AAPCommandSettlement::TransportClosed;
         outcome.failure = AAPCommandFailure::TransportClosed;
+    }
+    else if (flight.evidence) {
+        outcome.settlement = AAPCommandSettlement::Confirmed;
+        state.confirmed = flight.command.value;
     }
     else if (flight.superseded) {
         outcome.settlement = AAPCommandSettlement::Superseded;

@@ -23,6 +23,7 @@
 #include <optional>
 #include <functional>
 
+#include "AdaptiveNoiseLevel.h"
 #include "Base.h"
 #include "AdaptiveNoiseLevel.h"
 #include "AAPBattery.h"

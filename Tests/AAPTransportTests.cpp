@@ -16,6 +16,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <memory>
@@ -905,6 +906,10 @@ private slots:
     void AdaptiveNoiseStrengthRequiresAdaptiveModeAndCurrentSession()
     {
         Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 12};
         manager._connected = true;
 
         // Unknown and every non-Adaptive mode reject the write without touching the wire.
@@ -940,6 +945,98 @@ private slots:
         manager.Disconnect();
         QVERIFY(!manager.GetAdaptiveNoiseLevel().has_value());
         QVERIFY(!manager.GetNoiseControlMode().has_value());
+    }
+
+    void AdaptiveNoiseStrengthEligibilityAndDesiredRecordingAreAtomic()
+    {
+        using namespace Core::AAP;
+        Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = AAPAttempt{1, 13};
+        manager._connected = true;
+        manager._noiseControlMode = NoiseControlMode::Off;
+        manager._adaptiveNoiseLevel = 60;
+        manager._commandBroker->BeginSession(manager._attempt.generation);
+        const AAPCommand initial{AAPCommandKind::SetAdaptiveNoiseLevel, 60};
+        QVERIFY(manager._commandBroker->RecordDesired(initial).accepted);
+        manager._commandBroker->OnEcho(initial, manager._attempt.generation);
+        transport->SetBlockSend(true);
+
+        std::promise<void> eligibilityEntered;
+        auto enteredFuture = eligibilityEntered.get_future();
+        std::promise<void> resumeEligibility;
+        auto resumeFuture = resumeEligibility.get_future();
+        manager._beforeAdaptiveEligibilityForTest = [&] {
+            eligibilityEntered.set_value();
+            resumeFuture.wait();
+        };
+
+        std::future<AAPCommandResult> submission = std::async(std::launch::async, [&] {
+            return manager.SubmitCommand({AAPCommandKind::SetAdaptiveNoiseLevel, 70});
+        });
+        QVERIFY(enteredFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+
+        // Exact former interleaving: Adaptive is reported after eligibility was read as Off, but
+        // before 70 is recorded. The notification sees desired/cache 60 and queues nothing. An
+        // atomic implementation rechecks Adaptive under the state lock and submits the new value.
+        manager.ProcessPacket({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x04, 0x00, 0x00, 0x00});
+        resumeEligibility.set_value();
+        QVERIFY(submission.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QVERIFY(submission.get().accepted);
+        QVERIFY(transport->WaitForSendWaiter(std::chrono::seconds{1}));
+        QCOMPARE(
+            manager.DesiredCommand(AAPCommandKind::SetAdaptiveNoiseLevel),
+            std::optional<uint32_t>{70});
+
+        transport->SetBlockSend(false);
+        manager.ProcessPacket({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 70, 0x00, 0x00, 0x00});
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        QCOMPARE(transport->SendCalls(), size_t{1});
+        QCOMPARE(manager.GetAdaptiveNoiseLevel(), std::optional<uint8_t>{70});
+        manager.Disconnect();
+    }
+
+    void RepeatedAdaptiveNotificationsDoNotResubmitInFlightStrength()
+    {
+        using namespace Core::AAP;
+        Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        transport->SetBlockSend(true);
+        manager._transport.store(transport);
+        manager._attempt = AAPAttempt{1, 14};
+        manager._connected = true;
+        manager._noiseControlMode = NoiseControlMode::Adaptive;
+        manager._commandBroker->BeginSession(manager._attempt.generation);
+        QVERIFY(manager.SubmitCommand({AAPCommandKind::SetAdaptiveNoiseLevel, 65}).accepted);
+
+        std::promise<AAPCommandOutcome> settled;
+        auto settledFuture = settled.get_future();
+        std::atomic<bool> reported{false};
+        Callbacks callbacks;
+        callbacks.onCommandSettled = [&](const AAPCommandOutcome &outcome, AAPAttempt) {
+            if (!reported.exchange(true)) {
+                settled.set_value(outcome);
+            }
+        };
+        manager.SetCallbacks(std::move(callbacks));
+        const std::vector<uint8_t> adaptive{0x04, 0x00, 0x04, 0x00, 0x09, 0x00,
+                                            0x0D, 0x04, 0x00, 0x00, 0x00};
+        manager.ProcessPacket(adaptive);
+        QVERIFY(transport->WaitForSendWaiter(std::chrono::seconds{1}));
+        manager.ProcessPacket(adaptive);
+        manager.ProcessPacket(adaptive);
+        QCOMPARE(manager._commandBroker->QueuedCount(), size_t{0});
+
+        transport->SetBlockSend(false);
+        manager.ProcessPacket({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 65, 0x00, 0x00, 0x00});
+        QVERIFY(settledFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QCOMPARE(settledFuture.get().settlement, AAPCommandSettlement::Confirmed);
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        QCOMPARE(transport->SendCalls(), size_t{1});
+        manager.Disconnect();
     }
 
     void AdaptiveNoiseStrengthAttemptBarrierNeverReachesReplacementTransport()

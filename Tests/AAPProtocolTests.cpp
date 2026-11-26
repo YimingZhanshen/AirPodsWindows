@@ -1141,6 +1141,97 @@ private slots:
             broker.Desired(AAPCommandKind::SetAdaptiveNoiseLevel), std::optional<uint32_t>{80});
     }
 
+    void AdaptiveNoiseConfirmedBaselineDoesNotSurviveSessionClose()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        AAPCommandBroker::Config config;
+        config.clock.now = [&clock] { return clock.Now(); };
+        config.clock.advance = [&clock](std::chrono::milliseconds delta) { clock.Advance(delta); };
+        OutcomeQueue outcomes;
+        std::promise<void> secondStarted;
+        auto secondFuture = secondStarted.get_future();
+        int calls = 0;
+        AAPCommandBroker *liveBroker = nullptr;
+        AAPCommandBroker broker(
+            [&](const AAPCommand &command, uint64_t generation, std::stop_token) {
+                if (++calls == 1) {
+                    liveBroker->OnEcho(command, generation);
+                }
+                else {
+                    secondStarted.set_value();
+                }
+                return true;
+            },
+            [&](const AAPCommandOutcome &outcome) { outcomes.Push(outcome); }, config);
+        liveBroker = &broker;
+        const AAPCommand confirmed{AAPCommandKind::SetAdaptiveNoiseLevel, 25};
+        const AAPCommand replayed{AAPCommandKind::SetAdaptiveNoiseLevel, 70};
+        broker.BeginSession(1);
+        QVERIFY(broker.Submit(confirmed).accepted);
+        QCOMPARE(outcomes.Wait()->settlement, AAPCommandSettlement::Confirmed);
+        QCOMPARE(broker.Confirmed(confirmed.kind), std::optional<uint32_t>{25});
+
+        QVERIFY(broker.RecordDesired(replayed).accepted);
+        broker.EndSession();
+        QVERIFY(!broker.Confirmed(confirmed.kind).has_value());
+        broker.BeginSession(2);
+        broker.ReplayDesiredState(2);
+        QVERIFY(secondFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        broker.AdvanceTimeForTesting(std::chrono::milliseconds{2000});
+        const auto outcome = outcomes.Wait();
+        QVERIFY(outcome.has_value());
+        QCOMPARE(outcome->generation, uint64_t{2});
+        QCOMPARE(outcome->settlement, AAPCommandSettlement::TimedOut);
+        QVERIFY(outcome->rollBackDesired);
+        QVERIFY(!outcome->rollbackValue.has_value());
+        QVERIFY(!broker.Confirmed(replayed.kind).has_value());
+    }
+
+    void DuplicateInFlightSubmissionDoesNotSupersedeOrWriteAgain()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        AAPCommandBroker::Config config;
+        config.clock.now = [&clock] { return clock.Now(); };
+        config.clock.advance = [&clock](std::chrono::milliseconds delta) { clock.Advance(delta); };
+        OutcomeQueue outcomes;
+        ManualGate gate;
+        std::promise<void> started;
+        auto startedFuture = started.get_future();
+        std::atomic<size_t> sends{0};
+        AAPCommandBroker *liveBroker = nullptr;
+        AAPCommandBroker broker(
+            [&](const AAPCommand &command, uint64_t generation, std::stop_token stop) {
+                if (++sends == 1) {
+                    started.set_value();
+                    gate.Wait(stop);
+                }
+                liveBroker->OnEcho(command, generation);
+                return true;
+            },
+            [&](const AAPCommandOutcome &outcome) { outcomes.Push(outcome); }, config);
+        liveBroker = &broker;
+        broker.BeginSession(1);
+        const AAPCommand command{AAPCommandKind::SetAdaptiveNoiseLevel, 70};
+        QVERIFY(broker.Submit(command).accepted);
+        QVERIFY(startedFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QVERIFY(broker.Submit(command).accepted);
+        QCOMPARE(broker.QueuedCount(), size_t{0});
+        gate.Open();
+        QVERIFY(broker.WaitForIdle(std::chrono::seconds{1}));
+        QCOMPARE(sends.load(), size_t{1});
+        QCOMPARE(outcomes.Size(), size_t{1});
+        QCOMPARE(outcomes.Wait()->settlement, AAPCommandSettlement::Confirmed);
+
+        // The manager cache update follows the broker observer. A notification in that narrow
+        // window still sees the same desired/confirmed value and must not submit another write.
+        QVERIFY(broker.Submit(command).accepted);
+        QCOMPARE(broker.QueuedCount(), size_t{0});
+        QVERIFY(broker.WaitForIdle(std::chrono::seconds{1}));
+        QCOMPARE(sends.load(), size_t{1});
+    }
+
     void AdaptiveNoiseStaleEchoCannotConfirmReplacementSession()
     {
         using namespace Core::AAP;

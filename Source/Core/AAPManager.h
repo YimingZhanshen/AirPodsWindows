@@ -268,6 +268,9 @@ private:
     std::mutex _stemConfigMutex;
     StemConfigReplayState _stemConfigState;
     std::function<std::shared_ptr<AAPTransport>(AAPTransportKind)> _transportFactory;
+    // Deterministic rendezvous before the adaptive eligibility critical section. The callback runs
+    // without _mutex held so a test can inject a notification at the former read/record race.
+    std::function<void()> _beforeAdaptiveEligibilityForTest;
 
     // Callbacks
     Callbacks _callbacks;
