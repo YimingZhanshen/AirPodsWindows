@@ -75,6 +75,63 @@ protected:
     }
 };
 
+struct StemActionBinding {
+    const char *key;
+    const char *description;
+    Core::AAP::StemSide side;
+    Core::AAP::StemPress press;
+    Core::AAP::StemAction Fields::*member;
+};
+
+constexpr std::array StemActionBindings{
+    StemActionBinding{
+        "stem_left_single", "Action for a single press of the left stem.",
+        Core::AAP::StemSide::Left, Core::AAP::StemPress::Single, &Fields::stem_left_single},
+    StemActionBinding{
+        "stem_left_double", "Action for a double press of the left stem.",
+        Core::AAP::StemSide::Left, Core::AAP::StemPress::Double, &Fields::stem_left_double},
+    StemActionBinding{
+        "stem_left_triple", "Action for a triple press of the left stem.",
+        Core::AAP::StemSide::Left, Core::AAP::StemPress::Triple, &Fields::stem_left_triple},
+    StemActionBinding{
+        "stem_left_long", "Action for a long press of the left stem.", Core::AAP::StemSide::Left,
+        Core::AAP::StemPress::Long, &Fields::stem_left_long},
+    StemActionBinding{
+        "stem_right_single", "Action for a single press of the right stem.",
+        Core::AAP::StemSide::Right, Core::AAP::StemPress::Single, &Fields::stem_right_single},
+    StemActionBinding{
+        "stem_right_double", "Action for a double press of the right stem.",
+        Core::AAP::StemSide::Right, Core::AAP::StemPress::Double, &Fields::stem_right_double},
+    StemActionBinding{
+        "stem_right_triple", "Action for a triple press of the right stem.",
+        Core::AAP::StemSide::Right, Core::AAP::StemPress::Triple, &Fields::stem_right_triple},
+    StemActionBinding{
+        "stem_right_long", "Action for a long press of the right stem.", Core::AAP::StemSide::Right,
+        Core::AAP::StemPress::Long, &Fields::stem_right_long},
+};
+
+QString StemActionText(Core::AAP::StemAction action)
+{
+    using Core::AAP::StemAction;
+    switch (action) {
+    case StemAction::None:
+        return SettingsWindow::tr("None");
+    case StemAction::PlayPause:
+        return SettingsWindow::tr("Play / Pause");
+    case StemAction::NextTrack:
+        return SettingsWindow::tr("Next track");
+    case StemAction::PreviousTrack:
+        return SettingsWindow::tr("Previous track");
+    case StemAction::VolumeUp:
+        return SettingsWindow::tr("Volume up");
+    case StemAction::VolumeDown:
+        return SettingsWindow::tr("Volume down");
+    case StemAction::ToggleNoiseControl:
+        return SettingsWindow::tr("Toggle noise control");
+    }
+    return SettingsWindow::tr("None");
+}
+
 void ConfigureComboBoxPopup(QComboBox *comboBox)
 {
     auto *view = comboBox->view();
@@ -375,6 +432,57 @@ SettingsWindow::SettingsWindow(
     });
 
     SetupDriverStatusCard();
+    SetupStemActionsCard();
+}
+
+void SettingsWindow::SetupStemActionsCard()
+{
+    const auto previousTrigger = _trigger;
+    _trigger = false;
+    for (size_t index = 0; index < StemActionBindings.size(); ++index) {
+        const auto &binding = StemActionBindings[index];
+        auto *combo = new QComboBox{_ui.cardStemActions};
+        combo->setObjectName(QString::fromUtf8(binding.key));
+        for (const auto action :
+             {Core::AAP::StemAction::None, Core::AAP::StemAction::PlayPause,
+              Core::AAP::StemAction::NextTrack, Core::AAP::StemAction::PreviousTrack,
+              Core::AAP::StemAction::VolumeUp, Core::AAP::StemAction::VolumeDown,
+              Core::AAP::StemAction::ToggleNoiseControl})
+        {
+            combo->addItem(StemActionText(action), static_cast<int>(action));
+        }
+        const auto &sideLabel = binding.side == Core::AAP::StemSide::Left ? _ui.lbStemLeft->text()
+                                                                          : _ui.lbStemRight->text();
+        const auto &pressLabel =
+            binding.press == Core::AAP::StemPress::Single   ? _ui.lbStemSingle->text()
+            : binding.press == Core::AAP::StemPress::Double ? _ui.lbStemDouble->text()
+            : binding.press == Core::AAP::StemPress::Triple ? _ui.lbStemTriple->text()
+                                                            : _ui.lbStemLong->text();
+        combo->setAccessibleName(QString{"%1 — %2"}.arg(sideLabel, pressLabel));
+        combo->setToolTip(QCoreApplication::translate("QObject", binding.description));
+        combo->setItemDelegate(new QStyledItemDelegate{combo});
+        ConfigureComboBoxPopup(combo);
+        _stemActionCombos[index] = combo;
+        _ui.stemActionsLayout->addWidget(
+            combo, binding.side == Core::AAP::StemSide::Left ? 1 : 2,
+            Core::AAP::StemPressIndex(binding.press).value_or(0) + 1);
+
+        connect(
+            combo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, combo, binding] {
+                if (!_trigger) {
+                    return;
+                }
+                auto settings = ModifiableAccess();
+                (*settings).*binding.member =
+                    static_cast<Core::AAP::StemAction>(combo->currentData().toInt());
+            });
+    }
+    const auto fields = GetCurrent();
+    for (size_t index = 0; index < _stemActionCombos.size(); ++index) {
+        const auto selected = static_cast<int>(fields.*StemActionBindings[index].member);
+        _stemActionCombos[index]->setCurrentIndex(_stemActionCombos[index]->findData(selected));
+    }
+    _trigger = previousTrigger;
 }
 
 int SettingsWindow::GetTabCount() const
@@ -798,6 +906,13 @@ void SettingsWindow::Update(const Fields &fields, bool trigger)
     _ui.hsAdaptiveNoiseLevel->setValue(fields.adaptive_noise_level);
     _ui.lblAdaptiveNoiseLevelValue->setText(QString::number(fields.adaptive_noise_level));
     _ui.cbHeadTracking->setChecked(fields.head_tracking);
+
+    for (size_t index = 0; index < _stemActionCombos.size(); ++index) {
+        if (_stemActionCombos[index] != nullptr) {
+            const auto selected = static_cast<int>(fields.*StemActionBindings[index].member);
+            _stemActionCombos[index]->setCurrentIndex(_stemActionCombos[index]->findData(selected));
+        }
+    }
 
     _ui.hsMaxReceivingRange->setValue(-fields.rssi_min);
 

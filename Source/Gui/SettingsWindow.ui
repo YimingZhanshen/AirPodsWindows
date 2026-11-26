@@ -1260,6 +1260,102 @@
           </widget>
          </item>
          <item>
+          <widget class="QFrame" name="cardStemActions">
+           <property name="frameShape">
+            <enum>QFrame::NoFrame</enum>
+           </property>
+           <property name="cssClass" stdset="0">
+            <string notr="true">settingCard</string>
+           </property>
+           <layout class="QVBoxLayout" name="cardStemActionsLayout">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <property name="leftMargin">
+             <number>16</number>
+            </property>
+            <property name="topMargin">
+             <number>12</number>
+            </property>
+            <property name="rightMargin">
+             <number>16</number>
+            </property>
+            <property name="bottomMargin">
+             <number>12</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="lbStemActions">
+              <property name="text">
+               <string>Stem press actions</string>
+              </property>
+              <property name="cssClass" stdset="0">
+               <string notr="true">cardTitle</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="lbDescStemActions">
+              <property name="text">
+               <string>Choose the Windows action for each press gesture. Changes are saved automatically.</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="cssClass" stdset="0">
+               <string notr="true">cardDescription</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <layout class="QGridLayout" name="stemActionsLayout">
+              <item row="0" column="1">
+               <widget class="QLabel" name="lbStemSingle">
+                <property name="text">
+                 <string>Single</string>
+                </property>
+               </widget>
+              </item>
+              <item row="0" column="2">
+               <widget class="QLabel" name="lbStemDouble">
+                <property name="text">
+                 <string>Double</string>
+                </property>
+               </widget>
+              </item>
+              <item row="0" column="3">
+               <widget class="QLabel" name="lbStemTriple">
+                <property name="text">
+                 <string>Triple</string>
+                </property>
+               </widget>
+              </item>
+              <item row="0" column="4">
+               <widget class="QLabel" name="lbStemLong">
+                <property name="text">
+                 <string>Long</string>
+                </property>
+               </widget>
+              </item>
+              <item row="1" column="0">
+               <widget class="QLabel" name="lbStemLeft">
+                <property name="text">
+                 <string>Left stem</string>
+                </property>
+               </widget>
+              </item>
+              <item row="2" column="0">
+               <widget class="QLabel" name="lbStemRight">
+                <property name="text">
+                 <string>Right stem</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
           <widget class="QFrame" name="cardPpeCapLevel">
            <property name="frameShape">
             <enum>QFrame::NoFrame</enum>

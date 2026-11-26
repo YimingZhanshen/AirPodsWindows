@@ -26,6 +26,7 @@
 #include <QLocale>
 
 #include "../Helper.h"
+#include "AAPStem.h"
 
 namespace Core::Settings {
 
@@ -65,6 +66,10 @@ public:
     virtual void OnAudioAutoConnectEnabledChanged(bool) {}
     virtual void OnTrayQuickConnectDeviceChanged(const QString &deviceId) = 0;
     virtual void OnTaskbarBatteryChanged(TaskbarStatusBehavior behavior) = 0;
+    // Stem gestures (blueprint 2.4). The whole table is delivered at once so a partially applied
+    // configuration can never reach the gesture handler. Defaulted: existing observers stay
+    // source-compatible, the presentation layer opts in.
+    virtual void OnStemActionsChanged(const Core::AAP::StemActionTable &) {}
 };
 
 void SetApplyObserver(ApplyObserver *observer);
@@ -138,7 +143,31 @@ void SetRepository(std::unique_ptr<Repository> repository);
     callback(uint8_t, adaptive_noise_level, {50},                                                   \
         Impl::OnApply(&OnApply_adaptive_noise_level),                                                \
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Adaptive noise strength (0-100), used when noise control is Adaptive.")}) \
-    callback(bool, head_tracking, {false}, Impl::OnApply(&OnApply_head_tracking))
+    callback(bool, head_tracking, {false}, Impl::OnApply(&OnApply_head_tracking))                   \
+    callback(Core::AAP::StemAction, stem_left_single, {Core::AAP::DefaultStemActions()[0]},         \
+        Impl::OnApply(&OnApply_stem_actions),                                                     \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Action for a single press of the left stem.")})   \
+    callback(Core::AAP::StemAction, stem_left_double, {Core::AAP::DefaultStemActions()[1]},         \
+        Impl::OnApply(&OnApply_stem_actions),                                                     \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Action for a double press of the left stem.")})  \
+    callback(Core::AAP::StemAction, stem_left_triple, {Core::AAP::DefaultStemActions()[2]},     \
+        Impl::OnApply(&OnApply_stem_actions),                                                     \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Action for a triple press of the left stem.")})  \
+    callback(Core::AAP::StemAction, stem_left_long, {Core::AAP::DefaultStemActions()[3]},  \
+        Impl::OnApply(&OnApply_stem_actions),                                                     \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Action for a long press of the left stem.")})    \
+    callback(Core::AAP::StemAction, stem_right_single, {Core::AAP::DefaultStemActions()[4]},        \
+        Impl::OnApply(&OnApply_stem_actions),                                                     \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Action for a single press of the right stem.")}) \
+    callback(Core::AAP::StemAction, stem_right_double, {Core::AAP::DefaultStemActions()[5]},        \
+        Impl::OnApply(&OnApply_stem_actions),                                                     \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Action for a double press of the right stem.")}) \
+    callback(Core::AAP::StemAction, stem_right_triple, {Core::AAP::DefaultStemActions()[6]},    \
+        Impl::OnApply(&OnApply_stem_actions),                                                     \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Action for a triple press of the right stem.")}) \
+    callback(Core::AAP::StemAction, stem_right_long, {Core::AAP::DefaultStemActions()[7]}, \
+        Impl::OnApply(&OnApply_stem_actions),                                                     \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Action for a long press of the right stem.")})
 // clang-format on
 
 struct Fields {
@@ -312,6 +341,13 @@ void OnApply_battery_on_taskbar(const Fields &newFields);
 void OnApply_ppe_cap_level(const Fields &newFields);
 void OnApply_adaptive_noise_level(const Fields &newFields);
 void OnApply_head_tracking(const Fields &newFields);
+
+// Stem gestures. One apply callback covers all eight fields: the table is only meaningful as a
+// whole, and the change-detection in ModifiableSafeAccessor fires it for any single edit.
+void OnApply_stem_actions(const Fields &newFields);
+
+// Collects the eight persisted gesture fields into the indexed table the protocol layer uses.
+Core::AAP::StemActionTable StemActionsOf(const Fields &fields) noexcept;
 
 struct MetaFields {
 #define DECLARE_META_FIELD(type, name, dft, ...)                                                   \

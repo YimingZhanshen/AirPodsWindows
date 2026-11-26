@@ -31,6 +31,7 @@
 #include "AAPBattery.h"
 #include "AAPCommandBroker.h"
 #include "AAPConnectionStateMachine.h"
+#include "AAPStem.h"
 #include "AAPTransport.h"
 #include "Base.h"
 #include "../Helper.h"
@@ -83,6 +84,7 @@ struct Callbacks {
     using FnOnAutomaticEarDetectionChangedT = std::function<void(bool, AAPAttempt)>;
     using FnOnPpeCapLevelChangedT = std::function<void(uint8_t, AAPAttempt)>;
     using FnOnBatteryChangedT = std::function<void(AAPBatterySnapshot, AAPAttempt)>;
+    using FnOnStemPressT = std::function<void(StemEvent, AAPAttempt)>;
     using FnOnConnectedT = std::function<void(AAPAttempt)>;
     using FnOnDisconnectedT = std::function<void(AAPAttempt)>;
     using FnOnAttProbeResultT = std::function<void(AttPathState, AAPAttempt)>;
@@ -100,6 +102,8 @@ struct Callbacks {
     FnOnAutomaticEarDetectionChangedT onAutomaticEarDetectionChanged;
     FnOnPpeCapLevelChangedT onPpeCapLevelChanged;
     FnOnBatteryChangedT onBatteryChanged;
+    // Transient stem gesture (opcode 0x19): never cached, only forwarded to the policy layer.
+    FnOnStemPressT onStemPress;
     FnOnConnectedT onConnected;
     FnOnDisconnectedT onDisconnected;
     FnOnAttProbeResultT onAttProbeResult;

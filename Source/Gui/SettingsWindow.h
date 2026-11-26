@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <array>
 #include <functional>
 
 #include <QLabel>
@@ -74,9 +75,11 @@ private:
     DriverStatusCard *_driverStatusCard{nullptr};
     bool _driverCardSignalConnected{false};
     bool _aapSignalConnected{false};
+    std::array<QComboBox *, Core::AAP::kStemActionCount> _stemActionCombos{};
 
     void InitCreditsText();
     void SetupDriverStatusCard();
+    void SetupStemActionsCard();
     void RestoreDefaults();
     void Update(const Fields &fields, bool trigger);
     void UpdateQuickConnectDevices(const Fields &fields);

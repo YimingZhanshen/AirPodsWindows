@@ -255,6 +255,10 @@ void Manager::SetupAAPCallbacks()
         OnHeadTrackingData(data, attempt);
     };
 
+    callbacks.onStemPress = [this](AAP::StemEvent event, AAP::AAPAttempt attempt) {
+        OnStemPress(event, attempt);
+    };
+
     callbacks.onAttProbeResult = [this](AAP::AttPathState state, AAP::AAPAttempt attempt) {
         OnAttProbeResult(state, attempt);
     };
@@ -1039,6 +1043,39 @@ bool Manager::IsHeadTrackingActive() const
     return _aapMgr.IsHeadTrackingActive();
 }
 
+void Manager::SetStemActions(const AAP::StemActionTable &actions)
+{
+    {
+        std::lock_guard lock{_stemActionsMutex};
+        _stemActions = actions;
+    }
+    LOG(Info, "Stem gesture actions updated");
+}
+
+AAP::StemActionTable Manager::GetStemActions() const
+{
+    std::lock_guard lock{_stemActionsMutex};
+    return _stemActions;
+}
+
+bool Manager::ToggleNoiseControl()
+{
+    std::lock_guard lock{_mutex};
+    if (!_aapMgr.IsConnected()) {
+        return false;
+    }
+
+    const auto current = static_cast<AAP::NoiseControlMode>(_currentNoiseControlMode.load());
+    const auto next = current == AAP::NoiseControlMode::NoiseCancellation
+                          ? AAP::NoiseControlMode::Off
+                          : AAP::NoiseControlMode::NoiseCancellation;
+    if (!_aapMgr.SetNoiseControlMode(next)) {
+        return false;
+    }
+    _currentNoiseControlMode = static_cast<int>(next);
+    return true;
+}
+
 void Manager::OnConversationalAwarenessChanged(bool enable)
 {
     {
@@ -1357,6 +1394,35 @@ void Manager::OnHeadTrackingData(AAP::HeadTrackingData data, AAP::AAPAttempt att
         attempt.generation, static_cast<int>(AAP::AAPCommandKind::SetHeadTracking), 0x01);
 }
 
+void Manager::OnStemPress(AAP::StemEvent event, AAP::AAPAttempt attempt)
+{
+    // A retired generation (reconnect, rebinding, shutdown) must never drive the host.
+    if (!IsCurrentAAPAttempt(attempt)) {
+        return;
+    }
+
+    {
+        std::lock_guard lock{_stemDeduperMutex};
+        if (!_stemDeduper.Accept(event)) {
+            LOG(Trace, "Stem gesture ignored as part of the same continuous gesture: {} {}",
+                AAP::StemSideName(event.side), AAP::StemPressName(event.press));
+            return;
+        }
+    }
+
+    const auto action = AAP::SelectStemAction(GetStemActions(), event);
+    if (action == AAP::StemAction::None) {
+        LOG(Info, "Stem gesture has no action configured: {} {}", AAP::StemSideName(event.side),
+            AAP::StemPressName(event.press));
+        return;
+    }
+
+    LOG(Info, "Stem gesture {} {} -> action {}", AAP::StemSideName(event.side),
+        AAP::StemPressName(event.press), AAP::StemActionName(action));
+    // Queued delivery: the host work happens on the GUI thread, never on this reader thread.
+    emit StemActionRequestedSafely(static_cast<int>(action));
+}
+
 // Volume levels for conversational awareness
 // kFullVolumePercent (100) signals to GlobalMedia::SetVolume to restore the saved pre-speaking
 // volume The actual restoration logic is in GlobalMedia_win.cpp which restores to the saved volume,
@@ -1454,6 +1520,13 @@ void Manager::OnAAPDisconnected(AAP::AAPAttempt attempt)
             _batteryFusion.Reset();
         }
         RequestFusedStatePublish();
+    }
+
+    // A new session starts without a suppression window, so the first gesture after a reconnect
+    // is never mistaken for the tail of a gesture from the dead session.
+    {
+        std::lock_guard lock{_stemDeduperMutex};
+        _stemDeduper.Reset();
     }
 
     LOG(Info, "AAP connection lost - ANC features unavailable");

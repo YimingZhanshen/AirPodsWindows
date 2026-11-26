@@ -295,6 +295,9 @@ void ApdApplication::ConnectAirPodsManager()
     // releasing the hold on disconnect) lives in `MainWindow::ConnectLidPopup` so the UI tests
     // exercise the very same wiring (see D6).
     mainWindow->ConnectLidPopup(manager);
+    connect(
+        manager, &Core::AirPods::Manager::StemActionRequestedSafely, this,
+        &ApdApplication::ExecuteStemAction, Qt::QueuedConnection);
     // Blueprint 1.3: surface AAP connection failures as a tray balloon with an
     // actionable hint instead of a silent feature blackout.
     connect(
@@ -538,4 +541,40 @@ void ApdApplication::OnTrayQuickConnectDeviceChanged(const QString &deviceId)
 void ApdApplication::OnTaskbarBatteryChanged(Core::Settings::TaskbarStatusBehavior behavior)
 {
     emit _taskbarStatus->OnSettingsChangedSafely(behavior);
+}
+
+void ApdApplication::OnStemActionsChanged(const Core::AAP::StemActionTable &actions)
+{
+    _airPodsManager->SetStemActions(actions);
+}
+
+void ApdApplication::ExecuteStemAction(int action)
+{
+    const auto plan = Core::AAP::PlanStemDispatch(static_cast<Core::AAP::StemAction>(action));
+    switch (plan.operation) {
+    case Core::AAP::StemDispatchPlan::Operation::TogglePlayPause:
+        Core::GlobalMedia::Execute(Core::GlobalMedia::Details::MediaAction::TogglePlayPause, 0);
+        break;
+    case Core::AAP::StemDispatchPlan::Operation::NextTrack:
+        Core::GlobalMedia::Execute(Core::GlobalMedia::Details::MediaAction::NextTrack, 0);
+        break;
+    case Core::AAP::StemDispatchPlan::Operation::PreviousTrack:
+        Core::GlobalMedia::Execute(Core::GlobalMedia::Details::MediaAction::PreviousTrack, 0);
+        break;
+    case Core::AAP::StemDispatchPlan::Operation::VolumeUp:
+    case Core::AAP::StemDispatchPlan::Operation::VolumeDown: {
+        const auto mediaAction = plan.operation == Core::AAP::StemDispatchPlan::Operation::VolumeUp
+                                     ? Core::GlobalMedia::Details::MediaAction::VolumeUp
+                                     : Core::GlobalMedia::Details::MediaAction::VolumeDown;
+        Core::GlobalMedia::Execute(mediaAction, plan.volumeStepPercent);
+        break;
+    }
+    case Core::AAP::StemDispatchPlan::Operation::ToggleNoiseControl:
+        if (!_airPodsManager->ToggleNoiseControl()) {
+            LOG(Warn, "Stem noise-control action could not reach the connected AirPods");
+        }
+        break;
+    case Core::AAP::StemDispatchPlan::Operation::None:
+        break;
+    }
 }

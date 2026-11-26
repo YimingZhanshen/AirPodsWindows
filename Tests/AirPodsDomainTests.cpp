@@ -100,6 +100,11 @@ public:
         ++quickConnectDeviceChanges;
     }
     void OnTaskbarBatteryChanged(Core::Settings::TaskbarStatusBehavior) override {}
+    void OnStemActionsChanged(const Core::AAP::StemActionTable &actions) override
+    {
+        stemActions = actions;
+        ++stemActionChanges;
+    }
 
     bool automaticEarDetection{false};
     bool conversationalAwareness{false};
@@ -118,6 +123,8 @@ public:
     int quickConnectEnabledChanges{0};
     QString quickConnectDeviceId;
     int quickConnectDeviceChanges{0};
+    Core::AAP::StemActionTable stemActions{};
+    int stemActionChanges{0};
 };
 
 class FailingSyncRepository final : public Core::Settings::Repository
@@ -280,6 +287,7 @@ private Q_SLOTS:
     void PreservesExistingSettingsDuringMigration();
     void RollsBackFailedSettingsMigration();
     void PropagatesQuickConnectSettings();
+    void PersistsAndPropagatesStemActions();
     void PreservesForkSettingsAndAddsPlaybackAutoConnect();
     void KeepsPpeCapIndependentFromLegacyAdaptiveTransparency();
     void AppendsPpeCapAfterExistingSettingsFields();
@@ -1441,6 +1449,40 @@ void AirPodsDomainTests::RollsBackFailedSettingsMigration()
 
     QVERIFY(!Core::Settings::Details::MigrateLegacySettings(current, legacy));
     QVERIFY(current.Keys().isEmpty());
+}
+
+void AirPodsDomainTests::PersistsAndPropagatesStemActions()
+{
+    auto repository = std::make_unique<Core::Settings::MemoryRepository>();
+    repository->Write("abi_version", Core::Settings::kFieldsAbiVersion);
+    Core::Settings::SetRepository(std::move(repository));
+    QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+    QVERIFY(
+        Core::AAP::StemActionsOf(Core::Settings::GetCurrent()) == Core::AAP::DefaultStemActions());
+    RecordingSettingsObserver observer;
+    Core::Settings::SetApplyObserver(&observer);
+    Core::AAP::StemActionTable custom{};
+    for (size_t index = 0; index < custom.size(); ++index) {
+        custom[index] = static_cast<Core::AAP::StemAction>(index % 7);
+    }
+    {
+        auto settings = Core::Settings::ModifiableAccess();
+        settings->stem_left_single = custom[0];
+        settings->stem_left_double = custom[1];
+        settings->stem_left_triple = custom[2];
+        settings->stem_left_long = custom[3];
+        settings->stem_right_single = custom[4];
+        settings->stem_right_double = custom[5];
+        settings->stem_right_triple = custom[6];
+        settings->stem_right_long = custom[7];
+    }
+    QVERIFY(observer.stemActions == custom);
+    QVERIFY(observer.stemActionChanges > 0);
+    Core::Settings::SetApplyObserver(nullptr);
+
+    QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+    QVERIFY(Core::AAP::StemActionsOf(Core::Settings::GetCurrent()) == custom);
+    Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
 }
 
 void AirPodsDomainTests::PropagatesQuickConnectSettings()

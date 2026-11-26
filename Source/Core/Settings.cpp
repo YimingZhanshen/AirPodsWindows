@@ -237,6 +237,30 @@ void OnApply_battery_on_taskbar(const Fields &newFields)
     });
 }
 
+Core::AAP::StemActionTable StemActionsOf(const Fields &fields) noexcept
+{
+    // Index order is [side][press] with side in {left, right} and press in {single, double,
+    // triple, long}; keep it in sync with Core::AAP::StemActionIndex.
+    return {
+        fields.stem_left_single,  fields.stem_left_double,  fields.stem_left_triple,
+        fields.stem_left_long,    fields.stem_right_single, fields.stem_right_double,
+        fields.stem_right_triple, fields.stem_right_long,
+    };
+}
+
+void OnApply_stem_actions(const Fields &newFields)
+{
+    const auto table = StemActionsOf(newFields);
+    LOG(Info, "OnApply_stem_actions: left[{}/{}/{}/{}] right[{}/{}/{}/{}]",
+        Core::AAP::StemActionName(table[0]), Core::AAP::StemActionName(table[1]),
+        Core::AAP::StemActionName(table[2]), Core::AAP::StemActionName(table[3]),
+        Core::AAP::StemActionName(table[4]), Core::AAP::StemActionName(table[5]),
+        Core::AAP::StemActionName(table[6]), Core::AAP::StemActionName(table[7]));
+
+    Impl::NotifyApplyObserver(
+        [&](ApplyObserver &observer) { observer.OnStemActionsChanged(table); });
+}
+
 class Manager : public Helper::Singleton<Manager>
 {
 protected:

@@ -18,6 +18,8 @@
 
 #pragma once
 
+#include "GlobalMedia_abstract.h"
+
 #if defined APD_OS_WIN
     #include "GlobalMedia_win.h"
 #endif
@@ -33,6 +35,15 @@ inline void Pause()
 {
     Controller::GetInstance().Pause();
 }
+
+#if defined APD_OS_WIN
+// One media operation, for example from a stem gesture. False means nothing accepted it and the
+// controller already logged why.
+inline bool Execute(Details::MediaAction action, int volumeStepPercent)
+{
+    return Controller::GetInstance().Execute(action, volumeStepPercent);
+}
+#endif
 
 inline void SetVolume(int percent)
 {

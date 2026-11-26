@@ -22,9 +22,11 @@
 #include <cstdint>
 #include <functional>
 #include <future>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <stop_token>
 #include <vector>
 
@@ -34,6 +36,7 @@
 #include "Source/Core/AAP.h"
 #include "Source/Core/AAPAtt.h"
 #include "Source/Core/AAPBattery.h"
+#include "Source/Core/AAPStem.h"
 #include "Source/Core/ConnectionDiagnostics.h"
 
 // Table-driven coverage for the AAP protocol layer (blueprint items 0.1 / 0.2 / 0.5):
@@ -257,6 +260,102 @@ private slots:
     {
         QCOMPARE(Packets::BuildLoudSoundReductionPacket(true), Hex({0x12, 0x1B, 0x00, 0x01}));
         QCOMPARE(Packets::BuildLoudSoundReductionPacket(false), Hex({0x12, 0x1B, 0x00, 0x00}));
+    }
+
+    void StemParserCoversEverySideAndPress()
+    {
+        constexpr StemSide sides[]{StemSide::Left, StemSide::Right};
+        constexpr StemPress presses[]{
+            StemPress::Single, StemPress::Double, StemPress::Triple, StemPress::Long};
+        constexpr uint8_t pressBytes[]{0x05, 0x06, 0x07, 0x08};
+        constexpr uint8_t sideBytes[]{0x01, 0x02};
+
+        for (size_t sideIndex = 0; sideIndex < std::size(sides); ++sideIndex) {
+            for (size_t pressIndex = 0; pressIndex < std::size(presses); ++pressIndex) {
+                const auto result = ParseStemEvent(Hex(
+                    {0x04, 0x00, 0x04, 0x00, 0x19, 0x00, pressBytes[pressIndex],
+                     sideBytes[sideIndex]}));
+                QVERIFY(result.has_value());
+                QCOMPARE(result->side, sides[sideIndex]);
+                QCOMPARE(result->press, presses[pressIndex]);
+            }
+        }
+    }
+
+    void StemParserRejectsMalformedRecords()
+    {
+        const auto valid = Hex({0x04, 0x00, 0x04, 0x00, 0x19, 0x00, 0x05, 0x01});
+        for (size_t length = 0; length < valid.size(); ++length) {
+            QVERIFY(!ParseStemEvent(std::span{valid}.first(length)).has_value());
+        }
+        auto overlong = valid;
+        overlong.push_back(0x00);
+        QVERIFY(!ParseStemEvent(overlong).has_value());
+
+        for (size_t index = 0; index < 6; ++index) {
+            auto badPrefix = valid;
+            badPrefix[index] ^= 0xFF;
+            QVERIFY(!ParseStemEvent(badPrefix).has_value());
+        }
+        for (unsigned value = 0; value <= 0xFF; ++value) {
+            auto badField = valid;
+            badField[6] = static_cast<uint8_t>(value);
+            const bool validPress = value >= 0x05 && value <= 0x08;
+            QCOMPARE(ParseStemEvent(badField).has_value(), validPress);
+            badField = valid;
+            badField[7] = static_cast<uint8_t>(value);
+            QCOMPARE(ParseStemEvent(badField).has_value(), value == 0x01 || value == 0x02);
+        }
+    }
+
+    void StemActionTableMapsAllEightSlots()
+    {
+        constexpr StemActionTable actions{StemAction::PlayPause,     StemAction::NextTrack,
+                                          StemAction::PreviousTrack, StemAction::VolumeUp,
+                                          StemAction::VolumeDown,    StemAction::ToggleNoiseControl,
+                                          StemAction::None,          StemAction::PlayPause};
+        constexpr StemSide sides[]{StemSide::Left, StemSide::Right};
+        constexpr StemPress presses[]{
+            StemPress::Single, StemPress::Double, StemPress::Triple, StemPress::Long};
+        for (size_t sideIndex = 0; sideIndex < std::size(sides); ++sideIndex) {
+            for (size_t pressIndex = 0; pressIndex < std::size(presses); ++pressIndex) {
+                QCOMPARE(
+                    SelectStemAction(actions, {sides[sideIndex], presses[pressIndex]}),
+                    actions[sideIndex * 4 + pressIndex]);
+            }
+        }
+        QVERIFY(!StemActionIndex(static_cast<StemSide>(0xFF), StemPress::Single).has_value());
+        QCOMPARE(
+            SelectStemAction(actions, {static_cast<StemSide>(0xFF), StemPress::Single}),
+            StemAction::None);
+    }
+
+    void StemDeduperCollapsesRepeatedLongPressBurstsAndReleaseTails()
+    {
+        using namespace std::chrono_literals;
+        using StemPressDeduper::TimePointT;
+        auto now = TimePointT{};
+        StemPressDeduper deduper([&] { return now; });
+        const StemEvent leftLong{StemSide::Left, StemPress::Long};
+        const StemEvent leftSingle{StemSide::Left, StemPress::Single};
+
+        QVERIFY(deduper.Accept(leftLong));
+        now += 100ms;
+        QVERIFY(!deduper.Accept(leftLong));
+        now += 100ms;
+        QVERIFY(!deduper.Accept(leftLong));
+        now += 151ms; // A real gap ends the continuous press.
+        QVERIFY(deduper.Accept(leftLong));
+        now += 100ms;
+        QVERIFY(!deduper.Accept(leftSingle)); // Release tail of the second long press.
+        now += 401ms;
+        QVERIFY(deduper.Accept(leftSingle));
+        QVERIFY(deduper.Accept({StemSide::Right, StemPress::Long}));
+        QCOMPARE(deduper.SuppressedCount(), size_t{3});
+
+        deduper.Reset();
+        QVERIFY(deduper.Accept(leftLong));
+        QCOMPARE(deduper.SuppressedCount(), size_t{0});
     }
 
     //////////////////////////////////////////////////

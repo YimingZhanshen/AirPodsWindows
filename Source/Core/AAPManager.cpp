@@ -1183,6 +1183,18 @@ void Manager::ProcessPacket(
         return;
     }
 
+    // Stem press notification (opcode 0x0019). A transient gesture: nothing is cached and no
+    // state is echoed. ParseStemEvent only accepts the exact eight-byte record documented in
+    // AAPStem.h, so a truncated or unknown-field frame reaches no consumer at all.
+    if (auto stemEvent = ParseStemEvent(packet); stemEvent.has_value()) {
+        LOG(Info, "AAP: Stem press - bud: {}, gesture: {}", StemSideName(stemEvent->side),
+            StemPressName(stemEvent->press));
+        if (callbacks.onStemPress) {
+            callbacks.onStemPress(*stemEvent, attempt);
+        }
+        return;
+    }
+
     // Only opcode 0x0017 carries head-tracking data. Unknown AAP records are
     // valid for diagnostics but must never fall through into this parser.
     const auto headFlight = _commandBroker->InFlight();

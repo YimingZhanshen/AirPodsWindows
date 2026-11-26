@@ -24,6 +24,7 @@
 #include <QLocale>
 #include <QTranslator>
 
+#include "Core/AAPStem.h"
 #include "Core/Settings.h"
 #include "Opts.h"
 
@@ -129,6 +130,9 @@ private:
     void OnAudioAutoConnectEnabledChanged(bool enable) override;
     void OnTrayQuickConnectDeviceChanged(const QString &deviceId) override;
     void OnTaskbarBatteryChanged(Core::Settings::TaskbarStatusBehavior behavior) override;
+    void OnStemActionsChanged(const Core::AAP::StemActionTable &actions) override;
+
+    void ExecuteStemAction(int action);
 };
 
 #define ApdApp (dynamic_cast<ApdApplication *>(QCoreApplication::instance()))

@@ -18,9 +18,21 @@
 
 #pragma once
 
+#include <cstdint>
 #include <optional>
 
 namespace Core::GlobalMedia::Details {
+
+// Platform-neutral media vocabulary. The Windows controller maps these onto the System Media
+// Transport Controls and the audio endpoint; nothing here depends on Qt or WinRT so the stem
+// gesture layer can name an operation without pulling in platform headers.
+enum class MediaAction : uint32_t {
+    TogglePlayPause,
+    NextTrack,
+    PreviousTrack,
+    VolumeUp,
+    VolumeDown,
+};
 
 class ControllerAbstract
 {
@@ -30,5 +42,9 @@ public:
 
     virtual void Play() = 0;
     virtual void Pause() = 0;
+    virtual bool Execute(MediaAction, int volumeStepPercent)
+    {
+        return false;
+    }
 };
 } // namespace Core::GlobalMedia::Details

@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -298,6 +299,12 @@ public:
     bool StopHeadTracking();
     bool IsHeadTrackingActive() const;
 
+    // Stem gestures (blueprint 2.4). The settings layer pushes the whole table so a gesture is
+    // never resolved against a half-applied configuration.
+    void SetStemActions(const AAP::StemActionTable &actions);
+    AAP::StemActionTable GetStemActions() const;
+    bool ToggleNoiseControl();
+
     // Check if the model supports ANC features
     static bool SupportsANC(Model model);
 
@@ -340,6 +347,13 @@ private:
     // reached every receiver, so an older state can never follow a newer one.
     bool _publishingFusedState{false};
     bool _fusedStatePublishPending{false};
+    // Replaced as one snapshot on the settings thread and read on the AAP reader thread.
+    std::mutex _stemActionsMutex;
+    AAP::StemActionTable _stemActions{AAP::DefaultStemActions()};
+    // Long-press/single-press deduplication state; owned by the AAP reader thread, guarded here
+    // because the reconnect path resets it from the disconnect callback.
+    std::mutex _stemDeduperMutex;
+    AAP::StemPressDeduper _stemDeduper;
     uint64_t _requestedDeviceAddress{0};
     std::jthread _deviceLookupThread;
 
@@ -392,6 +406,7 @@ private:
         AAP::EarStatus primary, AAP::EarStatus secondary, AAP::AAPAttempt attempt);
     void OnAAPBatteryChanged(const AAP::AAPBatterySnapshot &snapshot, AAP::AAPAttempt attempt);
     void OnHeadTrackingData(AAP::HeadTrackingData data, AAP::AAPAttempt attempt);
+    void OnStemPress(AAP::StemEvent event, AAP::AAPAttempt attempt);
     void OnAttProbeResult(AAP::AttPathState state, AAP::AAPAttempt attempt);
     void OnAAPConnected(AAP::AAPAttempt attempt);
     void OnAAPDisconnected(AAP::AAPAttempt attempt);
@@ -432,6 +447,10 @@ Q_SIGNALS:
         uint64_t generation, uint64_t requestId, int kind, uint32_t value, uint32_t rollbackValue,
         bool hasRollbackValue);
     void AapCommandStateSafely(uint64_t generation, int kind, uint32_t value);
+    // Emitted from the AAP reader thread for a validated stem gesture. Payload is
+    // Core::AAP::StemAction cast to int; the receiver performs the host work on the GUI thread,
+    // so no widget and no media API is ever touched from the worker.
+    void StemActionRequestedSafely(int action);
 };
 
 std::vector<Core::Bluetooth::Device> GetDevices();

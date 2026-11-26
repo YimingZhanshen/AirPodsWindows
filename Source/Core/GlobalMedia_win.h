@@ -55,7 +55,7 @@ public:
         Min = std::numeric_limits<uint32_t>::max()
     };
 
-    virtual inline ~MediaProgramAbstract(){};
+    virtual inline ~MediaProgramAbstract() {};
 
     virtual bool IsAvailable() = 0;
     virtual bool IsPlaying() const = 0;
@@ -76,14 +76,21 @@ protected:
 public:
     void Play() override;
     void Pause() override;
+    // Stem gesture media operations (blueprint 2.4). Returns false when nothing accepted the
+    // command - no media session, or the audio endpoint refused - and the reason is logged.
+    bool Execute(Details::MediaAction action, int volumeStepPercent) override;
     void SetVolume(int percent);
     int GetVolume() const;
-    void ClearVolumeReductionState();  // Explicitly clear saved volume state
+    void ClearVolumeReductionState(); // Explicitly clear saved volume state
 
 private:
     std::mutex _mutex;
     std::vector<std::unique_ptr<Details::MediaProgramAbstract>> _pausedPrograms;
-    int _savedVolume{0};  // Saved volume before reduction; 0 means no active reduction
-    bool _inReductionSession{false};  // Track if we're currently in a volume reduction session
+    int _savedVolume{0};             // Saved volume before reduction; 0 means no active reduction
+    bool _inReductionSession{false}; // Track if we're currently in a volume reduction session
+
+    // Endpoint volume write that skips the conversational-awareness bookkeeping: an explicit
+    // user nudge from a stem press must not be recorded as a reduction to restore from later.
+    bool SetEndpointVolume(int percent);
 };
 } // namespace Core::GlobalMedia
