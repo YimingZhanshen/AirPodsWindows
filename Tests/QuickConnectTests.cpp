@@ -32,6 +32,7 @@ using namespace std::chrono_literals;
 
 namespace {
 
+using Core::BluetoothLink::ServiceStatus;
 using Core::QuickConnect::Controller;
 using Core::QuickConnect::Device;
 using Core::QuickConnect::Outcome;
@@ -44,6 +45,7 @@ class FakeBackend final : public Core::QuickConnect::Backend
 public:
     std::vector<Device> devices{{"{A}", "AirPods", false}};
     Controller *controller{};
+    std::shared_ptr<Core::BluetoothLink::Adapter> linkAdapter;
     std::atomic<int> listCalls{};
     std::atomic<int> reconnectCalls{};
     std::atomic<int> setControllerCalls{};
@@ -67,11 +69,79 @@ public:
         return id == "{A}";
     }
 
+    // Owned by the backend exactly like the Windows backend owns its real
+    // adapter, so a detached link worker can never outlive it.
+    Core::BluetoothLink::Adapter *LinkAdapter() override
+    {
+        return linkAdapter ? linkAdapter.get() : nullptr;
+    }
+
     void StopObserving() override
     {
         ++stopObservingCalls;
     }
 };
+
+// Scripted stand-in for the BluetoothLink adapter seam: state before/after a
+// request, injectable submit failures, and a query mode that parks the worker
+// inside a call so tests can prove the deadline backstop and the generation
+// discard instead of trusting wall-clock luck.
+class FakeLinkAdapter final : public Core::BluetoothLink::Adapter
+{
+public:
+    using State = Core::BluetoothLink::DeviceLinkState;
+    using Plan = Core::BluetoothLink::ActionPlan;
+    using Failure = Core::BluetoothLink::Failure;
+
+    State before{};
+    State after{};
+    bool applyAfter{true};
+    Failure submitResult{Failure::None};
+    std::atomic<bool> parkQuery{};
+    std::atomic<int> queries{};
+    std::atomic<int> submits{};
+    std::atomic<bool> parkedEntered{};
+    Plan lastPlan{};
+
+    std::optional<State> Query(uint64_t, std::stop_token stopToken) override
+    {
+        ++queries;
+        while (parkQuery.load()) {
+            parkedEntered = true;
+            if (stopToken.stop_requested()) {
+                return std::nullopt;
+            }
+            std::this_thread::sleep_for(5ms);
+        }
+        return before;
+    }
+
+    Failure Submit(uint64_t, const Plan &plan, std::stop_token stopToken) override
+    {
+        ++submits;
+        lastPlan = plan;
+        if (stopToken.stop_requested()) {
+            return Failure::Cancelled;
+        }
+        if (submitResult == Failure::None && applyAfter) {
+            before = after;
+        }
+        return submitResult;
+    }
+};
+
+Core::BluetoothLink::DeviceLinkState MakeLinkState(
+    bool known, Core::BluetoothLink::ServiceStatus a2dp, Core::BluetoothLink::ServiceStatus hfp,
+    bool linkReadable = true, bool linkConnected = false)
+{
+    Core::BluetoothLink::DeviceLinkState state;
+    state.deviceKnown = known;
+    state.a2dp = a2dp;
+    state.hfp = hfp;
+    state.linkReadable = linkReadable;
+    state.linkConnected = linkConnected;
+    return state;
+}
 
 // Blocks inside ListDevices until released, so a test can prove the GUI thread was never in there.
 class BlockingBackend final : public Core::QuickConnect::Backend
@@ -157,6 +227,19 @@ private slots:
     void reconnectRequestDoesNotBlockTheGuiThread();
     void controllerDestructionCancelsInFlightRefresh();
 
+    // Explicit link control (blueprint 2.8)
+    void linkPlanAndSuppressionArePure();
+    void linkConnectHappyPath();
+    void linkDisconnectSuppressesAutomaticReconnect();
+    void manualQuickConnectLiftsSuppression();
+    void linkServiceSwitchFailureIsReported();
+    void linkRequestHitsFiveSecondBudgetOnce();
+    void parkedLinkWorkerCannotPostAfterTimeout();
+    void repeatedLinkClicksRunOneRequest();
+    void linkUnsupportedServiceIsNotGuessed();
+    void linkWithoutBoundDeviceReportsNoDevice();
+    void rebindingRetiresInFlightLinkRequest();
+
     // Tray activation
     void singleClickOpensMainWindowWhenQuickConnectIsDisabled();
     void singleClickRequestsQuickConnectImmediately();
@@ -168,6 +251,7 @@ private slots:
 void QuickConnectTests::initTestCase()
 {
     qRegisterMetaType<Outcome>();
+    qRegisterMetaType<Core::BluetoothLink::Outcome>();
 }
 
 //////////////////////////////////////////////////
@@ -557,6 +641,350 @@ void QuickConnectTests::controllerDetachesBackendOnDestruction()
 
     QVERIFY(backend->controller == nullptr);
     QCOMPARE(backend->setControllerCalls.load(), 2);
+}
+
+//////////////////////////////////////////////////
+// Explicit link control (blueprint 2.8)
+//
+// The five-second budget is the production constant; the tests inject a
+// shortened one and drive the real QTimer backstop rather than calling the
+// slot by hand, same contract as the resolve timer above.
+//
+
+constexpr auto kTestLinkDeadline = 200ms;
+constexpr auto kTestLinkPoll = 20ms;
+
+namespace {
+
+Core::BluetoothLink::Outcome LastLinkOutcome(const QSignalSpy &spy)
+{
+    return spy.last().at(0).value<Core::BluetoothLink::Outcome>();
+}
+
+int LastLinkFailure(const QSignalSpy &spy)
+{
+    return spy.last().at(1).toInt();
+}
+
+std::shared_ptr<FakeBackend> MakeLinkBackend(std::shared_ptr<FakeLinkAdapter> adapter)
+{
+    auto backend = std::make_shared<FakeBackend>();
+    backend->linkAdapter = std::move(adapter);
+    return backend;
+}
+
+} // namespace
+
+void QuickConnectTests::linkPlanAndSuppressionArePure()
+{
+    namespace BL = Core::BluetoothLink;
+
+    QVERIFY(
+        BL::BuildPlan(
+            MakeLinkState(false, BL::ServiceStatus::Disconnected, BL::ServiceStatus::Unsupported),
+            true)
+            .decision == BL::Decision::DeviceNotFound);
+
+    const auto connect =
+        MakeLinkState(true, BL::ServiceStatus::Disconnected, BL::ServiceStatus::Connected);
+    const auto plan = BL::BuildPlan(connect, true);
+    QVERIFY(plan.decision == BL::Decision::Proceed && plan.connectA2DP && !plan.connectHFP);
+    QVERIFY(plan.TouchesAny());
+
+    const auto disconnect = BL::BuildPlan(
+        MakeLinkState(true, BL::ServiceStatus::Connected, BL::ServiceStatus::Connected, true, true),
+        false);
+    QVERIFY(
+        disconnect.decision == BL::Decision::Proceed && disconnect.disconnectA2DP &&
+        disconnect.disconnectHFP);
+
+    QVERIFY(
+        BL::BuildPlan(
+            MakeLinkState(true, BL::ServiceStatus::Unsupported, BL::ServiceStatus::Unavailable),
+            true)
+            .decision == BL::Decision::NoSupportedService);
+    QVERIFY(
+        BL::BuildPlan(
+            MakeLinkState(true, BL::ServiceStatus::Disconnected, BL::ServiceStatus::Unsupported),
+            false)
+            .decision == BL::Decision::AlreadySatisfied);
+
+    const auto progress = BL::Evaluate(
+        plan,
+        MakeLinkState(true, BL::ServiceStatus::Connected, BL::ServiceStatus::Connected, true, true),
+        true);
+    QVERIFY(progress.evaluation == BL::Evaluation::Satisfied);
+
+    QVERIFY(BL::SuppressionFor(BL::Outcome::Disconnected) == std::optional<bool>{true});
+    QVERIFY(BL::SuppressionFor(BL::Outcome::AlreadyDisconnected) == std::optional<bool>{true});
+    QVERIFY(BL::SuppressionFor(BL::Outcome::Connected) == std::optional<bool>{false});
+    QVERIFY(!BL::SuppressionFor(BL::Outcome::TimedOut).has_value());
+}
+
+void QuickConnectTests::linkConnectHappyPath()
+{
+    using Outcome = Core::BluetoothLink::Outcome;
+
+    auto adapter = std::make_shared<FakeLinkAdapter>();
+    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported);
+    adapter->after =
+        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Unsupported, true, true);
+    auto backend = MakeLinkBackend(adapter);
+    Controller controller{
+        backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, kTestLinkDeadline,
+        kTestLinkPoll};
+    controller.SetLinkAddress(0xAABBCCDDEEFFULL);
+    QSignalSpy spy{&controller, &Controller::LinkOutcomeChanged};
+
+    QVERIFY(controller.RequestLinkConnect() == Outcome::Started);
+    QVERIFY(controller.IsLinkBusy());
+    QVERIFY(spy.wait(2'000));
+    QVERIFY(LastLinkOutcome(spy) == Outcome::Connected);
+    QVERIFY(!controller.IsLinkBusy());
+    QVERIFY(controller.IsLinkConnected().value_or(false));
+    QVERIFY(!controller.IsLinkSuppressed());
+    QCOMPARE(adapter->submits.load(), 1);
+}
+
+void QuickConnectTests::linkDisconnectSuppressesAutomaticReconnect()
+{
+    using Outcome = Core::BluetoothLink::Outcome;
+
+    auto adapter = std::make_shared<FakeLinkAdapter>();
+    adapter->before =
+        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Unsupported, true, true);
+    adapter->after =
+        MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported, true, false);
+    auto backend = MakeLinkBackend(adapter);
+    Controller controller{
+        backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, kTestLinkDeadline,
+        kTestLinkPoll};
+    controller.SetEnabled(true);
+    controller.SetAudioAutoConnectEnabled(true);
+    controller.SetDeviceId("{A}");
+    controller.SetLinkAddress(0xAABBCCDDEEFFULL);
+    QSignalSpy spy{&controller, &Controller::LinkOutcomeChanged};
+
+    QVERIFY(controller.RequestLinkDisconnect() == Outcome::Started);
+    QVERIFY(spy.wait(2'000));
+    QVERIFY(LastLinkOutcome(spy) == Outcome::Disconnected);
+    QVERIFY(controller.IsLinkSuppressed());
+    QVERIFY(controller.IsLinkConnected() == std::optional<bool>{false});
+
+    // Playback edges must not undo the manual disconnect...
+    backend->reconnectCalls = 0;
+    controller.OnPlaybackStateChanged(false);
+    controller.OnPlaybackStateChanged(true);
+    QTest::qWait(50);
+    QCOMPARE(backend->reconnectCalls.load(), 0);
+
+    // ...and neither does a natural endpoint-connect event.
+    controller.OnEndpointStateChanged("{A}", true);
+    QTest::qWait(20);
+    QVERIFY(controller.IsLinkSuppressed());
+    QCOMPARE(backend->reconnectCalls.load(), 0);
+}
+
+void QuickConnectTests::manualQuickConnectLiftsSuppression()
+{
+    using Outcome = Core::BluetoothLink::Outcome;
+
+    auto adapter = std::make_shared<FakeLinkAdapter>();
+    adapter->before =
+        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Unsupported, true, true);
+    adapter->after =
+        MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported, true, false);
+    auto backend = MakeLinkBackend(adapter);
+    Controller controller{
+        backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, kTestLinkDeadline,
+        kTestLinkPoll};
+    controller.SetEnabled(true);
+    controller.SetAudioAutoConnectEnabled(true);
+    controller.SetDeviceId("{A}");
+    controller.SetLinkAddress(0xAABBCCDDEEFFULL);
+    QSignalSpy spy{&controller, &Controller::LinkOutcomeChanged};
+
+    QVERIFY(controller.RequestLinkDisconnect() == Outcome::Started);
+    QVERIFY(spy.wait(2'000));
+    QVERIFY(controller.IsLinkSuppressed());
+
+    // A manual quick-connect click is the explicit reconnect gesture.
+    QVERIFY(controller.Request() == Core::QuickConnect::Outcome::RequestStarted);
+    QVERIFY(!controller.IsLinkSuppressed());
+}
+
+void QuickConnectTests::linkServiceSwitchFailureIsReported()
+{
+    using Outcome = Core::BluetoothLink::Outcome;
+
+    auto adapter = std::make_shared<FakeLinkAdapter>();
+    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported);
+    adapter->submitResult = Core::BluetoothLink::Failure::RequestRejected;
+    auto backend = MakeLinkBackend(adapter);
+    Controller controller{
+        backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, kTestLinkDeadline,
+        kTestLinkPoll};
+    controller.SetLinkAddress(0xAABBCCDDEEFFULL);
+    QSignalSpy spy{&controller, &Controller::LinkOutcomeChanged};
+
+    QVERIFY(controller.RequestLinkConnect() == Outcome::Started);
+    QVERIFY(spy.wait(2'000));
+    QVERIFY(LastLinkOutcome(spy) == Outcome::Failed);
+    QVERIFY(
+        LastLinkFailure(spy) == static_cast<int>(Core::BluetoothLink::Failure::RequestRejected));
+    QVERIFY(!controller.IsLinkBusy());
+    QVERIFY(!controller.IsLinkSuppressed());
+    QVERIFY(!controller.IsLinkConnected().has_value()); // no state was proven
+}
+
+void QuickConnectTests::linkRequestHitsFiveSecondBudgetOnce()
+{
+    using Outcome = Core::BluetoothLink::Outcome;
+
+    auto adapter = std::make_shared<FakeLinkAdapter>();
+    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported);
+    adapter->applyAfter = false; // request accepted, link never comes up
+    auto backend = MakeLinkBackend(adapter);
+    Controller controller{
+        backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, kTestLinkDeadline,
+        kTestLinkPoll};
+    controller.SetLinkAddress(0xAABBCCDDEEFFULL);
+    QSignalSpy spy{&controller, &Controller::LinkOutcomeChanged};
+
+    QVERIFY(controller.RequestLinkConnect() == Outcome::Started);
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 2'000);
+    QVERIFY(LastLinkOutcome(spy) == Outcome::TimedOut);
+    QVERIFY(LastLinkFailure(spy) == static_cast<int>(Core::BluetoothLink::Failure::Timeout));
+
+    // Exactly one answer per request: worker deadline and timer backstop race
+    // intentionally, the generation guard makes the loser silent.
+    QTest::qWait(300);
+    QCOMPARE(spy.count(), 1);
+    QVERIFY(!controller.IsLinkBusy());
+}
+
+void QuickConnectTests::parkedLinkWorkerCannotPostAfterTimeout()
+{
+    using Outcome = Core::BluetoothLink::Outcome;
+
+    auto adapter = std::make_shared<FakeLinkAdapter>();
+    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported);
+    adapter->after =
+        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Unsupported, true, true);
+    adapter->parkQuery = true;
+    auto backend = MakeLinkBackend(adapter);
+    Controller controller{
+        backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, 100ms, kTestLinkPoll};
+    controller.SetLinkAddress(0xAABBCCDDEEFFULL);
+    QSignalSpy spy{&controller, &Controller::LinkOutcomeChanged};
+
+    QVERIFY(controller.RequestLinkConnect() == Outcome::Started);
+    QTRY_VERIFY(adapter->parkedEntered.load());
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 2'000); // the backstop answers the user
+    QVERIFY(LastLinkOutcome(spy) == Outcome::TimedOut);
+
+    adapter->parkQuery = false; // release the worker; its post is stale now
+    QTest::qWait(200);
+    QCOMPARE(spy.count(), 1);
+
+    // A fresh request owns a fresh generation and completes normally.
+    QVERIFY(controller.RequestLinkConnect() == Outcome::Started);
+    QVERIFY(spy.wait(2'000));
+    QVERIFY(LastLinkOutcome(spy) == Outcome::Connected);
+}
+
+void QuickConnectTests::repeatedLinkClicksRunOneRequest()
+{
+    using Outcome = Core::BluetoothLink::Outcome;
+
+    auto adapter = std::make_shared<FakeLinkAdapter>();
+    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported);
+    adapter->after =
+        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Unsupported, true, true);
+    adapter->parkQuery = true;
+    auto backend = MakeLinkBackend(adapter);
+    Controller controller{
+        backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, 5'000ms, kTestLinkPoll};
+    controller.SetLinkAddress(0xAABBCCDDEEFFULL);
+    QSignalSpy spy{&controller, &Controller::LinkOutcomeChanged};
+
+    QVERIFY(controller.RequestLinkConnect() == Outcome::Started);
+    QTRY_VERIFY(adapter->parkedEntered.load());
+
+    // Impatient clicking joins the running request; no second OS round trip.
+    QVERIFY(controller.RequestLinkConnect() == Outcome::Started);
+    QVERIFY(controller.RequestLinkDisconnect() == Outcome::Started);
+    QCOMPARE(adapter->submits.load(), 0);
+
+    adapter->parkQuery = false;
+    QTRY_VERIFY_WITH_TIMEOUT(spy.count() >= 1 && LastLinkOutcome(spy) != Outcome::Started, 2'000);
+    // The one running attempt was the first (connect) request.
+    QVERIFY(LastLinkOutcome(spy) == Outcome::Connected);
+    QCOMPARE(adapter->submits.load(), 1);
+    QVERIFY(!controller.IsLinkBusy());
+}
+
+void QuickConnectTests::linkUnsupportedServiceIsNotGuessed()
+{
+    using Outcome = Core::BluetoothLink::Outcome;
+
+    auto adapter = std::make_shared<FakeLinkAdapter>();
+    adapter->before = MakeLinkState(true, ServiceStatus::Unsupported, ServiceStatus::Unavailable);
+    auto backend = MakeLinkBackend(adapter);
+    Controller controller{
+        backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, kTestLinkDeadline,
+        kTestLinkPoll};
+    controller.SetLinkAddress(0xAABBCCDDEEFFULL);
+    QSignalSpy spy{&controller, &Controller::LinkOutcomeChanged};
+
+    QVERIFY(controller.RequestLinkConnect() == Outcome::Started);
+    QVERIFY(spy.wait(2'000));
+    QVERIFY(LastLinkOutcome(spy) == Outcome::NoSupportedService);
+    QCOMPARE(adapter->submits.load(), 0);
+}
+
+void QuickConnectTests::linkWithoutBoundDeviceReportsNoDevice()
+{
+    using Outcome = Core::BluetoothLink::Outcome;
+
+    auto adapter = std::make_shared<FakeLinkAdapter>();
+    auto backend = MakeLinkBackend(adapter);
+    Controller controller{
+        backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, kTestLinkDeadline,
+        kTestLinkPoll};
+    QSignalSpy spy{&controller, &Controller::LinkOutcomeChanged};
+
+    QVERIFY(controller.RequestLinkDisconnect() == Outcome::NoDevice);
+    QCOMPARE(spy.count(), 1);
+    QVERIFY(LastLinkOutcome(spy) == Outcome::NoDevice);
+    QCOMPARE(adapter->queries.load(), 0);
+    QCOMPARE(adapter->submits.load(), 0);
+}
+
+void QuickConnectTests::rebindingRetiresInFlightLinkRequest()
+{
+    using Outcome = Core::BluetoothLink::Outcome;
+
+    auto adapter = std::make_shared<FakeLinkAdapter>();
+    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported);
+    adapter->parkQuery = true;
+    auto backend = MakeLinkBackend(adapter);
+    Controller controller{
+        backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, 5'000ms, kTestLinkPoll};
+    controller.SetLinkAddress(0xAABBCCDDEEFFULL);
+    QSignalSpy spy{&controller, &Controller::LinkOutcomeChanged};
+
+    QVERIFY(controller.RequestLinkConnect() == Outcome::Started);
+    QTRY_VERIFY(adapter->parkedEntered.load());
+
+    // Binding another device (or unbinding) must not leave a request that can
+    // still speak for the previous one.
+    controller.SetLinkAddress(0x112233445566ULL);
+    QVERIFY(!controller.IsLinkBusy());
+
+    adapter->parkQuery = false;
+    QTest::qWait(200);
+    QCOMPARE(spy.count(), 0);
 }
 
 //////////////////////////////////////////////////

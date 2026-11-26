@@ -23,6 +23,7 @@
 #endif
 
 #include "QuickConnect.h"
+#include "BluetoothLinkControl.h"
 #include "OS/Windows.h"
 
 #include <atomic>
@@ -44,6 +45,14 @@ public:
     std::vector<Device> ListDevices(std::stop_token stopToken) override;
     bool RequestReconnect(const QString &id, std::stop_token stopToken) override;
     void StopObserving() override;
+
+    // Owns the explicit link adapter used by the tray connect/disconnect
+    // entry (blueprint 2.8). The Controller only borrows the raw pointer for
+    // one worker round trip; the shared_ptr to this backend keeps it alive.
+    Core::BluetoothLink::Adapter *LinkAdapter() override
+    {
+        return _linkAdapter.get();
+    }
 
     ULONG STDMETHODCALLTYPE AddRef() override;
     ULONG STDMETHODCALLTYPE Release() override;
@@ -71,6 +80,7 @@ private:
 
     OS::Windows::Com::UniquePtr<IMMDeviceEnumerator> _deviceEnumerator;
     std::atomic<std::shared_ptr<const Observation>> _observation;
+    std::unique_ptr<Core::BluetoothLink::Adapter> _linkAdapter;
     Controller *_controller{};
     std::atomic<ULONG> _refCount{1};
     std::mutex _controllerMutex;

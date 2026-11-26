@@ -456,7 +456,7 @@ HRESULT RequestEndpointReconnect(const QString &endpointId, std::stop_token stop
 
 } // namespace
 
-WindowsBackend::WindowsBackend()
+WindowsBackend::WindowsBackend() : _linkAdapter{Core::BluetoothLink::CreateWindowsAdapter()}
 {
     const HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     _comInitialized = SUCCEEDED(result);

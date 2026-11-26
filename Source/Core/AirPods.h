@@ -260,6 +260,21 @@ public:
     bool StopHeadTracking();
     bool IsHeadTrackingActive() const;
 
+    // Explicit link control (blueprint 2.8, tray connect/disconnect).
+    //
+    // A manual link disconnect tears the AAP session down through the same
+    // desired-address stop path as P2 (state-machine Stop/FinishStop, never a
+    // generation bypass) and keeps it down: natural device-connected events
+    // must not re-establish it. An explicit reconnect lifts the suppression
+    // and connects again when the bound model supports it. The flag is
+    // session-lifetime on purpose - a process restart re-reads the OS link
+    // state instead of inheriting a stale suppression (see task-D7 report).
+    void SetLinkSuppressed(bool suppressed);
+    bool IsLinkSuppressed() const
+    {
+        return _manualLinkSuppressed;
+    }
+
     // Check if the model supports ANC features
     static bool SupportsANC(Model model);
 
@@ -274,6 +289,7 @@ private:
     QString _deviceName;
     Model _boundModel{Model::Unknown};
     bool _deviceConnected{false};
+    std::atomic<bool> _manualLinkSuppressed{false};
     std::atomic<bool> _scannerWanted{false};
     std::atomic<bool> _automaticEarDetection{false};
     std::atomic<bool> _conversationalAwarenessEnabled{false};

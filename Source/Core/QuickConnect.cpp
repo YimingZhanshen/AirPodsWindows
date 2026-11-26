@@ -46,8 +46,10 @@ void Backend::SetController(Controller *controller)
 
 Controller::Controller(
     std::shared_ptr<Backend> backend, std::chrono::milliseconds resolveTimeout,
-    std::chrono::milliseconds autoRetryCooldown)
-    : QObject{nullptr}, _backend{std::move(backend)}, _autoRetryCooldown{autoRetryCooldown}
+    std::chrono::milliseconds autoRetryCooldown, std::chrono::milliseconds linkDeadline,
+    std::chrono::milliseconds linkPoll)
+    : QObject{nullptr}, _backend{std::move(backend)}, _autoRetryCooldown{autoRetryCooldown},
+      _linkDeadline{linkDeadline}, _linkPoll{linkPoll}
 {
     APD_ASSERT(_backend != nullptr);
 
@@ -57,6 +59,13 @@ Controller::Controller(
     _resolveTimer.setSingleShot(true);
     _resolveTimer.setInterval(resolveTimeout);
     QObject::connect(&_resolveTimer, &QTimer::timeout, this, &Controller::ResolveTimedOut);
+
+    // Backstop for the explicit link requests: the worker enforces the same
+    // deadline, but a request stuck inside a driver call can only be
+    // answered to the GUI by this timer.
+    _linkDeadlineTimer.setSingleShot(true);
+    _linkDeadlineTimer.setInterval(linkDeadline);
+    QObject::connect(&_linkDeadlineTimer, &QTimer::timeout, this, &Controller::ResolveLinkTimedOut);
 }
 
 Controller::~Controller()
@@ -69,6 +78,7 @@ Controller::~Controller()
 
     _deviceRefreshThread.request_stop();
     _requestStop.request_stop();
+    _linkStop.request_stop();
 
     // The refresh worker cancels promptly - WinRT enumeration takes a stop callback and the
     // endpoint walk checks between items - so waiting for it costs nothing.
@@ -79,9 +89,13 @@ Controller::~Controller()
     // The reconnect worker can be inside a blocking KsProperty call that has no cancellation point,
     // and the driver decides when that returns. Joining it here would freeze the GUI thread on
     // quit, so let it finish on its own; it holds a shared reference to the backend and posts
-    // through `_link`, so it cannot outlive anything it touches.
+    // through `_link`, so it cannot outlive anything it touches. The link worker uses the same
+    // escape hatch for the same reason.
     if (_requestThread.joinable()) {
         _requestThread.detach();
+    }
+    if (_linkThread.joinable()) {
+        _linkThread.detach();
     }
 
     _backend->SetController(nullptr);
@@ -141,6 +155,26 @@ void Controller::SetDeviceId(QString id)
     _deviceId = std::move(id);
 }
 
+void Controller::SetLinkAddress(uint64_t address)
+{
+    if (_linkAddress == address) {
+        return;
+    }
+
+    // A rebinding invalidates everything the previous device's link proved.
+    // The generation bump retires an in-flight worker's post, and the stop
+    // token releases it from its poll sleep.
+    _linkAddress = address;
+    _lastLinkConnected.reset();
+    _linkSuppressed = false;
+    ++_linkGeneration;
+    _linkStop.request_stop();
+    if (_linkRunning) {
+        _linkRunning = false;
+        _linkDeadlineTimer.stop();
+    }
+}
+
 std::vector<Device> Controller::Devices()
 {
     return _devices;
@@ -186,6 +220,16 @@ Outcome Controller::Request()
 
 Outcome Controller::Request(bool automatic)
 {
+    if (automatic && _linkSuppressed) {
+        // The user explicitly disconnected this device's link during the
+        // session. A playback edge must not silently undo that; only an
+        // explicit connect request lifts the suppression.
+        return Outcome::Disabled;
+    }
+    if (!automatic) {
+        _linkSuppressed = false;
+    }
+
     if (!automatic && IsBusy()) {
         _manualRequestJoined = true;
     }
@@ -340,6 +384,125 @@ void Controller::EmitOutcome(Outcome outcome, const QString &deviceName)
         return;
     }
     emit OutcomeChanged(outcome, deviceName);
+}
+
+//////////////////////////////////////////////////
+// Explicit link control (blueprint 2.8)
+//
+
+Core::BluetoothLink::Outcome Controller::RequestLinkConnect()
+{
+    return RequestLink(true);
+}
+
+Core::BluetoothLink::Outcome Controller::RequestLinkDisconnect()
+{
+    return RequestLink(false);
+}
+
+Core::BluetoothLink::Outcome Controller::RequestLink(bool connect)
+{
+    // Repeated clicks while a request (or its deadline wait) is under way
+    // always join the running one: exactly one OS round trip at a time.
+    if (_linkRunning) {
+        EmitLinkOutcome(Core::BluetoothLink::Outcome::Started, Core::BluetoothLink::Failure::None);
+        return Core::BluetoothLink::Outcome::Started;
+    }
+
+    if (_linkAddress == 0) {
+        EmitLinkOutcome(Core::BluetoothLink::Outcome::NoDevice, Core::BluetoothLink::Failure::None);
+        return Core::BluetoothLink::Outcome::NoDevice;
+    }
+
+    Core::BluetoothLink::Adapter *adapter = _backend->LinkAdapter();
+    if (adapter == nullptr) {
+        EmitLinkOutcome(
+            Core::BluetoothLink::Outcome::AdapterUnavailable, Core::BluetoothLink::Failure::None);
+        return Core::BluetoothLink::Outcome::AdapterUnavailable;
+    }
+
+    ++_linkGeneration;
+    const uint64_t generation = _linkGeneration;
+    _linkRunning = true;
+    _linkStop = std::stop_source{};
+
+    if (_linkThread.joinable()) {
+        _linkThread.join();
+    }
+
+    // Same detach-safe contract as the reconnect worker: the thread keeps a
+    // shared reference to the backend (which owns the adapter) and posts
+    // through `_link`, so it can never outlive what it touches, and a
+    // completion for a retired generation is dropped by FinishLink.
+    _linkThread = std::thread{[backend = _backend, link = _link, adapter,
+                               stopToken = _linkStop.get_token(), address = _linkAddress, connect,
+                               deadline = _linkDeadline, poll = _linkPoll, generation]() {
+        const auto result =
+            Core::BluetoothLink::RunAttempt(*adapter, address, connect, stopToken, deadline, poll);
+        if (stopToken.stop_requested()) {
+            return;
+        }
+        PostToController(
+            link, [generation, result](Controller &self) { self.FinishLink(generation, result); });
+    }};
+
+    _linkDeadlineTimer.start();
+    return Core::BluetoothLink::Outcome::Started;
+}
+
+void Controller::FinishLink(uint64_t generation, Core::BluetoothLink::AttemptResult result)
+{
+    if (generation != _linkGeneration) {
+        // The deadline backstop already answered the user, or a newer request
+        // owns the slot. Late events from a retired attempt never re-apply
+        // stale state (same contract as the P2 connection generations).
+        return;
+    }
+
+    _linkRunning = false;
+    _linkDeadlineTimer.stop();
+
+    if (const auto suppression = Core::BluetoothLink::SuppressionFor(result.outcome)) {
+        _linkSuppressed = suppression.value();
+    }
+    switch (result.outcome) {
+    case Core::BluetoothLink::Outcome::Connected:
+    case Core::BluetoothLink::Outcome::AlreadyConnected:
+        _lastLinkConnected = true;
+        break;
+    case Core::BluetoothLink::Outcome::Disconnected:
+    case Core::BluetoothLink::Outcome::AlreadyDisconnected:
+        _lastLinkConnected = false;
+        break;
+    case Core::BluetoothLink::Outcome::DeviceNotFound:
+        _lastLinkConnected.reset();
+        break;
+    default:
+        break;
+    }
+
+    EmitLinkOutcome(result.outcome, result.failure);
+}
+
+void Controller::ResolveLinkTimedOut()
+{
+    if (!_linkRunning) {
+        return;
+    }
+
+    // The UI budget is five seconds even when the worker is stuck inside an
+    // uninterruptible driver call. Retire the generation first so the worker
+    // can post nothing for this attempt, then release its poll sleep.
+    ++_linkGeneration;
+    _linkRunning = false;
+    _linkStop.request_stop();
+    EmitLinkOutcome(Core::BluetoothLink::Outcome::TimedOut, Core::BluetoothLink::Failure::Timeout);
+}
+
+void Controller::EmitLinkOutcome(
+    Core::BluetoothLink::Outcome outcome, Core::BluetoothLink::Failure failure)
+{
+    emit LinkOutcomeChanged(outcome, static_cast<int>(failure));
 }
 
 } // namespace Core::QuickConnect

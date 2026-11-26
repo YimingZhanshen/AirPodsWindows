@@ -388,6 +388,7 @@ if (WIN32)
         "Source/Core/AAPTransport_win.cpp"
         "Source/Core/MagicAAPWinRT.cpp"
         "Source/Core/QuickConnect_win.cpp"
+        "Source/Core/BluetoothLinkControl_win.cpp"
     )
     list(APPEND APD_APP_CODE_FILES
         "Source/Resource/Application.manifest"
@@ -535,7 +536,9 @@ target_link_libraries(
 )
 
 if (WIN32)
-    target_link_libraries(apd_core PRIVATE Ole32 Uuid Ksuser)
+    # Bthprops: bthprops.cpl imports for the explicit link control read-back
+    # (BluetoothGetDeviceInfo, blueprint 2.8).
+    target_link_libraries(apd_core PRIVATE Ole32 Uuid Ksuser Bthprops)
 endif()
 
 target_link_libraries(

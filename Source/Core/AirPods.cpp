@@ -431,6 +431,15 @@ void Manager::ConnectAAP()
 {
     LOG(Info, "ConnectAAP called");
 
+    if (_manualLinkSuppressed.load()) {
+        // The user asked the tray to disconnect the link. A natural
+        // device-connected edge (advertisements, status callbacks) must not
+        // re-establish the session until an explicit connect lifts the
+        // suppression; the desired-address state machine is untouched here.
+        LOG(Info, "ConnectAAP: suppressed by an explicit link disconnect");
+        return;
+    }
+
     if (!_boundDevice.has_value()) {
         LOG(Warn, "ConnectAAP: No bound device");
         return;
@@ -484,6 +493,26 @@ void Manager::ScheduleAAPConnection(uint64_t address)
         }
     }
     _aapWorkerCv.notify_all();
+}
+
+void Manager::SetLinkSuppressed(bool suppressed)
+{
+    const bool was = _manualLinkSuppressed.exchange(suppressed);
+    if (was == suppressed) {
+        return;
+    }
+
+    if (suppressed) {
+        LOG(Info, "Explicit link disconnect: tearing down AAP and suppressing reconnects");
+        // Same stop path as unbind/shutdown: clears the desired address, runs
+        // the state machine through Stop -> FinishStop, and cancels a pending
+        // connect. Re-enabling later assigns a fresh generation from Begin().
+        DisconnectAAP();
+    }
+    else {
+        LOG(Info, "Explicit link connect: resuming automatic AAP connection");
+        ConnectAAP();
+    }
 }
 
 void Manager::DisconnectAAP()
