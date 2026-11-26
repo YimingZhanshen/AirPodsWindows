@@ -610,6 +610,49 @@ private Q_SLOTS:
         QCOMPARE(Core::Settings::GetCurrent().ppe_cap_level, uint8_t{25});
     }
 
+    // D3: the inline strength slider is editable only in Adaptive mode, persists edits,
+    // and never rewrites the remembered value when the mode changes.
+    void SettingsWindowGatesAndPersistsAdaptiveStrength()
+    {
+        Core::Settings::Save(Core::Settings::GetDefault());
+        Core::QuickConnect::Controller quickConnect{
+            std::make_shared<Core::QuickConnect::NullBackend>()};
+        Gui::SettingsWindow window{[] { return 0; }, quickConnect};
+
+        auto *combo = window.findChild<QComboBox *>("cbNoiseControlMode");
+        auto *slider = window.findChild<QSlider *>("hsAdaptiveNoiseLevel");
+        auto *valueLabel = window.findChild<QLabel *>("lblAdaptiveNoiseLevelValue");
+        QVERIFY(combo != nullptr);
+        QVERIFY(slider != nullptr);
+        QVERIFY(valueLabel != nullptr);
+        QCOMPARE(slider->minimum(), 0);
+        QCOMPARE(slider->maximum(), 100);
+
+        // Default mode Off: the strength control is inert before showEvent.
+        QCOMPARE(combo->currentIndex(), 0);
+        QVERIFY(!slider->isEnabled());
+
+        combo->setCurrentIndex(3);
+        QVERIFY(slider->isEnabled());
+        slider->setValue(80);
+        QCOMPARE(valueLabel->text(), QStringLiteral("80"));
+        QCOMPARE(Core::Settings::GetCurrent().adaptive_noise_level, uint8_t{80});
+
+        // Leaving Adaptive disarms the control but keeps the remembered strength.
+        combo->setCurrentIndex(1);
+        QVERIFY(!slider->isEnabled());
+        slider->setValue(10);
+        QCOMPARE(Core::Settings::GetCurrent().adaptive_noise_level, uint8_t{80});
+
+        auto *buttonBox = window.findChild<QDialogButtonBox *>();
+        QVERIFY(buttonBox != nullptr);
+        buttonBox->button(QDialogButtonBox::RestoreDefaults)->click();
+        QCOMPARE(
+            Core::Settings::GetCurrent().adaptive_noise_level,
+            Core::AAP::kAdaptiveNoiseLevelDefault);
+        QCOMPARE(slider->value(), int{Core::AAP::kAdaptiveNoiseLevelDefault});
+    }
+
     void ConnectionSuccessOpensBatteryWindowAndDismissesNotification()
     {
         Core::QuickConnect::Controller quickConnect{

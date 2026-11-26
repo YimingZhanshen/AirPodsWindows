@@ -23,6 +23,7 @@
 #include <magic_enum.hpp>
 
 #include "../Logger.h"
+#include "AdaptiveNoiseLevel.h"
 #include "SettingsRepository.h"
 
 using namespace boost;
@@ -153,11 +154,15 @@ void OnApply_ppe_cap_level(const Fields &newFields)
         [&](ApplyObserver &observer) { observer.OnPpeCapLevelChanged(newFields.ppe_cap_level); });
 }
 
+// D3: the stored key is user-editable on disk, so hand-set values above 100 are normalized
+// here (pure, Qt-free policy) before any observer sees them.
 void OnApply_adaptive_noise_level(const Fields &newFields)
 {
-    Impl::NotifyApplyObserver([&](ApplyObserver &observer) {
-        observer.OnAdaptiveNoiseLevelChanged(newFields.adaptive_noise_level);
-    });
+    const auto level = Core::AAP::NormalizeAdaptiveNoiseLevel(newFields.adaptive_noise_level);
+    LOG(Info, "OnApply_adaptive_noise_level: {}", level);
+
+    Impl::NotifyApplyObserver(
+        [&](ApplyObserver &observer) { observer.OnAdaptiveNoiseLevelChanged(level); });
 }
 
 void OnApply_head_tracking(const Fields &newFields)
@@ -338,6 +343,8 @@ public:
             pfr::for_each_field(_fieldsMeta, [&](auto &field) {
                 loadKey(field.GetName(), field.GetValue(_fields), field.IsSensitive());
             });
+            _fields.adaptive_noise_level =
+                Core::AAP::NormalizeAdaptiveNoiseLevel(_fields.adaptive_noise_level);
             return LoadResult::Successful;
         }
     }
@@ -346,6 +353,8 @@ public:
     {
         std::lock_guard<std::mutex> lock{_mutex};
 
+        newFields.adaptive_noise_level =
+            Core::AAP::NormalizeAdaptiveNoiseLevel(newFields.adaptive_noise_level);
         _fields = std::move(newFields);
         SaveWithoutLock();
         ApplyWithoutLock();
@@ -469,6 +478,8 @@ ModifiableSafeAccessor::ModifiableSafeAccessor(std::mutex &lock, Fields &fields)
 
 ModifiableSafeAccessor::~ModifiableSafeAccessor()
 {
+    Manager::GetInstance()._fields.adaptive_noise_level =
+        Core::AAP::NormalizeAdaptiveNoiseLevel(Manager::GetInstance()._fields.adaptive_noise_level);
     Manager::GetInstance().SaveWithoutLock();
     Manager::GetInstance().ApplyChangedFieldsOnlyWithoutLock(_oldFields);
 }

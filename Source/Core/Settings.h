@@ -27,6 +27,7 @@
 
 #include "../Helper.h"
 #include "AAPStem.h"
+#include "AdaptiveNoiseLevel.h"
 
 namespace Core::Settings {
 
@@ -85,6 +86,9 @@ void SetRepository(std::unique_ptr<Repository> repository);
 // removes the key (same lifecycle as `reduce_loud_sounds`). Only-append field list plus
 // name-based repository keys => old files keep loading under `kFieldsAbiVersion` 1.
 //
+// New keys are appended at the end; existing keys keep their name and type so ABI 1
+// remains valid in both directions. A rename or type change must bump the ABI instead.
+
 // clang-format off
 #define SETTINGS_FIELDS(callback)                                                                  \
     callback(QString, language_locale, {}, Impl::OnApply(&OnApply_language_locale))                \
@@ -140,9 +144,9 @@ void SetRepository(std::unique_ptr<Repository> repository);
     callback(uint8_t, ppe_cap_level, {25},                                                         \
         Impl::OnApply(&OnApply_ppe_cap_level),                                                     \
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Caps how loud loud sounds get, for hearing protection (0-100).")}) \
-    callback(uint8_t, adaptive_noise_level, {50},                                                   \
-        Impl::OnApply(&OnApply_adaptive_noise_level),                                                \
-        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Adaptive noise strength (0-100), used when noise control is Adaptive.")}) \
+    callback(uint8_t, adaptive_noise_level, {Core::AAP::kAdaptiveNoiseLevelDefault},               \
+        Impl::OnApply(&OnApply_adaptive_noise_level),                                              \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Sets how strongly Adaptive mode shapes ambient noise (0-100). Adjustable only while the noise control mode is Adaptive.")}) \
     callback(bool, head_tracking, {false}, Impl::OnApply(&OnApply_head_tracking))                   \
     callback(Core::AAP::StemAction, stem_left_single, {Core::AAP::DefaultStemActions()[0]},         \
         Impl::OnApply(&OnApply_stem_actions),                                                     \

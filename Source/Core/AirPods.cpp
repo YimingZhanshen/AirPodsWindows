@@ -751,6 +751,11 @@ bool Manager::IsCurrentAAPAttempt(AAP::AAPAttempt attempt) const
         return false;
     }
     std::lock_guard lock{_aapWorkerMutex};
+    return IsCurrentAAPAttemptLocked(attempt);
+}
+
+bool Manager::IsCurrentAAPAttemptLocked(AAP::AAPAttempt attempt) const
+{
     return (_aapConnectInProgress && _aapActiveAttempt.address == attempt.address &&
             _aapActiveAttempt.generation == attempt.generation) ||
            (_aapConnection.State() == AAP::AAPConnectionState::Connected && _aapMgr.IsConnected() &&
@@ -998,8 +1003,15 @@ std::optional<uint8_t> Manager::GetPpeCapLevel() const
 bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
 {
     return _aapMgr
-        .SubmitCommand({AAP::AAPCommandKind::SetAdaptiveNoiseLevel, std::min<uint8_t>(level, 100)})
+        .SubmitCommand(
+            {AAP::AAPCommandKind::SetAdaptiveNoiseLevel,
+             Core::AAP::NormalizeAdaptiveNoiseLevel(level)})
         .accepted;
+}
+
+std::optional<uint8_t> Manager::GetAdaptiveNoiseLevel() const
+{
+    return _aapMgr.GetAdaptiveNoiseLevel();
 }
 
 bool Manager::IsAAPConnected() const
@@ -1149,8 +1161,8 @@ void Manager::OnPpeCapLevelChanged(uint8_t level)
 
 void Manager::OnAdaptiveNoiseLevelChanged(uint8_t level)
 {
-    _adaptiveNoiseLevel = std::min<uint8_t>(level, 100);
-    _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetAdaptiveNoiseLevel, _adaptiveNoiseLevel.load()});
+    _adaptiveNoiseLevel = Core::AAP::NormalizeAdaptiveNoiseLevel(level);
+    SetAdaptiveNoiseLevel(_adaptiveNoiseLevel.load());
 }
 
 void Manager::OnHeadTrackingChanged(bool enabled)
@@ -1171,8 +1183,14 @@ void Manager::OnNoiseControlModeChanged(AAP::NoiseControlMode mode)
 
 void Manager::OnNoiseControlModeNotification(AAP::NoiseControlMode mode, AAP::AAPAttempt attempt)
 {
-    if (!IsCurrentAAPAttempt(attempt)) {
-        return;
+    {
+        std::lock_guard lock{_aapWorkerMutex};
+        if (!IsCurrentAAPAttemptLocked(attempt)) {
+            return;
+        }
+        // Publish under the same generation lock so an old notification cannot arm the
+        // adaptive-strength gate after a reconnect has selected a new attempt.
+        _currentNoiseControlMode = static_cast<int>(mode);
     }
     LOG(Info, "Noise control mode changed to: {}", Helper::ToString(mode).toStdString());
 

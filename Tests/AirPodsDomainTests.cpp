@@ -22,6 +22,7 @@
 #include <Config.h>
 #include "Source/Core/AirPods.h"
 #include "Source/Core/BatteryFusion.h"
+#include "Source/Core/AdaptiveNoiseLevel.h"
 #include "Source/Core/Settings.h"
 #include "Source/Core/SettingsRepository.h"
 #include "Source/Core/Update.h"
@@ -78,6 +79,11 @@ public:
     {
         ppeCapLevel = level;
     }
+    void OnAdaptiveNoiseLevelChanged(uint8_t level) override
+    {
+        adaptiveNoiseLevel = level;
+        ++adaptiveNoiseLevelChanges;
+    }
     void OnNoiseControlModeChanged(uint32_t mode) override
     {
         noiseControlMode = mode;
@@ -113,6 +119,8 @@ public:
     bool personalizedVolume{false};
     bool loudSoundReduction{false};
     uint8_t ppeCapLevel{};
+    uint8_t adaptiveNoiseLevel{};
+    int adaptiveNoiseLevelChanges{0};
     uint32_t noiseControlMode{};
     bool audioAutoConnectEnabled{false};
     int audioAutoConnectChanges{0};
@@ -293,6 +301,8 @@ private Q_SLOTS:
     void KeepsPpeCapIndependentFromLegacyAdaptiveTransparency();
     void AppendsPpeCapAfterExistingSettingsFields();
     void PersistsPpeCapLevelRoundTrip();
+    void PersistsAdaptiveNoiseLevelDefaultAndReloads();
+    void ClampsAndGatesAdaptiveNoiseLevelPolicy();
     void RejectsNullSettingsRepository();
     void ParsesUpdateVersions();
     void ParsesGitHubReleaseMetadata();
@@ -1539,6 +1549,10 @@ void AirPodsDomainTests::PreservesForkSettingsAndAddsPlaybackAutoConnect()
     QVERIFY(observer.personalizedVolume);
     QVERIFY(observer.loudSoundReduction);
     QCOMPARE(observer.ppeCapLevel, uint8_t{25});
+    // D3 appends adaptive_noise_level: not in this legacy repository, so Apply must
+    // propagate the compiled-in default without touching the ABI version.
+    QCOMPARE(observer.adaptiveNoiseLevel, Core::AAP::kAdaptiveNoiseLevelDefault);
+    QCOMPARE(observer.adaptiveNoiseLevelChanges, 1);
     QCOMPARE(observer.noiseControlMode, uint32_t{3});
     QVERIFY(observer.quickConnectEnabled);
     QVERIFY(observer.audioAutoConnectEnabled);
@@ -1571,7 +1585,8 @@ void AirPodsDomainTests::PreservesForkSettingsAndAddsPlaybackAutoConnect()
           "tray_quick_connect_device_id",
           "battery_on_taskbar",
           "audio_auto_connect_enabled",
-          "popup_on_lid_open"})
+          "popup_on_lid_open",
+          "adaptive_noise_level"})
     {
         QVERIFY2(keys.contains(key), key);
     }
@@ -1665,6 +1680,100 @@ void AirPodsDomainTests::PersistsPpeCapLevelRoundTrip()
     QCOMPARE(observer.ppeCapLevel, uint8_t{80});
 
     Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
+}
+
+// D3: adaptive_noise_level defaults to 50 when the key is absent, round-trips through the
+// repository, notifies the observer once per applied change, and converges under repeated
+// loads (idempotent), all while kFieldsAbiVersion stays at 1.
+void AirPodsDomainTests::PersistsAdaptiveNoiseLevelDefaultAndReloads()
+{
+    auto repository = std::make_unique<Core::Settings::MemoryRepository>();
+    repository->Write("abi_version", Core::Settings::kFieldsAbiVersion);
+    auto *memoryRepository = repository.get();
+    Core::Settings::SetRepository(std::move(repository));
+
+    RecordingSettingsObserver observer;
+    Core::Settings::SetApplyObserver(&observer);
+
+    QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+    QCOMPARE(Core::Settings::GetCurrent().adaptive_noise_level, uint8_t{50});
+    Core::Settings::Apply();
+    QCOMPARE(observer.adaptiveNoiseLevel, uint8_t{50});
+    QCOMPARE(observer.adaptiveNoiseLevelChanges, 1);
+
+    // A settings-window edit persists through the modified-accessor save path and reaches
+    // the observer exactly once (changed-fields-only apply).
+    Core::Settings::ModifiableAccess()->adaptive_noise_level = 70;
+    QCOMPARE(observer.adaptiveNoiseLevel, uint8_t{70});
+    QCOMPARE(observer.adaptiveNoiseLevelChanges, 2);
+    QVERIFY(memoryRepository->Keys().contains("adaptive_noise_level"));
+    QCOMPARE(memoryRepository->Read("adaptive_noise_level").toUInt(), uint{70});
+
+    // Repeated loads converge on the stored value; nothing re-defaults or duplicates.
+    QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+    QCOMPARE(Core::Settings::GetCurrent().adaptive_noise_level, uint8_t{70});
+    QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+    QCOMPARE(Core::Settings::GetCurrent().adaptive_noise_level, uint8_t{70});
+    QCOMPARE(Core::Settings::kFieldsAbiVersion, uint32_t{1});
+
+    // Boundary round-trips: 0 and 100 are the documented range edges and must survive
+    // Save/Load unchanged.
+    for (const uint8_t level : {uint8_t{0}, uint8_t{100}}) {
+        Core::Settings::Fields fields = Core::Settings::GetCurrent();
+        fields.adaptive_noise_level = level;
+        Core::Settings::Save(fields);
+        QCOMPARE(Core::Settings::GetCurrent().adaptive_noise_level, level);
+        QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+        QCOMPARE(Core::Settings::GetCurrent().adaptive_noise_level, level);
+    }
+
+    // Out-of-range disk values are normalized at the apply boundary before any observer
+    // (and therefore the device path) sees them.
+    memoryRepository->Write("adaptive_noise_level", uint8_t{200});
+    QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+    Core::Settings::Apply();
+    QCOMPARE(observer.adaptiveNoiseLevel, uint8_t{100});
+    QCOMPARE(Core::Settings::GetCurrent().adaptive_noise_level, uint8_t{100});
+
+    // Save and the modified-accessor path enforce the same range before persistence.
+    auto fields = Core::Settings::GetCurrent();
+    fields.adaptive_noise_level = 255;
+    Core::Settings::Save(fields);
+    QCOMPARE(Core::Settings::GetCurrent().adaptive_noise_level, uint8_t{100});
+    QCOMPARE(memoryRepository->Read("adaptive_noise_level").toUInt(), uint{100});
+    Core::Settings::ModifiableAccess()->adaptive_noise_level = 200;
+    QCOMPARE(Core::Settings::GetCurrent().adaptive_noise_level, uint8_t{100});
+    QCOMPARE(memoryRepository->Read("adaptive_noise_level").toUInt(), uint{100});
+
+    Core::Settings::SetApplyObserver(nullptr);
+    Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
+}
+
+// D3: pure clamp/gating policy (the same table the standalone MSVC harness replays).
+void AirPodsDomainTests::ClampsAndGatesAdaptiveNoiseLevelPolicy()
+{
+    static_assert(Core::AAP::kAdaptiveNoiseLevelDefault == 50, "");
+    static_assert(Core::AAP::NormalizeAdaptiveNoiseLevel(0) == 0, "");
+    static_assert(Core::AAP::NormalizeAdaptiveNoiseLevel(50) == 50, "");
+    static_assert(Core::AAP::NormalizeAdaptiveNoiseLevel(100) == 100, "");
+    static_assert(Core::AAP::NormalizeAdaptiveNoiseLevel(101) == 100, "");
+    static_assert(Core::AAP::NormalizeAdaptiveNoiseLevel(255) == 100, "");
+
+    // Only the Adaptive wire value (0x04) arms the control; unknown modes never do.
+    static_assert(!Core::AAP::IsAdaptiveStrengthAdjustable(std::nullopt), "");
+    static_assert(!Core::AAP::IsAdaptiveStrengthAdjustable(uint8_t{1}), "");
+    static_assert(!Core::AAP::IsAdaptiveStrengthAdjustable(uint8_t{3}), "");
+    static_assert(Core::AAP::IsAdaptiveStrengthAdjustable(uint8_t{4}), "");
+
+    // Commits need Adaptive plus a live AAP session; a mode switch alone (or a remembered
+    // value on reconnect) must not push 0x2E - that is the C7 broker's replay job.
+    static_assert(!Core::AAP::ShouldCommitAdaptiveNoiseLevel(uint8_t{4}, false), "");
+    static_assert(!Core::AAP::ShouldCommitAdaptiveNoiseLevel(uint8_t{2}, true), "");
+    static_assert(!Core::AAP::ShouldCommitAdaptiveNoiseLevel(std::nullopt, true), "");
+    static_assert(Core::AAP::ShouldCommitAdaptiveNoiseLevel(uint8_t{4}, true), "");
+
+    QCOMPARE(Core::AAP::NormalizeAdaptiveNoiseLevel(uint8_t{150}), uint8_t{100});
+    QVERIFY(!Core::AAP::ShouldCommitAdaptiveNoiseLevel(std::nullopt, false));
 }
 
 void AirPodsDomainTests::RejectsNullSettingsRepository()

@@ -500,6 +500,8 @@ Devi prima abbinare le tue AirPods nelle impostazioni Bluetooth di Windows.</tra
     <message>
         <source>Action for a long press of the right stem.</source>
         <translation>Azione per una pressione lunga dello stelo destro.</translation>
+        <source>Sets how strongly Adaptive mode shapes ambient noise (0-100). Adjustable only while the noise control mode is Adaptive.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

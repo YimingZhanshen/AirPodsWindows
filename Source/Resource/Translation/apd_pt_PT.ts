@@ -499,6 +499,8 @@ Precisa primeiro de emparelhar os seus AirPods nas definições de Bluetooth do 
     <message>
         <source>Action for a long press of the right stem.</source>
         <translation>Ação para uma pressão longa de haste direita.</translation>
+        <source>Sets how strongly Adaptive mode shapes ambient noise (0-100). Adjustable only while the noise control mode is Adaptive.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
