@@ -504,6 +504,10 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
         <translation>Задаёт силу фильтрации в режиме Adaptive (0–100): 0 пропускает больше окружающего шума, 100 фильтрует сильнее. Доступно только когда подключённое устройство сообщает о режиме Adaptive.</translation>
     </message>
+    <message>
+        <source>Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.</source>
+        <translation>Передаёт данные датчика отслеживания головы из наушников и показывает их на странице настроек. При подключении расходует немного больше заряда батареи и трафика Bluetooth.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -518,221 +522,225 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>General</source>
         <translation>Основные</translation>
     </message>
-    <message>
+<message>
         <source>Open logs directory</source>
         <translation>Открыть папку логов</translation>
     </message>
-    <message>
+<message>
         <source>Bluetooth maximum receiving range</source>
         <translation>Максимальная дальность приема Bluetooth</translation>
     </message>
-    <message>
+<message>
         <source>Unbind AirPods</source>
         <translation>Отвязать AirPods</translation>
     </message>
-    <message>
+<message>
         <source>Launch when system starts</source>
         <translation>Запуск вместе с системой</translation>
     </message>
-    <message>
+<message>
         <source>Language</source>
         <translation>Язык</translation>
     </message>
-    <message>
+<message>
         <source>Visual</source>
         <translation>Внешний вид</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on taskbar</source>
         <translation>Отображение заряда батареи на панели задач</translation>
     </message>
-    <message>
+<message>
         <source>Disable</source>
         <translation>Выключить</translation>
     </message>
-    <message>
+<message>
         <source>When low battery</source>
         <translation>При низком заряде батареи</translation>
     </message>
-    <message>
+<message>
         <source>Always</source>
         <translation>Всегда</translation>
     </message>
-    <message>
+<message>
         <source>As text</source>
         <translation>В виде текста</translation>
     </message>
-    <message>
+<message>
         <source>As icon</source>
         <translation>В виде иконки</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on tray icon</source>
         <translation>Отображение значка батареи в трее</translation>
     </message>
-    <message>
+<message>
         <source>Features</source>
         <translation>Функции</translation>
     </message>
-    <message>
+<message>
         <source>Automatic ear detection</source>
         <translation>Автоматическое определение положения в ухе</translation>
     </message>
-    <message>
+<message>
         <source>Low audio latency</source>
         <translation>Низкая задержка звука</translation>
     </message>
-    <message>
+<message>
         <source>About</source>
         <translation>О программе</translation>
     </message>
-    <message>
+<message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Connect the selected device on a tray icon click</source>
         <translation>Подключать выбранное устройство щелчком по значку в области уведомлений</translation>
     </message>
-    <message>
+<message>
         <source>Device</source>
         <translation>Устройство</translation>
     </message>
-    <message>
+<message>
         <source>The paired Bluetooth audio device a tray icon click connects.</source>
         <translation>Сопряженное аудиоустройство Bluetooth, к которому выполняется подключение при щелчке по значку в области уведомлений.</translation>
     </message>
-    <message>
+<message>
         <source>Forget the bound AirPods so that another pair can be bound.</source>
         <translation>Удалите привязку текущих AirPods, чтобы можно было привязать другую пару.</translation>
     </message>
-    <message>
+<message>
         <source>Diagnostics</source>
         <translation>Диагностика</translation>
     </message>
-    <message>
+<message>
         <source>Log files help when reporting an issue.</source>
         <translation>Файлы журналов помогают при сообщении о проблеме.</translation>
     </message>
-    <message>
+<message>
         <source>Appearance</source>
         <translation>Внешний вид</translation>
     </message>
-    <message>
+<message>
         <source>Use system setting</source>
         <translation>Использовать системные настройки</translation>
     </message>
-    <message>
+<message>
         <source>Light</source>
         <translation>Светлая</translation>
     </message>
-    <message>
+<message>
         <source>Dark</source>
         <translation>Тёмная</translation>
     </message>
-    <message>
+<message>
         <source>AirPodsWindows Settings</source>
         <translation>Настройки AirPodsWindows</translation>
     </message>
-    <message>
+<message>
         <source>Conversational awareness</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Personalized volume</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Reduce loud sounds</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Noise control mode</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Connect automatically when audio starts playing</source>
         <translation>Подключать автоматически при начале воспроизведения звука</translation>
     </message>
-    <message>
+<message>
         <source>Show battery when the case opens</source>
         <translation>Показывать батарею при открытии футляра</translation>
     </message>
-    <message>
+<message>
         <source>Speaking volume reduction:</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>40%</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Stem press actions</source>
         <translation>Действия при нажатии стебля</translation>
     </message>
-    <message>
+<message>
         <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
         <translation>Выберите действие Windows для каждого жеста нажатия. Изменения сохраняются автоматически.</translation>
     </message>
-    <message>
+<message>
         <source>Single</source>
         <translation>Одинарное</translation>
     </message>
-    <message>
+<message>
         <source>Double</source>
         <translation>Двойное</translation>
     </message>
-    <message>
+<message>
         <source>Triple</source>
         <translation>Тройное</translation>
     </message>
-    <message>
+<message>
         <source>Long</source>
         <translation>Длительное</translation>
     </message>
-    <message>
+<message>
         <source>Left stem</source>
         <translation>Левый стебель</translation>
     </message>
-    <message>
+<message>
         <source>Right stem</source>
         <translation>Правый стебель</translation>
     </message>
-    <message>
+<message>
         <source>None</source>
         <translation>Нет</translation>
     </message>
-    <message>
+<message>
         <source>Play / Pause</source>
         <translation>Воспроизведение / Пауза</translation>
     </message>
-    <message>
+<message>
         <source>Next track</source>
         <translation>Следующий трек</translation>
     </message>
-    <message>
+<message>
         <source>Previous track</source>
         <translation>Предыдущий трек</translation>
     </message>
-    <message>
+<message>
         <source>Volume up</source>
         <translation>Увеличить громкость</translation>
     </message>
-    <message>
+<message>
         <source>Volume down</source>
         <translation>Уменьшить громкость</translation>
     </message>
-    <message>
+<message>
         <source>Toggle noise control</source>
         <translation>Переключить управление шумом</translation>
+    </message>
+<message>
+        <source>Stream head tracking data</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -772,6 +780,81 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     <message>
         <source>What&apos;s new</source>
         <translation>Что нового</translation>
+    </message>
+</context>
+<context>
+    <name>Gui::HeadTrackingCard</name>
+    <message>
+        <source>Head tracking</source>
+        <translation>Отслеживание головы</translation>
+    </message>
+    <message>
+        <source>Values are the earbuds' raw sensor counts scaled to signed full range: the protocol publishes no axis names and no physical unit, so none is claimed here.</source>
+        <translation>Значения — это необработанные показания датчиков наушников, приведённые к полному диапазону со знаком: протокол не публикует названия осей и физические единицы, поэтому здесь они не указываются.</translation>
+    </message>
+    <message>
+        <source>Orientation 1</source>
+        <translation>Ориентация 1</translation>
+    </message>
+    <message>
+        <source>Orientation 2</source>
+        <translation>Ориентация 2</translation>
+    </message>
+    <message>
+        <source>Orientation 3</source>
+        <translation>Ориентация 3</translation>
+    </message>
+    <message>
+        <source>Acceleration, horizontal</source>
+        <translation>Ускорение, горизонтальное</translation>
+    </message>
+    <message>
+        <source>Acceleration, vertical</source>
+        <translation>Ускорение, вертикальное</translation>
+    </message>
+    <message>
+        <source>Full scale</source>
+        <translation>Полный диапазон</translation>
+    </message>
+    <message>
+        <source>Raw</source>
+        <translation>Сырые</translation>
+    </message>
+    <message>
+        <source>Head tracking is off</source>
+        <translation>Отслеживание головы выключено</translation>
+    </message>
+    <message>
+        <source>Waiting for the earbuds' first reading</source>
+        <translation>Ожидание первого показания от наушников</translation>
+    </message>
+    <message>
+        <source>Streaming</source>
+        <translation>Передача данных</translation>
+    </message>
+    <message>
+        <source>No readings for a while - the earbuds paused the stream</source>
+        <translation>Давно не было показаний — наушники приостановили поток</translation>
+    </message>
+    <message>
+        <source>The AAP connection dropped</source>
+        <translation>Соединение AAP потеряно</translation>
+    </message>
+    <message>
+        <source>-</source>
+        <translation>-</translation>
+    </message>
+    <message>
+        <source>Session %1</source>
+        <translation>Сеанс %1</translation>
+    </message>
+    <message>
+        <source>Last reading %1 s ago</source>
+        <translation>Последнее показание %1 с назад</translation>
+    </message>
+    <message>
+        <source>%1 - last reading %2 s ago</source>
+        <translation>%1 - последнее показание %2 с назад</translation>
     </message>
 </context>
 </TS>

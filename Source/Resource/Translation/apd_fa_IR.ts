@@ -504,6 +504,10 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
         <translation>قدرت فیلتر حالت تطبیقی را تنظیم می‌کند (۰–۱۰۰): ۰ اجازه عبور صدای محیطی بیشتری را می‌دهد؛ ۱۰۰ فیلتر بیشتری دارد. فقط زمانی در دسترس است که دستگاه متصل حالت تطبیقی را گزارش کند.</translation>
     </message>
+    <message>
+        <source>Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.</source>
+        <translation>داده‌های سنسور ردیابی سر هدفون‌ها را جریان می‌دهد و در صفحه تنظیمات نمایش می‌دهد. هنگام اتصال، کمی باتری و ترافیک بلوتوث بیشتری مصرف می‌کند.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -518,221 +522,225 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>General</source>
         <translation>عمومی</translation>
     </message>
-    <message>
+<message>
         <source>Open logs directory</source>
         <translation>باز کردن پوشه لاگ‌ها</translation>
     </message>
-    <message>
+<message>
         <source>Bluetooth maximum receiving range</source>
         <translation>حداکثر برد دریافت بلوتوث</translation>
     </message>
-    <message>
+<message>
         <source>Unbind AirPods</source>
         <translation>قطع اتصال ایرپاد از برنامه</translation>
     </message>
-    <message>
+<message>
         <source>Launch when system starts</source>
         <translation>اجرا با روشن‌شدن سیستم</translation>
     </message>
-    <message>
+<message>
         <source>Language</source>
         <translation>زبان</translation>
     </message>
-    <message>
+<message>
         <source>Visual</source>
         <translation>ظاهر</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on taskbar</source>
         <translation>نمایش باتری در نوار وظیفه</translation>
     </message>
-    <message>
+<message>
         <source>Disable</source>
         <translation>غیرفعال</translation>
     </message>
-    <message>
+<message>
         <source>When low battery</source>
         <translation>وقتی شارژ باتری کمه</translation>
     </message>
-    <message>
+<message>
         <source>Always</source>
         <translation>همیشه</translation>
     </message>
-    <message>
+<message>
         <source>As text</source>
         <translation>به‌صورت متن</translation>
     </message>
-    <message>
+<message>
         <source>As icon</source>
         <translation>به‌صورت نماد</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on tray icon</source>
         <translation>نمایش باتری روی آیکن ناحیه اعلان</translation>
     </message>
-    <message>
+<message>
         <source>Features</source>
         <translation>قابلیت‌ها</translation>
     </message>
-    <message>
+<message>
         <source>Automatic ear detection</source>
         <translation>تشخیص خودکار قرارگرفتن در گوش</translation>
     </message>
-    <message>
+<message>
         <source>Low audio latency</source>
         <translation>تأخیر صوتی کم</translation>
     </message>
-    <message>
+<message>
         <source>About</source>
         <translation>درباره</translation>
     </message>
-    <message>
+<message>
         <source>Connect the selected device on a tray icon click</source>
         <translation>اتصال دستگاه انتخاب‌شده با کلیک روی آیکن ناحیه اعلان</translation>
     </message>
-    <message>
+<message>
         <source>Device</source>
         <translation>دستگاه</translation>
     </message>
-    <message>
+<message>
         <source>The paired Bluetooth audio device a tray icon click connects.</source>
         <translation>دستگاه صوتی بلوتوثی که با کلیک روی آیکن ناحیه اعلان بهش وصل می‌شی.</translation>
     </message>
-    <message>
+<message>
         <source>Forget the bound AirPods so that another pair can be bound.</source>
         <translation>ایرپادی که به برنامه وصل شده رو فراموش می‌کنه تا بتونی یه ایرپاد دیگه رو وصل کنی.</translation>
     </message>
-    <message>
+<message>
         <source>Diagnostics</source>
         <translation>عیب‌یابی</translation>
     </message>
-    <message>
+<message>
         <source>Log files help when reporting an issue.</source>
         <translation>فایل‌های لاگ موقع گزارش مشکل به درد می‌خورن.</translation>
     </message>
-    <message>
+<message>
         <source>Appearance</source>
         <translation>حالت نمایش</translation>
     </message>
-    <message>
+<message>
         <source>Use system setting</source>
         <translation>مطابق تنظیمات سیستم</translation>
     </message>
-    <message>
+<message>
         <source>Light</source>
         <translation>روشن</translation>
     </message>
-    <message>
+<message>
         <source>Dark</source>
         <translation>تیره</translation>
     </message>
-    <message>
+<message>
         <source>Connect automatically when audio starts playing</source>
         <translation>اتصال خودکار وقتی پخش صدا شروع می‌شه</translation>
     </message>
-    <message>
+<message>
         <source>Show battery when the case opens</source>
         <translation>نمایش باتری با باز شدن کیس شارژ</translation>
     </message>
-    <message>
+<message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>AirPodsWindows Settings</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Conversational awareness</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Personalized volume</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Reduce loud sounds</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Noise control mode</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Speaking volume reduction:</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>40%</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Stem press actions</source>
         <translation>اعمال فشار دسته</translation>
     </message>
-    <message>
+<message>
         <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
         <translation>عمل ویندوز را برای هر حرکت فشار انتخاب کنید. تغییرها به‌صورت خودکار ذخیره می‌شوند.</translation>
     </message>
-    <message>
+<message>
         <source>Single</source>
         <translation>تک</translation>
     </message>
-    <message>
+<message>
         <source>Double</source>
         <translation>دوبله</translation>
     </message>
-    <message>
+<message>
         <source>Triple</source>
         <translation>سه‌گانه</translation>
     </message>
-    <message>
+<message>
         <source>Long</source>
         <translation>طولانی</translation>
     </message>
-    <message>
+<message>
         <source>Left stem</source>
         <translation>دسته چپ</translation>
     </message>
-    <message>
+<message>
         <source>Right stem</source>
         <translation>دسته راست</translation>
     </message>
-    <message>
+<message>
         <source>None</source>
         <translation>هیچ‌کدام</translation>
     </message>
-    <message>
+<message>
         <source>Play / Pause</source>
         <translation>پخش / توقف</translation>
     </message>
-    <message>
+<message>
         <source>Next track</source>
         <translation>آهنگ بعدی</translation>
     </message>
-    <message>
+<message>
         <source>Previous track</source>
         <translation>آهنگ قبلی</translation>
     </message>
-    <message>
+<message>
         <source>Volume up</source>
         <translation>افزایش صدا</translation>
     </message>
-    <message>
+<message>
         <source>Volume down</source>
         <translation>کاهش صدا</translation>
     </message>
-    <message>
+<message>
         <source>Toggle noise control</source>
         <translation>تغییر وضعیت کنترل نویز</translation>
+    </message>
+<message>
+        <source>Stream head tracking data</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -772,6 +780,81 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     <message>
         <source>If the download is slow, you can download the update manually. AirPodsDesktop will close when you switch to manual download.</source>
         <translation>اگه دانلود کنده، می‌تونی به‌روزرسانی رو دستی دانلود کنی. وقتی دانلود دستی رو انتخاب کنی، AirPodsDesktop بسته می‌شه.</translation>
+    </message>
+</context>
+<context>
+    <name>Gui::HeadTrackingCard</name>
+    <message>
+        <source>Head tracking</source>
+        <translation>ردیابی سر</translation>
+    </message>
+    <message>
+        <source>Values are the earbuds' raw sensor counts scaled to signed full range: the protocol publishes no axis names and no physical unit, so none is claimed here.</source>
+        <translation>مقادیر، شمارش‌های خام سنسورهای هدفون‌ها هستند که به بازه کامل علامت‌دار مقیاس شده‌اند: پروتکل نام محورها یا واحد فیزیکی منتشر نمی‌کند، بنابراین اینجا ادعایی درباره آن‌ها نمی‌شود.</translation>
+    </message>
+    <message>
+        <source>Orientation 1</source>
+        <translation>جهت ۱</translation>
+    </message>
+    <message>
+        <source>Orientation 2</source>
+        <translation>جهت ۲</translation>
+    </message>
+    <message>
+        <source>Orientation 3</source>
+        <translation>جهت ۳</translation>
+    </message>
+    <message>
+        <source>Acceleration, horizontal</source>
+        <translation>شتاب، افقی</translation>
+    </message>
+    <message>
+        <source>Acceleration, vertical</source>
+        <translation>شتاب، عمودی</translation>
+    </message>
+    <message>
+        <source>Full scale</source>
+        <translation>مقیاس کامل</translation>
+    </message>
+    <message>
+        <source>Raw</source>
+        <translation>خام</translation>
+    </message>
+    <message>
+        <source>Head tracking is off</source>
+        <translation>ردیابی سر خاموش است</translation>
+    </message>
+    <message>
+        <source>Waiting for the earbuds' first reading</source>
+        <translation>در انتظار نخستین خوانش هدفون‌ها</translation>
+    </message>
+    <message>
+        <source>Streaming</source>
+        <translation>در حال جریان‌دهی</translation>
+    </message>
+    <message>
+        <source>No readings for a while - the earbuds paused the stream</source>
+        <translation>مدتی است خوانشی دریافت نشده - هدفون‌ها جریان را متوقف کرده‌اند</translation>
+    </message>
+    <message>
+        <source>The AAP connection dropped</source>
+        <translation>اتصال AAP قطع شد</translation>
+    </message>
+    <message>
+        <source>-</source>
+        <translation>-</translation>
+    </message>
+    <message>
+        <source>Session %1</source>
+        <translation>نشست %1</translation>
+    </message>
+    <message>
+        <source>Last reading %1 s ago</source>
+        <translation>آخرین خوانش %1 ثانیه پیش</translation>
+    </message>
+    <message>
+        <source>%1 - last reading %2 s ago</source>
+        <translation>%1 - آخرین خوانش %2 ثانیه پیش</translation>
     </message>
 </context>
 </TS>

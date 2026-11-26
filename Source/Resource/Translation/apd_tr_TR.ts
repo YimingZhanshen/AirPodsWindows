@@ -504,6 +504,10 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
         <translation>Adaptive modundaki filtreleme gücünü ayarlar (0–100): 0 daha fazla ortam sesi geçirir; 100 daha fazla filtreler. Yalnızca bağlı cihaz Adaptive modunu bildirdiğinde kullanılabilir.</translation>
     </message>
+    <message>
+        <source>Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.</source>
+        <translation>Kulaklıkların kafa takibi sensör verilerini yayınlar ve ayarlar sayfasında gösterir. Bağlıyken biraz daha fazla pil ve Bluetooth trafiği kullanır.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -518,221 +522,225 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>General</source>
         <translation>Genel</translation>
     </message>
-    <message>
+<message>
         <source>Open logs directory</source>
         <translation>Log klasörünü aç</translation>
     </message>
-    <message>
+<message>
         <source>Bluetooth maximum receiving range</source>
         <translation>Maksimum Bluetooth kapsama alanı</translation>
     </message>
-    <message>
+<message>
         <source>Unbind AirPods</source>
         <translation>AirPods Bağlantısını Kes</translation>
     </message>
-    <message>
+<message>
         <source>Launch when system starts</source>
         <translation>Sistem başlangıcında çalıştır</translation>
     </message>
-    <message>
+<message>
         <source>Language</source>
         <translation>Dil</translation>
     </message>
-    <message>
+<message>
         <source>Visual</source>
         <translation>Görünüm</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on tray icon</source>
         <translation>Sistem tepsisi simgesinde pili göster</translation>
     </message>
-    <message>
+<message>
         <source>Disable</source>
         <translation>Devre Dışı</translation>
     </message>
-    <message>
+<message>
         <source>When low battery</source>
         <translation>Pil azaldığında</translation>
     </message>
-    <message>
+<message>
         <source>Always</source>
         <translation>Her zaman</translation>
     </message>
-    <message>
+<message>
         <source>Features</source>
         <translation>Özellikler</translation>
     </message>
-    <message>
+<message>
         <source>Automatic ear detection</source>
         <translation>Otomatik kulak algılama</translation>
     </message>
-    <message>
+<message>
         <source>Low audio latency</source>
         <translation>Düşük ses gecikmesi</translation>
     </message>
-    <message>
+<message>
         <source>About</source>
         <translation>Hakkında</translation>
     </message>
-    <message>
+<message>
         <source>Display battery on taskbar</source>
         <translation>Görev çubuğunda pili göster</translation>
     </message>
-    <message>
+<message>
         <source>As text</source>
         <translation>Metin olarak</translation>
     </message>
-    <message>
+<message>
         <source>As icon</source>
         <translation>Simge olarak</translation>
     </message>
-    <message>
+<message>
         <source>Connect the selected device on a tray icon click</source>
         <translation>Tepsi simgesine tıklandığında seçili cihaza bağlan</translation>
     </message>
-    <message>
+<message>
         <source>Device</source>
         <translation>Cihaz</translation>
     </message>
-    <message>
+<message>
         <source>The paired Bluetooth audio device a tray icon click connects.</source>
         <translation>Tepsi simgesine tıklandığında bağlanılacak eşleştirilmiş Bluetooth ses cihazı.</translation>
     </message>
-    <message>
+<message>
         <source>Forget the bound AirPods so that another pair can be bound.</source>
         <translation>Başka bir çift bağlayabilmek için bağlı AirPods&apos;u unutun.</translation>
     </message>
-    <message>
+<message>
         <source>Diagnostics</source>
         <translation>Tanılama</translation>
     </message>
-    <message>
+<message>
         <source>Log files help when reporting an issue.</source>
         <translation>Günlük dosyaları bir sorunu bildirirken yardımcı olur.</translation>
     </message>
-    <message>
+<message>
         <source>Appearance</source>
         <translation>Görünüm</translation>
     </message>
-    <message>
+<message>
         <source>Use system setting</source>
         <translation>Sistem ayarını kullan</translation>
     </message>
-    <message>
+<message>
         <source>Light</source>
         <translation>Açık</translation>
     </message>
-    <message>
+<message>
         <source>Dark</source>
         <translation>Koyu</translation>
     </message>
-    <message>
+<message>
         <source>Connect automatically when audio starts playing</source>
         <translation>Ses çalmaya başladığında otomatik bağlan</translation>
     </message>
-    <message>
+<message>
         <source>Show battery when the case opens</source>
         <translation>Kutu açıldığında pili göster</translation>
     </message>
-    <message>
+<message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>AirPodsWindows Settings</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Conversational awareness</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Personalized volume</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Reduce loud sounds</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Noise control mode</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Speaking volume reduction:</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>40%</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
     </message>
-    <message>
+<message>
         <source>Stem press actions</source>
         <translation>Çubuk basma eylemleri</translation>
     </message>
-    <message>
+<message>
         <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
         <translation>Her basma hareketi için Windows eylemini seçin. Değişiklikler otomatik olarak kaydedilir.</translation>
     </message>
-    <message>
+<message>
         <source>Single</source>
         <translation>Tek</translation>
     </message>
-    <message>
+<message>
         <source>Double</source>
         <translation>Çift</translation>
     </message>
-    <message>
+<message>
         <source>Triple</source>
         <translation>Üçlü</translation>
     </message>
-    <message>
+<message>
         <source>Long</source>
         <translation>Uzun</translation>
     </message>
-    <message>
+<message>
         <source>Left stem</source>
         <translation>Sol çubuk</translation>
     </message>
-    <message>
+<message>
         <source>Right stem</source>
         <translation>Sağ çubuk</translation>
     </message>
-    <message>
+<message>
         <source>None</source>
         <translation>Yok</translation>
     </message>
-    <message>
+<message>
         <source>Play / Pause</source>
         <translation>Oynat / Duraklat</translation>
     </message>
-    <message>
+<message>
         <source>Next track</source>
         <translation>Sonraki parça</translation>
     </message>
-    <message>
+<message>
         <source>Previous track</source>
         <translation>Önceki parça</translation>
     </message>
-    <message>
+<message>
         <source>Volume up</source>
         <translation>Sesi aç</translation>
     </message>
-    <message>
+<message>
         <source>Volume down</source>
         <translation>Sesi kıs</translation>
     </message>
-    <message>
+<message>
         <source>Toggle noise control</source>
         <translation>Gürültü denetimini değiştir</translation>
+    </message>
+<message>
+        <source>Stream head tracking data</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -772,6 +780,81 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     <message>
         <source>What&apos;s new</source>
         <translation>Yenilikler</translation>
+    </message>
+</context>
+<context>
+    <name>Gui::HeadTrackingCard</name>
+    <message>
+        <source>Head tracking</source>
+        <translation>Kafa takibi</translation>
+    </message>
+    <message>
+        <source>Values are the earbuds' raw sensor counts scaled to signed full range: the protocol publishes no axis names and no physical unit, so none is claimed here.</source>
+        <translation>Değerler, kulaklık sensörlerinin ham sayımlarının işaretli tam aralığa ölçeklenmiş halidir: protokol eksen adlarını veya fiziksel birimi yayımlamaz, bu yüzden burada bunlar iddia edilmez.</translation>
+    </message>
+    <message>
+        <source>Orientation 1</source>
+        <translation>Yön 1</translation>
+    </message>
+    <message>
+        <source>Orientation 2</source>
+        <translation>Yön 2</translation>
+    </message>
+    <message>
+        <source>Orientation 3</source>
+        <translation>Yön 3</translation>
+    </message>
+    <message>
+        <source>Acceleration, horizontal</source>
+        <translation>İvme, yatay</translation>
+    </message>
+    <message>
+        <source>Acceleration, vertical</source>
+        <translation>İvme, dikey</translation>
+    </message>
+    <message>
+        <source>Full scale</source>
+        <translation>Tam ölçek</translation>
+    </message>
+    <message>
+        <source>Raw</source>
+        <translation>Ham</translation>
+    </message>
+    <message>
+        <source>Head tracking is off</source>
+        <translation>Kafa takibi kapalı</translation>
+    </message>
+    <message>
+        <source>Waiting for the earbuds' first reading</source>
+        <translation>Kulaklıkların ilk okuması bekleniyor</translation>
+    </message>
+    <message>
+        <source>Streaming</source>
+        <translation>Yayınlanıyor</translation>
+    </message>
+    <message>
+        <source>No readings for a while - the earbuds paused the stream</source>
+        <translation>Bir süredir okuma yok - kulaklıklar yayını duraklattı</translation>
+    </message>
+    <message>
+        <source>The AAP connection dropped</source>
+        <translation>AAP bağlantısı kesildi</translation>
+    </message>
+    <message>
+        <source>-</source>
+        <translation>-</translation>
+    </message>
+    <message>
+        <source>Session %1</source>
+        <translation>Oturum %1</translation>
+    </message>
+    <message>
+        <source>Last reading %1 s ago</source>
+        <translation>Son okuma %1 sn önce</translation>
+    </message>
+    <message>
+        <source>%1 - last reading %2 s ago</source>
+        <translation>%1 - son okuma %2 sn önce</translation>
     </message>
 </context>
 </TS>

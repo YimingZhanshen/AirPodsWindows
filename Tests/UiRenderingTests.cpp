@@ -47,6 +47,7 @@
 #include "Source/Gui/Widget/AnimationView.h"
 #include "Source/Gui/MainWindowPresentation.h"
 #include "Source/Gui/Widget/FadeOverlay.h"
+#include "Source/Gui/Widget/HeadTrackingCard.h"
 #include "Source/Gui/SettingsWindow.h"
 #include "Source/Gui/Theme.h"
 #include "Source/Gui/TrayIcon.h"
@@ -632,11 +633,8 @@ private Q_SLOTS:
         QCOMPARE(combo->currentIndex(), 0);
         QVERIFY(!slider->isEnabled());
 
+        // Selecting Adaptive arms the inline control; no reported-device card gates it.
         combo->setCurrentIndex(3);
-        QVERIFY(!slider->isEnabled());
-
-        // Simulate the reported-device state used by Refresh; a drag then persists the field.
-        card->SetDeviceState(Core::AAP::NoiseControlMode::Adaptive, true);
         QVERIFY(slider->isEnabled());
         slider->setValue(80);
         QCOMPARE(valueLabel->text(), QStringLiteral("80"));
@@ -655,6 +653,59 @@ private Q_SLOTS:
             Core::Settings::GetCurrent().adaptive_noise_level,
             Core::AAP::kAdaptiveNoiseLevelDefault);
         QCOMPARE(slider->value(), int{Core::AAP::kAdaptiveNoiseLevelDefault});
+    }
+
+    void HeadTrackingCardRendersQueuedRecordsAndSettingsToggle()
+    {
+        Core::Settings::Save(Core::Settings::GetDefault());
+        Core::QuickConnect::Controller quickConnect{
+            std::make_shared<Core::QuickConnect::NullBackend>()};
+        Core::AirPods::Manager manager;
+        Gui::SettingsWindow settings{
+            [] { return 0; }, quickConnect,
+            [&manager]() -> Core::AirPods::Manager & { return manager; }};
+        settings.SetAirPodsManagerProvider(
+            [&manager]() -> Core::AirPods::Manager & { return manager; });
+
+        auto *card = settings.findChild<Gui::HeadTrackingCard *>();
+        QVERIFY2(card != nullptr, "Settings must integrate the head-tracking card");
+        QVERIFY(!card->isHidden());
+        card->SetReducedMotionOverride(true);
+        auto *toggle = settings.findChild<QCheckBox *>("cbHeadTracking");
+        QVERIFY(toggle != nullptr);
+        QVERIFY(!toggle->accessibleName().isEmpty());
+        QVERIFY(toggle->minimumWidth() >= 32);
+        QVERIFY(toggle->minimumHeight() >= 32);
+        toggle->setChecked(true);
+        QVERIFY(Core::Settings::GetCurrent().head_tracking);
+
+        manager.HeadTrackingDesiredSafely(true);
+        manager.HeadTrackingSessionSafely(true, 42);
+        QCOMPARE(card->View().phase, Gui::HeadTrackingPhase::Armed);
+        const Core::AirPods::HeadTrackingEvent event{16384, -2, 32767, -32768, 42, 42};
+        QThread worker;
+        connect(&worker, &QThread::started, [&manager, event] {
+            manager.HeadTrackingRecordSafely(event);
+        });
+        worker.start();
+        QVERIFY(worker.wait(1000));
+        // Auto connection must queue the worker's record: no widget has changed on that thread.
+        QVERIFY(!card->View().hasSample);
+        QCoreApplication::processEvents();
+        QVERIFY(card->View().hasSample);
+        QCOMPARE(card->View().generation, uint64_t{42});
+        QCOMPARE(card->View().phase, Gui::HeadTrackingPhase::Streaming);
+        QCOMPARE(card->findChild<QLabel *>("htv1")->text(), QStringLiteral("0.500"));
+        QCOMPARE(card->findChild<QLabel *>("htr1")->text(), QStringLiteral("16384"));
+        QCOMPARE(card->findChild<QLabel *>("htv4")->text(), QStringLiteral("-1.000"));
+        QCOMPARE(card->findChild<QLabel *>("htr5")->text(), QStringLiteral("42"));
+        QVERIFY(card->findChild<Gui::Widget::ActivityIndicator *>()->isHidden());
+
+        manager.HeadTrackingSessionSafely(false, 42);
+        QCOMPARE(card->View().phase, Gui::HeadTrackingPhase::LinkDown);
+        toggle->setChecked(false);
+        QVERIFY(!Core::Settings::GetCurrent().head_tracking);
+        Core::Settings::Save(Core::Settings::GetDefault());
     }
 
     void ConnectionSuccessOpensBatteryWindowAndDismissesNotification()

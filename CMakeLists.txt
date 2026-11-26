@@ -327,6 +327,7 @@ set(
     "Source/Core/AAPBattery.cpp"
     "Source/Core/BatteryFusion.cpp"
     "Source/Core/AAPCommandBroker.cpp"
+    "Source/Core/HeadTrackingIntent.cpp"
     "Source/Core/AppleCP.cpp"
 )
 
@@ -351,6 +352,7 @@ set(
     APD_PRESENTATION_CODE_FILES
 
     "Source/Gui/MainWindowPresentation.cpp"
+    "Source/Gui/HeadTrackingPresentation.cpp"
 )
 
 set(
@@ -372,6 +374,7 @@ set(
     "Source/Gui/Widget/DeviceStill.cpp"
     "Source/Gui/Widget/FadeOverlay.cpp"
     "Source/Gui/Widget/DriverStatusCard.cpp"
+    "Source/Gui/Widget/HeadTrackingCard.cpp"
     "Source/Gui/Theme.cpp"
 )
 

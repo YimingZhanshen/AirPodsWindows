@@ -472,19 +472,18 @@ void ApdApplication::OnAdaptiveNoiseLevelChanged(uint8_t level)
     _airPodsManager->OnAdaptiveNoiseLevelChanged(level);
 }
 
-void ApdApplication::OnHeadTrackingChanged(bool enabled)
-{
-    _airPodsManager->OnHeadTrackingChanged(enabled);
-}
-
-void ApdApplication::OnAdaptiveNoiseLevelChanged(uint8_t level)
-{
-    _airPodsManager->OnAdaptiveNoiseLevelChanged(level);
-}
-
 void ApdApplication::OnNoiseControlModeChanged(uint32_t mode)
 {
     _airPodsManager->OnNoiseControlModeChanged(static_cast<Core::AAP::NoiseControlMode>(mode));
+}
+
+// Blueprint 2.5. Null-guarded because the manager is built after the settings observer can
+// already fire during startup; a missing forward would silently leave the feature dead.
+void ApdApplication::OnHeadTrackingEnabledChanged(bool enable)
+{
+    if (_airPodsManager != nullptr) {
+        _airPodsManager->OnHeadTrackingEnabledChanged(enable);
+    }
 }
 
 Core::AirPods::Manager &ApdApplication::GetAirPodsManager()

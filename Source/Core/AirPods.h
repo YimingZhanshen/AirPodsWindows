@@ -40,6 +40,7 @@
 #include "AAPManager.h"
 #include "BatteryFusion.h"
 #include "AdaptiveNoiseLevel.h"
+#include "HeadTrackingIntent.h"
 #include "../Helper.h"
 
 class AirPodsDomainTests;
@@ -110,6 +111,23 @@ struct State {
 //
 // Classes
 //
+
+// One accepted 0x17 head-tracking record, carried across the thread boundary by value (blueprint
+// 2.5). It is a plain value type rather than `AAP::HeadTrackingData` because it travels through a
+// queued connection: it must be default-constructible and registered as a metatype, and the card
+// should not need the AAP headers to render a pose.
+struct HeadTrackingEvent {
+    std::int16_t orientation1{0};
+    std::int16_t orientation2{0};
+    std::int16_t orientation3{0};
+    std::int16_t horizontalAcceleration{0};
+    std::int16_t verticalAcceleration{0};
+    // The transport generation the record belongs to, so a view model can drop the ones that
+    // arrive after a reconnect instead of painting a dead session's pose.
+    std::uint64_t generation{0};
+
+    bool operator==(const HeadTrackingEvent &rhs) const = default;
+};
 
 namespace Details {
 
@@ -245,6 +263,21 @@ public:
 private:
     std::optional<bool> _lastBothInEar;
 };
+
+// Bridges the blueprint 2.5 head-tracking intent to the live AAP transport. This is the only
+// place the app sends Start/StopHeadTracking, and the only place it interprets the result, so
+// when C7's `AAPCommandBroker` takes over it replaces this class and nothing else: callers keep
+// going through `HeadTrackingIntent::Flush`.
+class HeadTrackingCommandPort final : public AAP::IHeadTrackingCommandPort
+{
+public:
+    explicit HeadTrackingCommandPort(AAP::Manager *manager) : _manager{manager} {}
+
+    bool RequestHeadTracking(bool enable) override;
+
+private:
+    AAP::Manager *_manager;
+};
 } // namespace Details
 
 class Manager : public QObject
@@ -267,8 +300,9 @@ public:
     void OnLoudSoundReductionChanged(bool enable);
     void OnPpeCapLevelChanged(uint8_t level);
     void OnAdaptiveNoiseLevelChanged(uint8_t level);
-    void OnHeadTrackingChanged(bool enabled);
     void OnNoiseControlModeChanged(AAP::NoiseControlMode mode);
+    // Blueprint 2.5: the settings write is applied to the intent, then pushed through the seam.
+    void OnHeadTrackingEnabledChanged(bool enable);
 
     // AAP Protocol features
     bool SetNoiseControlMode(AAP::NoiseControlMode mode);
@@ -305,6 +339,12 @@ public:
     bool StartHeadTracking();
     bool StopHeadTracking();
     bool IsHeadTrackingActive() const;
+    // The user's `head_tracking` choice, independent of the transport state.
+    bool IsHeadTrackingEnabled() const;
+    // The transport generation a head-tracking view belongs to, or 0 while the AAP link is down.
+    // A card built mid-session needs it to adopt the live stream instead of waiting for the next
+    // reconnect's signal.
+    std::uint64_t GetHeadTrackingGeneration() const;
 
     // Stem gestures (blueprint 2.4). The settings layer pushes the whole table so a gesture is
     // never resolved against a half-applied configuration.
@@ -388,6 +428,21 @@ private:
     bool _aapShutdown{false};
     std::jthread _aapConnectWorker;
 
+    // Blueprint 2.5. Its own mutex, deliberately not `_aapWorkerMutex`: `Flush` performs a
+    // transport write, and P2 established that no slow driver call may hold the connection mutex
+    // that the advertisement and scanner pipelines share.
+    //
+    // The port is the seam C7 replaces (`AAPCommandBroker` already lists a `SetHeadTracking`
+    // command kind); the intent, the generation reset and the replay on reconnect stay here, so
+    // there is exactly one head-tracking send path and no second rollback mechanism.
+    Details::HeadTrackingCommandPort _headTrackingPort{&_aapMgr};
+    std::mutex _headTrackingMutex;
+    AAP::HeadTrackingIntent _headTrackingIntent;
+
+    // Pushes the intent through the seam and reports the resulting desire to the GUI. Callers
+    // must not hold `_headTrackingMutex`.
+    void FlushHeadTracking();
+
     void CompleteBoundDeviceLookup(uint64_t address, std::optional<Bluetooth::Device> device);
     void OnBoundDeviceConnectionStateChanged(Bluetooth::DeviceState state);
     void OnStateChanged(Details::StateManager::UpdateEvent updateEvent);
@@ -461,6 +516,15 @@ Q_SIGNALS:
     // Device-reported state, not the saved combo selection. Zero/unknown means unavailable.
     void AapNoiseControlModeChangedSafely(int mode);
     void AapAdaptiveNoiseLevelChangedSafely(uint32_t level);
+    // Blueprint 2.5. Both are emitted from AAP threads; the queued delivery Qt applies for a
+    // GUI-thread receiver is what keeps the reader thread away from widgets.
+    void HeadTrackingRecordSafely(const Core::AirPods::HeadTrackingEvent &record);
+    // The desired stream state after the intent was flushed: the view model turns it into
+    // Armed/Off without polling the device.
+    void HeadTrackingDesiredSafely(bool desired);
+    // A transport session for the stream began (live) or ended, with its generation so the view
+    // model can tell a late event from the current session.
+    void HeadTrackingSessionSafely(bool live, qulonglong generation);
     // Emitted from the AAP reader thread for a validated stem gesture. The receiver performs the
     // host work on the GUI thread only after revalidating the address and generation, so no widget
     // or media API is touched from the worker and stale queued gestures cannot cross a reconnect.
@@ -470,3 +534,7 @@ Q_SIGNALS:
 std::vector<Core::Bluetooth::Device> GetDevices();
 
 } // namespace Core::AirPods
+
+// Queued cross-thread delivery (blueprint 2.5); registered in the Manager constructor the way
+// `Core::AirPods::State` is.
+Q_DECLARE_METATYPE(Core::AirPods::HeadTrackingEvent)
