@@ -236,14 +236,21 @@ private:
     // Internal methods
     // Clock injection keeps ATT deadline tests deterministic; production uses steady_clock.
     std::function<int64_t()> _steadyMillis;
-    // Test-only barrier at the unbound snapshot / bound dispatch boundary. It lets a test
-    // replace the session without timing-dependent sleeps; production leaves it empty.
+    // Test-only barrier between the public command's session snapshot and final revalidation.
+    // It lets a test replace the session without timing-dependent sleeps; production leaves it
+    // empty. Initialization and ATT reservation sends do not cross this public-command boundary.
     std::function<void()> _sendBarrier;
-    bool SendPacket(const std::vector<uint8_t> &packet);
+    // Public control commands pin connected state, attempt, transport, and cancellation as one
+    // snapshot, then revalidate after the barrier. On success, sentAttempt identifies the session
+    // that actually received the command so follow-up work cannot bind itself to a replacement.
+    bool SendControlPacket(
+        const std::vector<uint8_t> &packet, bool requireFeatureFlags = false,
+        AAPAttempt *sentAttempt = nullptr);
+    // Initialization-only raw sender. It deliberately runs before the connected gate opens.
     bool SendPacket(
         const std::shared_ptr<AAPTransport> &transport, const std::vector<uint8_t> &packet,
         std::stop_token stopToken);
-    bool SendPacket(const std::vector<uint8_t> &packet, AAPAttempt attempt);
+    // Attempt-bound initialization/ATT sender; reservation ownership is established by the caller.
     bool SendPacket(
         const std::vector<uint8_t> &packet, AAPAttempt attempt,
         const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken = {},

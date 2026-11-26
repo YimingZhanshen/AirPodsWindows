@@ -431,29 +431,8 @@ bool Manager::IsCurrentAttemptLocked(AAPAttempt attempt) const
 
 bool Manager::SetNoiseControlMode(NoiseControlMode mode)
 {
-    AAPAttempt attempt;
-    std::shared_ptr<AAPTransport> transport;
-    {
-        std::lock_guard lock{_mutex};
-        if (!IsCurrentAttemptLocked(_attempt)) {
-            LOG(Warn, "AAP: Cannot set noise control mode - not connected");
-            return false;
-        }
-        if (mode == NoiseControlMode::Adaptive && !_featureFlagsEnabled) {
-            LOG(Warn, "AAP: Adaptive noise control unavailable, feature flags were not sent");
-            return false;
-        }
-        // Capability and destination are one session snapshot. The bound send revalidates
-        // both before writing, and can never resolve a replacement session's transport.
-        attempt = _attempt;
-        transport = _transport.load();
-        if (!transport) {
-            return false;
-        }
-    }
-
     auto packet = Packets::BuildNoiseControlPacket(mode);
-    if (!SendPacket(packet, attempt, transport, {}, mode == NoiseControlMode::Adaptive)) {
+    if (!SendControlPacket(packet, mode == NoiseControlMode::Adaptive)) {
         return false;
     }
 
@@ -469,20 +448,8 @@ std::optional<NoiseControlMode> Manager::GetNoiseControlMode() const
 
 bool Manager::SetConversationalAwareness(bool enable)
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot set conversational awareness - not connected");
-        return false;
-    }
-    {
-        std::lock_guard lock{_mutex};
-        if (!_featureFlagsEnabled) {
-            LOG(Warn, "AAP: Conversational awareness unavailable, feature flags were not sent");
-            return false;
-        }
-    }
-
     auto packet = Packets::BuildConversationalAwarenessPacket(enable);
-    if (!SendPacket(packet)) {
+    if (!SendControlPacket(packet, true)) {
         return false;
     }
 
@@ -498,13 +465,8 @@ std::optional<ConversationalAwarenessState> Manager::GetConversationalAwarenessS
 
 bool Manager::SetPersonalizedVolume(bool enable)
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot set personalized volume - not connected");
-        return false;
-    }
-
     auto packet = Packets::BuildPersonalizedVolumePacket(enable);
-    if (!SendPacket(packet)) {
+    if (!SendControlPacket(packet)) {
         return false;
     }
 
@@ -520,13 +482,8 @@ std::optional<PersonalizedVolumeState> Manager::GetPersonalizedVolumeState() con
 
 bool Manager::SetAutomaticEarDetection(bool enable)
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot set automatic ear detection - not connected");
-        return false;
-    }
-
     auto packet = Packets::BuildAutomaticEarDetectionPacket(enable);
-    if (!SendPacket(packet)) {
+    if (!SendControlPacket(packet)) {
         return false;
     }
 
@@ -542,22 +499,18 @@ std::optional<bool> Manager::GetAutomaticEarDetectionState() const
 
 bool Manager::SetLoudSoundReduction(bool enable)
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot set loud sound reduction - not connected");
-        return false;
-    }
-
     auto packet = Packets::BuildLoudSoundReductionPacket(enable);
-    if (!SendPacket(packet)) {
+    AAPAttempt sentAttempt;
+    if (!SendControlPacket(packet, false, &sentAttempt)) {
         return false;
     }
 
     // The CCCD (0x1C) does not work, so the firmware state can only be read back. The
     // read-back uses the same single-outstanding reservation as the probe: while a read is
     // still in flight no second frame is put on the wire, and an unconfirmed ATT path never
-    // gets speculative traffic.
+    // gets speculative traffic. Bind the follow-up to the session that accepted the write.
     if (GetAttPathState() == AttPathState::Confirmed) {
-        RequestAttRead(GetLastAttempt(), Att::kLoudSoundReductionHandle);
+        RequestAttRead(sentAttempt, Att::kLoudSoundReductionHandle);
     }
 
     LOG(Info, "AAP: Set loud sound reduction to {}", enable ? "enabled" : "disabled");
@@ -572,25 +525,13 @@ std::optional<LoudSoundReductionState> Manager::GetLoudSoundReductionState() con
 
 bool Manager::SetPpeCapLevel(uint8_t level)
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot set PPE cap level - not connected");
-        return false;
-    }
-    {
-        std::lock_guard lock{_mutex};
-        if (!_featureFlagsEnabled) {
-            LOG(Warn, "AAP: PPE/adaptive controls unavailable, feature flags were not sent");
-            return false;
-        }
-    }
-
     // Control command 0x38 is PPE (hearing-protection) cap level, range 0-100 per
     // Docs/AAP-Protocol-Spec.md §7. Values outside the documented range (including stale
     // pre-P5 inputs from the old 0-50 adaptive-transparency UI) clamp at the domain edge.
     level = NormalizePpeCapLevel(level);
 
     auto packet = Packets::BuildPpeCapLevelPacket(level);
-    if (!SendPacket(packet)) {
+    if (!SendControlPacket(packet, true)) {
         return false;
     }
 
@@ -606,24 +547,12 @@ std::optional<uint8_t> Manager::GetPpeCapLevel() const
 
 bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot set adaptive noise level - not connected");
-        return false;
-    }
-    {
-        std::lock_guard lock{_mutex};
-        if (!_featureFlagsEnabled) {
-            LOG(Warn, "AAP: Adaptive noise unavailable, feature flags were not sent");
-            return false;
-        }
-    }
-
     if (level > 100) {
         level = 100;
     }
 
     auto packet = Packets::BuildAdaptiveNoisePacket(level);
-    if (!SendPacket(packet)) {
+    if (!SendControlPacket(packet, true)) {
         return false;
     }
 
@@ -633,40 +562,56 @@ bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
 
 bool Manager::StartHeadTracking()
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot start head tracking - not connected");
+    {
+        std::lock_guard lock{_mutex};
+        if (!_connected) {
+            LOG(Warn, "AAP: Cannot start head tracking - not connected");
+            return false;
+        }
+        if (_headTrackingActive) {
+            LOG(Warn, "AAP: Head tracking already active");
+            return true;
+        }
+    }
+
+    AAPAttempt sentAttempt;
+    if (!SendControlPacket(Packets::StartHeadTracking, false, &sentAttempt)) {
         return false;
     }
 
-    if (_headTrackingActive) {
-        LOG(Warn, "AAP: Head tracking already active");
-        return true;
+    {
+        std::lock_guard lock{_mutex};
+        if (IsCurrentAttemptLocked(sentAttempt)) {
+            _headTrackingActive = true;
+        }
     }
-
-    if (!SendPacket(Packets::StartHeadTracking)) {
-        return false;
-    }
-
-    _headTrackingActive = true;
     LOG(Info, "AAP: Started head tracking");
     return true;
 }
 
 bool Manager::StopHeadTracking()
 {
-    if (!_connected) {
+    {
+        std::lock_guard lock{_mutex};
+        if (!_connected) {
+            return false;
+        }
+        if (!_headTrackingActive) {
+            return true;
+        }
+    }
+
+    AAPAttempt sentAttempt;
+    if (!SendControlPacket(Packets::StopHeadTracking, false, &sentAttempt)) {
         return false;
     }
 
-    if (!_headTrackingActive) {
-        return true;
+    {
+        std::lock_guard lock{_mutex};
+        if (IsCurrentAttemptLocked(sentAttempt)) {
+            _headTrackingActive = false;
+        }
     }
-
-    if (!SendPacket(Packets::StopHeadTracking)) {
-        return false;
-    }
-
-    _headTrackingActive = false;
     LOG(Info, "AAP: Stopped head tracking");
     return true;
 }
@@ -944,40 +889,80 @@ bool Manager::IsActiveAttemptLocked(AAPAttempt attempt) const
            _attempt.generation == attempt.generation && (_connected || _connecting);
 }
 
-bool Manager::SendPacket(const std::vector<uint8_t> &packet)
+bool Manager::SendControlPacket(
+    const std::vector<uint8_t> &packet, bool requireFeatureFlags, AAPAttempt *sentAttempt)
 {
-    if (_sendBarrier) {
-        _sendBarrier();
-    }
     AAPAttempt attempt;
-    {
-        std::lock_guard lock{_mutex};
-        attempt = _attempt;
-    }
-    return SendPacket(packet, attempt);
-}
-
-bool Manager::SendPacket(const std::vector<uint8_t> &packet, AAPAttempt attempt)
-{
     std::shared_ptr<AAPTransport> transport;
+    std::stop_source connectStop;
+    std::function<void()> barrier;
     {
+        // Connected state, identity, destination, and cancellation are one session snapshot.
+        // Public commands must never return to _transport later and pick up a replacement.
         std::lock_guard lock{_mutex};
-        if (!IsActiveAttemptLocked(attempt)) {
+        if (!IsCurrentAttemptLocked(_attempt) ||
+            _cancelledGeneration.load() == _attempt.generation ||
+            _connectStop.get_token().stop_requested())
+        {
             return false;
         }
+        attempt = _attempt;
         transport = _transport.load();
+        connectStop = _connectStop;
+        barrier = _sendBarrier;
+        if (!transport || (requireFeatureFlags && !_featureFlagsEnabled)) {
+            return false;
+        }
     }
-    return SendPacket(packet, attempt, transport);
+
+    if (barrier) {
+        barrier();
+    }
+    {
+        // The barrier/teardown can retire this session after the snapshot. Revalidate the
+        // pinned identity, connection, capability, and both cancellation sources immediately
+        // before entering the raw sender.
+        std::lock_guard lock{_mutex};
+        if (!IsCurrentAttemptLocked(attempt) || _transport.load() != transport ||
+            _cancelledGeneration.load() == attempt.generation ||
+            connectStop.get_token().stop_requested() ||
+            (requireFeatureFlags && !_featureFlagsEnabled))
+        {
+            return false;
+        }
+    }
+    if (!SendPacket(transport, packet, connectStop.get_token())) {
+        return false;
+    }
+    if (sentAttempt) {
+        *sentAttempt = attempt;
+    }
+    return true;
 }
 
+// Initialization-only raw sender. Public commands must use SendControlPacket above; the
+// handshake and ATT probe deliberately run before the connected gate opens.
 bool Manager::SendPacket(
     const std::shared_ptr<AAPTransport> &transport, const std::vector<uint8_t> &packet,
     std::stop_token stopToken)
 {
-    if (!transport || stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
+    if (!transport || stopToken.stop_requested()) {
         return false;
     }
-    return transport->Send(packet, stopToken);
+    {
+        // Connect replaces this source under _mutex; never read its token unlocked.
+        std::lock_guard lock{_mutex};
+        if (_connectStop.get_token().stop_requested()) {
+            return false;
+        }
+    }
+    if (!transport->Send(packet, stopToken)) {
+        return false;
+    }
+
+    LOG(Trace, "AAP: Sent {} bytes via {}", packet.size(),
+        transport->Kind() == AAPTransportKind::MagicAAP ? "MagicAAP" : "SEQPACKET");
+    return true;
 }
 
 bool Manager::SendPacket(
@@ -993,16 +978,7 @@ bool Manager::SendPacket(
             return false;
         }
     }
-    if (_sendBarrier) {
-        _sendBarrier();
-    }
-    if (!SendPacket(transport, packet, stopToken)) {
-        return false;
-    }
-
-    LOG(Trace, "AAP: Sent {} bytes via {}", packet.size(),
-        transport->Kind() == AAPTransportKind::MagicAAP ? "MagicAAP" : "SEQPACKET");
-    return true;
+    return SendPacket(transport, packet, stopToken);
 }
 
 void Manager::ProcessPacket(const std::vector<uint8_t> &packet)
@@ -1486,16 +1462,12 @@ bool Manager::IsActiveAttemptLocked(AAPAttempt) const
     return false;
 }
 void Manager::ProcessAttFrame(const std::vector<uint8_t> &, AAPAttempt, const Callbacks &) {}
-bool Manager::SendPacket(const std::vector<uint8_t> &)
+bool Manager::SendControlPacket(const std::vector<uint8_t> &, bool, AAPAttempt *)
 {
     return false;
 }
 bool Manager::SendPacket(
     const std::shared_ptr<AAPTransport> &, const std::vector<uint8_t> &, std::stop_token)
-{
-    return false;
-}
-bool Manager::SendPacket(const std::vector<uint8_t> &, AAPAttempt)
 {
     return false;
 }

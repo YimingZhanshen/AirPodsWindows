@@ -781,10 +781,239 @@ private slots:
         manager._transport.store(nullptr);
     }
 
-    // The capability check and transport choice must describe one session. An unbound send
-    // reaches the barrier before snapshotting; a bound send reaches it after revalidation but
-    // before writing. Replacing the session at that exact boundary therefore sends to A with
-    // the fix, whereas the old untagged implementation snapshots and writes to B.
+    // Every public control setter must reject a disconnected session before touching its
+    // transport, including idempotent head-tracking paths with primed local state.
+    void ControlSettersRefuseWhileDisconnected()
+    {
+        using Core::AAP::Manager;
+        struct SetterCase {
+            const char *name;
+            std::function<bool(Manager &)> invoke;
+            std::function<void(Manager &)> prepare;
+        };
+        const std::vector<SetterCase> setters{
+            {"noise mode",
+             [](Manager &manager) {
+                 return manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Off);
+             },
+             {}},
+            {"conversational awareness",
+             [](Manager &manager) { return manager.SetConversationalAwareness(true); },
+             {}},
+            {"personalized volume",
+             [](Manager &manager) { return manager.SetPersonalizedVolume(true); },
+             {}},
+            {"automatic ear detection",
+             [](Manager &manager) { return manager.SetAutomaticEarDetection(true); },
+             {}},
+            {"loud sound reduction",
+             [](Manager &manager) { return manager.SetLoudSoundReduction(true); },
+             {}},
+            {"PPE cap", [](Manager &manager) { return manager.SetPpeCapLevel(50); }, {}},
+            {"adaptive noise",
+             [](Manager &manager) { return manager.SetAdaptiveNoiseLevel(50); },
+             {}},
+            {"head tracking start",
+             [](Manager &manager) { return manager.StartHeadTracking(); },
+             {}},
+            {"head tracking stop", [](Manager &manager) { return manager.StopHeadTracking(); },
+             [](Manager &manager) { manager._headTrackingActive = true; }},
+        };
+
+        for (const auto &setter : setters) {
+            Manager manager;
+            auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+            QVERIFY(transport->Connect(1, {}));
+            manager._transport.store(transport);
+            manager._attempt = Core::AAP::AAPAttempt{1, 1};
+            manager._connected = false;
+            manager._featureFlagsEnabled = true;
+            setter.prepare(manager);
+
+            QVERIFY2(!setter.invoke(manager), setter.name);
+            QCOMPARE(transport->SendCalls(), size_t{0});
+            QVERIFY(transport->SentRecords().empty());
+        }
+    }
+
+    // Successful writes reach the pinned transport exactly once. A subsequent refused atomic
+    // write is not success: all setters propagate false, emit no complete record, and leave
+    // head-tracking state unchanged.
+    void ControlSettersSendAndPropagateRefusedWrites()
+    {
+        using Core::AAP::Manager;
+        struct SetterCase {
+            const char *name;
+            std::function<bool(Manager &)> invoke;
+            std::function<void(Manager &)> prepare;
+        };
+        const std::vector<SetterCase> setters{
+            {"noise mode",
+             [](Manager &manager) {
+                 return manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Off);
+             },
+             {}},
+            {"conversational awareness",
+             [](Manager &manager) { return manager.SetConversationalAwareness(true); },
+             {}},
+            {"personalized volume",
+             [](Manager &manager) { return manager.SetPersonalizedVolume(true); },
+             {}},
+            {"automatic ear detection",
+             [](Manager &manager) { return manager.SetAutomaticEarDetection(true); },
+             {}},
+            {"loud sound reduction",
+             [](Manager &manager) { return manager.SetLoudSoundReduction(true); },
+             {}},
+            {"PPE cap", [](Manager &manager) { return manager.SetPpeCapLevel(50); }, {}},
+            {"adaptive noise",
+             [](Manager &manager) { return manager.SetAdaptiveNoiseLevel(50); },
+             {}},
+            {"head tracking start",
+             [](Manager &manager) { return manager.StartHeadTracking(); },
+             {}},
+            {"head tracking stop", [](Manager &manager) { return manager.StopHeadTracking(); },
+             [](Manager &manager) { manager._headTrackingActive = true; }},
+        };
+
+        for (const auto &setter : setters) {
+            Manager manager;
+            auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+            QVERIFY(transport->Connect(1, {}));
+            manager._transport.store(transport);
+            manager._attempt = Core::AAP::AAPAttempt{1, 1};
+            manager._connected = true;
+            manager._featureFlagsEnabled = true;
+            setter.prepare(manager);
+
+            QVERIFY2(setter.invoke(manager), setter.name);
+            QCOMPARE(transport->SendCalls(), size_t{1});
+            QCOMPARE(transport->SentRecords().size(), size_t{1});
+        }
+
+        for (const auto &setter : setters) {
+            Manager manager;
+            auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+            QVERIFY(transport->Connect(1, {}));
+            transport->SetSendError(true);
+            manager._transport.store(transport);
+            manager._attempt = Core::AAP::AAPAttempt{1, 1};
+            manager._connected = true;
+            manager._featureFlagsEnabled = true;
+            setter.prepare(manager);
+            const bool trackingBefore = manager._headTrackingActive.load();
+
+            QVERIFY2(!setter.invoke(manager), setter.name);
+            QCOMPARE(transport->SendCalls(), size_t{0});
+            QVERIFY(transport->SentRecords().empty());
+            QCOMPARE(manager._headTrackingActive.load(), trackingBefore);
+        }
+    }
+
+    // The feature check and transport choice must describe one session. At the barrier the
+    // successor has no feature permission; a stale command must still go only to session A.
+    void ConversationalAwarenessCommandCannotCrossReconnectBarrier()
+    {
+        Core::AAP::Manager manager;
+        auto sessionA = std::make_shared<AAPTestSupport::FakeTransport>();
+        auto sessionB = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(sessionA->Connect(1, {}));
+        QVERIFY(sessionB->Connect(1, {}));
+        manager._transport.store(sessionA);
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
+        manager._featureFlagsEnabled = true;
+
+        std::promise<void> barrierEntered;
+        std::promise<void> releaseBarrier;
+        auto entered = barrierEntered.get_future();
+        auto release = releaseBarrier.get_future().share();
+        std::atomic<bool> barrierSeen{false};
+        manager._sendBarrier = [&] {
+            if (!barrierSeen.exchange(true)) {
+                barrierEntered.set_value();
+                release.wait();
+            }
+        };
+
+        auto command = std::async(
+            std::launch::async, [&] { return manager.SetConversationalAwareness(true); });
+        const bool reachedBarrier =
+            entered.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+        if (!reachedBarrier) {
+            releaseBarrier.set_value();
+        }
+        QVERIFY(reachedBarrier);
+
+        manager._attempt = Core::AAP::AAPAttempt{1, 2};
+        manager._transport.store(sessionB);
+        manager._featureFlagsEnabled = false;
+        manager._connected = true;
+        releaseBarrier.set_value();
+
+        QVERIFY(command.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+        QVERIFY(!command.get());
+        manager._sendBarrier = {};
+        QCOMPARE(sessionA->SendCalls(), size_t{0});
+        QVERIFY(sessionA->SentRecords().empty());
+        QCOMPARE(sessionB->SendCalls(), size_t{0});
+        QVERIFY(sessionB->SentRecords().empty());
+        QCOMPARE(manager.GetLastAttempt().generation, uint64_t{2});
+
+        // The replacement session never inherited A's feature permission.
+        QVERIFY(!manager.SetConversationalAwareness(true));
+        QCOMPARE(sessionB->SendCalls(), size_t{0});
+        manager._connected = false;
+        manager._transport.store(nullptr);
+    }
+
+    // Cancellation after the snapshot must also win at the barrier, even if the transport and
+    // generation still look current.
+    void ControlCommandRevalidatesCancellationAtBarrier()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
+
+        std::promise<void> barrierEntered;
+        std::promise<void> releaseBarrier;
+        auto entered = barrierEntered.get_future();
+        auto release = releaseBarrier.get_future().share();
+        std::atomic<bool> barrierSeen{false};
+        manager._sendBarrier = [&] {
+            if (!barrierSeen.exchange(true)) {
+                barrierEntered.set_value();
+                release.wait();
+            }
+        };
+
+        auto command =
+            std::async(std::launch::async, [&] { return manager.SetPersonalizedVolume(true); });
+        const bool reachedBarrier =
+            entered.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+        if (!reachedBarrier) {
+            releaseBarrier.set_value();
+        }
+        QVERIFY(reachedBarrier);
+
+        manager._cancelledGeneration.store(1);
+        manager._connectStop.request_stop();
+        releaseBarrier.set_value();
+
+        QVERIFY(command.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+        QVERIFY(!command.get());
+        manager._sendBarrier = {};
+        QCOMPARE(transport->SendCalls(), size_t{0});
+        QVERIFY(transport->SentRecords().empty());
+        manager._connected = false;
+        manager._transport.store(nullptr);
+    }
+
+    // The capability check and transport choice must describe one session. At the barrier the
+    // successor has no feature permission; a stale command must be rejected before any write.
     void AdaptiveCommandCannotCrossReconnectBarrier()
     {
         Core::AAP::Manager manager;
@@ -826,12 +1055,10 @@ private slots:
         releaseBarrier.set_value();
 
         QVERIFY(command.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
-        QVERIFY(command.get());
+        QVERIFY(!command.get());
         manager._sendBarrier = {};
-        QCOMPARE(sessionA->SendCalls(), size_t{1});
-        QCOMPARE(
-            sessionA->LastSend(),
-            Core::AAP::Packets::BuildNoiseControlPacket(Core::AAP::NoiseControlMode::Adaptive));
+        QCOMPARE(sessionA->SendCalls(), size_t{0});
+        QVERIFY(sessionA->SentRecords().empty());
         QCOMPARE(sessionB->SendCalls(), size_t{0});
         QVERIFY(sessionB->SentRecords().empty());
         QCOMPARE(manager.GetLastAttempt().generation, uint64_t{2});
