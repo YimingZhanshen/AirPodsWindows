@@ -450,16 +450,18 @@ void AirPodsDomainTests::MapsModelNumberStringsToUnionOfForkAndUpstreamModels()
 
 void AirPodsDomainTests::RefinesKnownModelsOnlyWithinTheirFamily()
 {
-    using Resolve = Core::AirPods::Details::ResolveModel;
-    QCOMPARE(Resolve(Model::Unknown, Model::AirPods_5_WCC), Model::AirPods_5_WCC);
-    QCOMPARE(Resolve(Model::AirPods_5, Model::AirPods_5_WCC), Model::AirPods_5_WCC);
-    QCOMPARE(Resolve(Model::AirPods_5, Model::AirPods_5), Model::AirPods_5);
-    QCOMPARE(Resolve(Model::AirPods_5, Model::AirPods_Pro_3), Model::AirPods_5);
-    QCOMPARE(Resolve(Model::AirPods_4, Model::AirPods_4_ANC), Model::AirPods_4_ANC);
-    QCOMPARE(Resolve(Model::AirPods_Pro_2, Model::AirPods_Pro_2_USB_C), Model::AirPods_Pro_2_USB_C);
-    QCOMPARE(Resolve(Model::AirPods_Max, Model::AirPods_Max_USB_C), Model::AirPods_Max_USB_C);
-    QCOMPARE(Resolve(Model::AirPods_Pro_2_USB_C, Model::AirPods_Pro_2), Model::AirPods_Pro_2_USB_C);
-    QCOMPARE(Resolve(Model::AirPods_Pro_3, std::nullopt), Model::AirPods_Pro_3);
+    using ResolveModel = Core::AirPods::Details::ResolveModel;
+    QCOMPARE(ResolveModel(Model::Unknown, Model::AirPods_5_WCC), Model::AirPods_5_WCC);
+    QCOMPARE(ResolveModel(Model::AirPods_5, Model::AirPods_5_WCC), Model::AirPods_5_WCC);
+    QCOMPARE(ResolveModel(Model::AirPods_5, Model::AirPods_5), Model::AirPods_5);
+    QCOMPARE(ResolveModel(Model::AirPods_5, Model::AirPods_Pro_3), Model::AirPods_5);
+    QCOMPARE(ResolveModel(Model::AirPods_4, Model::AirPods_4_ANC), Model::AirPods_4_ANC);
+    QCOMPARE(
+        ResolveModel(Model::AirPods_Pro_2, Model::AirPods_Pro_2_USB_C), Model::AirPods_Pro_2_USB_C);
+    QCOMPARE(ResolveModel(Model::AirPods_Max, Model::AirPods_Max_USB_C), Model::AirPods_Max_USB_C);
+    QCOMPARE(
+        ResolveModel(Model::AirPods_Pro_2_USB_C, Model::AirPods_Pro_2), Model::AirPods_Pro_2_USB_C);
+    QCOMPARE(ResolveModel(Model::AirPods_Pro_3, std::nullopt), Model::AirPods_Pro_3);
 }
 
 void AirPodsDomainTests::AirPods5VariantsExposeAapCapabilities()
