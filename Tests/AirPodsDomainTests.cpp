@@ -1302,16 +1302,16 @@ void AirPodsDomainTests::HebrewUpdateWindowTranslationsAreFinished_data()
     QTest::addColumn<QString>("expectedSource");
     QTest::addColumn<QString>("expectedTranslation");
 
-    QTest::newRow("view release") << qPrintable(QStringLiteral("View release"))
-                                  << qPrintable(QStringLiteral("צפה בפרטי הגרסה"));
-    QTest::newRow("skip this version") << qPrintable(QStringLiteral("Skip this version"))
-                                       << qPrintable(QStringLiteral("דלג על גרסה זו"));
-    QTest::newRow("remind me later") << qPrintable(QStringLiteral("Remind me later"))
-                                     << qPrintable(QStringLiteral("הזכר לי מאוחר יותר"));
-    QTest::newRow("update now") << qPrintable(QStringLiteral("Update now"))
-                                << qPrintable(QStringLiteral("עדכן עכשיו"));
-    QTest::newRow("download manually") << qPrintable(QStringLiteral("Download Manually"))
-                                       << qPrintable(QStringLiteral("הורדת ידנית"));
+    QTest::newRow("view release") << qUtf8Printable(QStringLiteral("View release"))
+                                  << qUtf8Printable(QStringLiteral("צפה בפרטי הגרסה"));
+    QTest::newRow("skip this version") << qUtf8Printable(QStringLiteral("Skip this version"))
+                                       << qUtf8Printable(QStringLiteral("דלג על גרסה זו"));
+    QTest::newRow("remind me later") << qUtf8Printable(QStringLiteral("Remind me later"))
+                                     << qUtf8Printable(QStringLiteral("הזכר לי מאוחר יותר"));
+    QTest::newRow("update now") << qUtf8Printable(QStringLiteral("Update now"))
+                                << qUtf8Printable(QStringLiteral("עדכן עכשיו"));
+    QTest::newRow("download manually") << qUtf8Printable(QStringLiteral("Download Manually"))
+                                       << qUtf8Printable(QStringLiteral("הורדת ידנית"));
 }
 
 void AirPodsDomainTests::HebrewUpdateWindowTranslationsAreFinished()
