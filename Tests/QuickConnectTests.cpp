@@ -134,6 +134,8 @@ private slots:
     void manualClickJoinsAutomaticConnectedCheck();
     void disabledOrUnconfiguredAutomaticConnectDoesNothing();
     void automaticFailureRequiresCooldownAndNewPlayback();
+    void automaticUnavailableRequiresCooldownAndNewPlayback();
+    void automaticTimeoutRequiresCooldownAndNewPlayback();
 
     // Controller
     void disabledRequestDoesNotCallBackend();
@@ -271,6 +273,60 @@ void QuickConnectTests::automaticFailureRequiresCooldownAndNewPlayback()
     controller.OnPlaybackStateChanged(false);
     controller.OnPlaybackStateChanged(true);
     QCOMPARE(backend->reconnectCalls.load(), 2);
+}
+
+void QuickConnectTests::automaticUnavailableRequiresCooldownAndNewPlayback()
+{
+    auto backend = std::make_shared<FakeBackend>();
+    Controller controller{backend, kTestResolveTimeout, 80ms};
+    controller.SetDeviceId("{Missing}");
+    controller.SetAudioAutoConnectEnabled(true);
+    QSignalSpy outcomes{&controller, &Controller::OutcomeChanged};
+    controller.OnPlaybackStateChanged(true);
+    QTRY_COMPARE(outcomes.count(), 1);
+    QCOMPARE(outcomes.last().at(0).value<Outcome>(), Outcome::DeviceUnavailable);
+    QCOMPARE(backend->listCalls.load(), 1);
+    controller.OnPlaybackStateChanged(false);
+    controller.OnPlaybackStateChanged(true);
+    QCOMPARE(backend->listCalls.load(), 1);
+    QTest::qWait(100);
+    controller.OnPlaybackStateChanged(true);
+    QCOMPARE(backend->listCalls.load(), 1);
+    controller.OnPlaybackStateChanged(false);
+    controller.OnPlaybackStateChanged(true);
+    QTRY_COMPARE(outcomes.count(), 2);
+    QCOMPARE(outcomes.last().at(0).value<Outcome>(), Outcome::DeviceUnavailable);
+    QCOMPARE(backend->listCalls.load(), 2);
+    QCOMPARE(backend->reconnectCalls.load(), 0);
+}
+
+void QuickConnectTests::automaticTimeoutRequiresCooldownAndNewPlayback()
+{
+    auto backend = std::make_shared<FakeBackend>();
+    Controller controller{backend, kTestResolveTimeout, 80ms};
+    controller.SetDeviceId("{A}");
+    controller.SetAudioAutoConnectEnabled(true);
+    QSignalSpy outcomes{&controller, &Controller::OutcomeChanged};
+    controller.OnPlaybackStateChanged(true);
+    QTRY_COMPARE(outcomes.count(), 1);
+    QCOMPARE(outcomes.last().at(0).value<Outcome>(), Outcome::RequestStarted);
+    QTRY_COMPARE_WITH_TIMEOUT(outcomes.count(), 3, 2'000);
+    QCOMPARE(outcomes.at(2).at(0).value<Outcome>(), Outcome::TimedOut);
+    QCOMPARE(backend->reconnectCalls.load(), 1);
+    controller.OnPlaybackStateChanged(false);
+    controller.OnPlaybackStateChanged(true);
+    QCOMPARE(backend->reconnectCalls.load(), 1);
+    QTest::qWait(100);
+    controller.OnPlaybackStateChanged(true);
+    QCOMPARE(backend->reconnectCalls.load(), 1);
+    controller.OnPlaybackStateChanged(false);
+    controller.OnPlaybackStateChanged(true);
+    QTRY_COMPARE_WITH_TIMEOUT(outcomes.count(), 5, 2'000);
+    QCOMPARE(outcomes.at(3).at(0).value<Outcome>(), Outcome::RequestStarted);
+    QCOMPARE(outcomes.last().at(0).value<Outcome>(), Outcome::RequestStarted);
+    QCOMPARE(backend->reconnectCalls.load(), 2);
+    QCOMPARE(controller.OnEndpointStateChanged("{A}", true), Outcome::Connected);
+    QCOMPARE(outcomes.last().at(0).value<Outcome>(), Outcome::Connected);
 }
 
 //////////////////////////////////////////////////

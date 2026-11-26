@@ -112,7 +112,8 @@ Manager::Manager(QObject *parent) : QObject{parent}
 {
     _stateMgr.SetOnDiscardState([this] {
         _lidTracker.OnLost(Details::LidTracker::Clock::now());
-        QMetaObject::invokeMethod(this, [this] { emit Disconnected(); }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            this, [this] { emit Disconnected(); }, Qt::QueuedConnection);
     });
 
     _adWatcher.CbReceived() += [this](auto &&...args) {
@@ -255,7 +256,8 @@ void Manager::OnBoundDeviceAddressChanged(uint64_t address)
     _aapMgr.Disconnect();
 
     emit DeviceConnectionChanged(false);
-    QMetaObject::invokeMethod(this, [this] { StopScanner(); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(
+        this, [this] { StopScanner(); }, Qt::QueuedConnection);
 
     if (address == 0) {
         LOG(Info, "Unbind device.");

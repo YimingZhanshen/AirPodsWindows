@@ -112,10 +112,7 @@ void SetRepository(std::unique_ptr<Repository> repository);
         Impl::OnApply(&OnApply_tray_icon_battery))                                                 \
     callback(bool, tray_quick_connect_enabled, {false},                                            \
         Impl::OnApply(&OnApply_tray_quick_connect_enabled),                                         \
-        Impl::Desc{QT_TRANSLATE_NOOP("QObject",                                                     \
-            "Single-click the tray icon to connect the selected device when disconnected, "        \
-            "or show battery information when connected. Battery information opens automatically " \
-            "after a successful connection.")})                                                   \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "A click on the tray icon connects the selected device instead of opening the main window. Double-click still opens it.")}) \
     callback(bool, audio_auto_connect_enabled, {false},                                             \
         Impl::OnApply(&OnApply_audio_auto_connect_enabled),                                         \
         Impl::Desc{QT_TRANSLATE_NOOP("QObject",                                                     \
