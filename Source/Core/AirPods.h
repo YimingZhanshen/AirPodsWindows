@@ -165,6 +165,9 @@ public:
     struct UpdateEvent {
         std::optional<State> oldState;
         State newState;
+        // Identifies the StateManager incarnation that produced this report. Queued consumers
+        // reject it after any full state loss, even before Manager's discard callback runs.
+        uint64_t generation{1};
     };
 
     struct Intervals {
@@ -179,9 +182,11 @@ public:
     std::optional<State> GetCurrentState() const;
 
     std::optional<UpdateEvent> OnAdvReceived(Advertisement adv);
-    void Disconnect();
+    bool Disconnect();
 
     void OnRssiMinChanged(int16_t rssiMin);
+    uint64_t Generation() const;
+    bool IsCurrentGeneration(uint64_t generation) const;
 
 private:
     using Clock = std::chrono::steady_clock;
@@ -196,6 +201,7 @@ private:
     // Addresses outlive expired advertisements so weak packets from a known side remain usable.
     Helper::Sides<std::optional<Advertisement::AddressType>> _knownAddress;
     std::optional<State> _cachedState;
+    uint64_t _generation{1};
     int16_t _rssiMin{std::numeric_limits<int16_t>::max()};
 
     bool IsPossibleDesiredAdv(const Advertisement &adv) const;
@@ -246,6 +252,12 @@ public:
     using Clock = std::chrono::steady_clock;
     using Timestamp = std::chrono::milliseconds;
 
+    struct FusionContext {
+        uint64_t epoch{1};
+        std::optional<AAP::AAPAttempt> session;
+        std::optional<Side> primarySide;
+    };
+
     std::optional<EarState> UpdateBle(
         const State &state, Timestamp now, std::optional<uint64_t> expectedEpoch = std::nullopt);
     std::optional<EarState> UpdateAap(EarState left, EarState right, Timestamp now);
@@ -253,6 +265,11 @@ public:
         EarState primary, EarState secondary, std::optional<Side> primarySide,
         AAP::AAPAttempt session, std::optional<uint64_t> expectedEpoch, Timestamp now);
     std::optional<EarState> Reevaluate(Timestamp now);
+    // Deadline callbacks publish only for the exact source context they were armed for.
+    std::optional<EarState> Reevaluate(
+        Timestamp now, uint64_t expectedEpoch,
+        const std::optional<AAP::AAPAttempt> &expectedSession);
+    FusionContext Snapshot() const;
     std::optional<Clock::time_point> Deadline() const;
     uint64_t Epoch() const;
     // Session/epoch keyed so a late disconnect cannot clear a replacement session's overlay.
@@ -338,6 +355,13 @@ private:
     Details::LidTracker _lidTracker;
     Details::EarDetectionTracker _earDetection;
     QTimer _earDebounceTimer;
+    // BLE/AAP callback wrappers sample this as their first action. Full resets advance it under
+    // `_mutex`, so a callback captured before reset cannot adopt the reset's newer tracker epoch.
+    std::atomic<uint64_t> _earResetGeneration{1};
+    uint64_t _earDeadlineResetGeneration{1};
+    uint64_t _earDeadlineStateGeneration{1};
+    uint64_t _earDeadlineEpoch{1};
+    std::optional<AAP::AAPAttempt> _earDeadlineSession;
     Details::StateManager _stateMgr;
     std::optional<Bluetooth::Device> _boundDevice;
     std::optional<Model> _modelOverride;
@@ -396,13 +420,16 @@ private:
 
     void CompleteBoundDeviceLookup(uint64_t address, std::optional<Bluetooth::Device> device);
     void OnBoundDeviceConnectionStateChanged(Bluetooth::DeviceState state);
-    void OnStateChanged(Details::StateManager::UpdateEvent updateEvent);
+    void OnStateChanged(Details::StateManager::UpdateEvent updateEvent, uint64_t resetGeneration);
     void OnLidOpened(bool opened);
     void OnEarStateChanged(EarState state);
     void ScheduleEarDeadline();
     void ReevaluateEarDetection();
     void ResetEarDetection();
-    bool OnAdvertisementReceived(const Bluetooth::AdvertisementWatcher::ReceivedData &data);
+    // Caller holds `_mutex`; only owner-thread timer rearm is queued after invalidation.
+    void ResetEarDetectionLocked();
+    bool OnAdvertisementReceived(
+        const Bluetooth::AdvertisementWatcher::ReceivedData &data, uint64_t resetGeneration);
     void OnAdvWatcherStateChanged(
         Bluetooth::AdvertisementWatcher::State state, const std::optional<std::string> &optError);
 
@@ -418,7 +445,8 @@ private:
     void OnPpeCapLevelNotification(uint8_t level, AAP::AAPAttempt attempt);
     void OnSpeakingLevelChanged(AAP::SpeakingLevel level, AAP::AAPAttempt attempt);
     void OnEarDetectionChanged(
-        AAP::EarStatus primary, AAP::EarStatus secondary, AAP::AAPAttempt attempt);
+        AAP::EarStatus primary, AAP::EarStatus secondary, AAP::AAPAttempt attempt,
+        uint64_t resetGeneration);
     void OnAAPBatteryChanged(const AAP::AAPBatterySnapshot &snapshot, AAP::AAPAttempt attempt);
     void OnHeadTrackingData(AAP::HeadTrackingData data, AAP::AAPAttempt attempt);
     void OnAttProbeResult(AAP::AttPathState state, AAP::AAPAttempt attempt);

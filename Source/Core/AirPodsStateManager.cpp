@@ -105,7 +105,7 @@ auto StateManager::OnAdvReceived(Advertisement adv) -> std::optional<UpdateEvent
     return UpdateState();
 }
 
-void StateManager::Disconnect()
+bool StateManager::Disconnect()
 {
     std::function<void()> onDiscardState;
     {
@@ -117,13 +117,27 @@ void StateManager::Disconnect()
     }
     if (onDiscardState) {
         onDiscardState();
+        return true;
     }
+    return false;
 }
 
 void StateManager::OnRssiMinChanged(int16_t rssiMin)
 {
     std::lock_guard<std::mutex> lock{_mutex};
     _rssiMin = rssiMin;
+}
+
+uint64_t StateManager::Generation() const
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    return _generation;
+}
+
+bool StateManager::IsCurrentGeneration(uint64_t generation) const
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    return generation == _generation;
 }
 
 void StateManager::SetOnDiscardState(std::function<void()> callback)
@@ -322,7 +336,11 @@ auto StateManager::UpdateState() -> std::optional<UpdateEvent>
 
     auto oldState = std::move(_cachedState);
     _cachedState = std::move(newState);
-    return UpdateEvent{.oldState = std::move(oldState), .newState = _cachedState.value()};
+    return UpdateEvent{
+        .oldState = std::move(oldState),
+        .newState = _cachedState.value(),
+        .generation = _generation,
+    };
 }
 
 std::function<void()> StateManager::ResetAll()
@@ -331,6 +349,9 @@ std::function<void()> StateManager::ResetAll()
     // establish a new debounce baseline instead of completing a pre-gap candidate.
     auto onDiscardState = _cachedState.has_value() ? _onDiscardState : nullptr;
 
+    // Advance before clearing so queued reports cannot observe a missing state and still pass
+    // an old generation check while Manager's discard callback is waiting for `_mutex`.
+    ++_generation;
     _adv.left.reset();
     _adv.right.reset();
     _cachedState.reset();

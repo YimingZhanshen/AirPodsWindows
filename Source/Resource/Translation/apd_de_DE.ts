@@ -468,6 +468,10 @@ Kopple deine AirPods zuerst in den Windows Bluetooth-Einstellungen.</translation
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>Entprellung der Ohrerkennung: Niedrig 600 ms, Normal 300 ms, Hoch 150 ms. Höhere Empfindlichkeit reagiert schneller.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -545,10 +549,6 @@ Kopple deine AirPods zuerst in den Windows Bluetooth-Einstellungen.</translation
     <message>
         <source>High</source>
         <translation>Hoch</translation>
-    </message>
-    <message>
-        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
-        <translation>Entprellung der Ohrerkennung: Niedrig 600 ms, Normal 300 ms, Hoch 150 ms. Höhere Empfindlichkeit reagiert schneller.</translation>
     </message>
     <message>
         <source>Low audio latency</source>

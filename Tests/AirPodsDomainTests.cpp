@@ -292,6 +292,10 @@ private Q_SLOTS:
     void AapRolesUseAggregateFallbackWithoutPrimaryIdentity();
     void QueuedAapReportIsRejectedAfterResetEpoch();
     void AapDisconnectCleanupIsSessionAndEpochKeyed();
+    void DueTimerRejectsStaleEpochAndSession();
+    void ResetGenerationRejectsReportCapturedBeforeReset();
+    void QueuedAapReportRetainsCapturedPrimaryRole();
+    void StateManagerGenerationInvalidatesQueuedUpdates();
     void AapDisconnectRequiresFreshBleConfirmation();
     void EarDetectionResetsAcrossStateLoss();
     void EarDetectionSensitivityTimings();
@@ -560,19 +564,22 @@ void AirPodsDomainTests::ManagerUsesResolvedModelForStateAndFiltering()
 
     Core::AirPods::State state;
     state.model = Model::AirPods_5;
-    manager.OnStateChanged({std::nullopt, state});
+    manager.OnStateChanged(
+        {std::nullopt, state, manager._stateMgr.Generation()}, manager._earResetGeneration.load());
     QCOMPARE(updates, 1);
     QCOMPARE(emitted.model, Model::AirPods_5_WCC);
     QCOMPARE(emitted.displayName, QString{"AirPods 5 (Wireless Charging Case)"});
 
     manager._deviceConnected = true;
     QVERIFY(manager.OnAdvertisementReceived(
-        MakeAdvertisementData(0x1234, -45, Side::Left, 8, 7, 5, 0x2030)));
+        MakeAdvertisementData(0x1234, -45, Side::Left, 8, 7, 5, 0x2030),
+        manager._earResetGeneration.load()));
     QCOMPARE(updates, 2);
     QCOMPARE(emitted.model, Model::AirPods_5_WCC);
 
     QVERIFY(!manager.OnAdvertisementReceived(
-        MakeAdvertisementData(0x5678, -45, Side::Left, 8, 7, 5, 0x2027)));
+        MakeAdvertisementData(0x5678, -45, Side::Left, 8, 7, 5, 0x2027),
+        manager._earResetGeneration.load()));
     QCOMPARE(updates, 2);
 }
 
@@ -1070,8 +1077,9 @@ void AirPodsDomainTests::SerializesBleAndAapStatePublication()
         },
         Qt::QueuedConnection);
 
-    Core::AirPods::Details::StateManager::UpdateEvent update{std::nullopt, ble};
-    manager.OnStateChanged(std::move(update));
+    Core::AirPods::Details::StateManager::UpdateEvent update{
+        std::nullopt, ble, manager._stateMgr.Generation()};
+    manager.OnStateChanged(std::move(update), manager._earResetGeneration.load());
     QCoreApplication::processEvents();
     QCoreApplication::processEvents();
 
@@ -1629,6 +1637,134 @@ void AirPodsDomainTests::AapDisconnectCleanupIsSessionAndEpochKeyed()
     QVERIFY(tracker.ResetAap(newSession, newEpoch));
     QVERIFY(!tracker.ResetAap(newSession, newEpoch));
     QVERIFY(tracker.Epoch() > newEpoch);
+}
+
+void AirPodsDomainTests::DueTimerRejectsStaleEpochAndSession()
+{
+    Core::AirPods::State state;
+    state.pods.left.battery = Core::AirPods::Battery{80};
+    state.pods.right.battery = Core::AirPods::Battery{70};
+    state.pods.left.isInEar = state.pods.right.isInEar = true;
+    EarDetectionTracker tracker;
+    QCOMPARE(tracker.UpdateBle(state, 0ms), std::optional<EarState>{});
+    QCOMPARE(tracker.Reevaluate(300ms), std::optional<EarState>{});
+
+    const auto epoch = tracker.Epoch();
+    const Core::AAP::AAPAttempt oldSession{0x1234, 1};
+    QCOMPARE(
+        tracker.UpdateAap(
+            EarState::OutOfEar, EarState::OutOfEar, Side::Left, oldSession, epoch, 400ms),
+        std::optional<EarState>{});
+    const auto staleTimer = tracker.Snapshot();
+    QVERIFY(tracker.ResetAap(oldSession, epoch));
+    QCOMPARE(
+        tracker.Reevaluate(700ms, staleTimer.epoch, staleTimer.session), std::optional<EarState>{});
+    QCOMPARE(tracker.CurrentState(), EarState::InEar);
+
+    // A replacement session restarts the candidate. A timer armed for the prior session must
+    // not complete the replacement candidate at the prior session's deadline.
+    QCOMPARE(tracker.UpdateBle(state, 800ms), std::optional<EarState>{});
+    const auto newEpoch = tracker.Epoch();
+    const Core::AAP::AAPAttempt replacement{0x1234, 2};
+    QCOMPARE(
+        tracker.UpdateAap(
+            EarState::OutOfEar, EarState::OutOfEar, Side::Left, replacement, newEpoch, 900ms),
+        std::optional<EarState>{});
+    const auto replacementTimer = tracker.Snapshot();
+    const Core::AAP::AAPAttempt newest{0x1234, 3};
+    QCOMPARE(
+        tracker.UpdateAap(EarState::InCase, EarState::InCase, Side::Left, newest, newEpoch, 1000ms),
+        std::optional<EarState>{});
+    QCOMPARE(
+        tracker.Reevaluate(1200ms, replacementTimer.epoch, replacementTimer.session),
+        std::optional<EarState>{});
+    const auto newestTimer = tracker.Snapshot();
+    QCOMPARE(
+        tracker.Reevaluate(1299ms, newestTimer.epoch, newestTimer.session),
+        std::optional<EarState>{});
+    QCOMPARE(
+        tracker.Reevaluate(1300ms, newestTimer.epoch, newestTimer.session),
+        std::optional<EarState>{EarState::InCase});
+}
+
+void AirPodsDomainTests::ResetGenerationRejectsReportCapturedBeforeReset()
+{
+    using Manager = Core::AirPods::Manager;
+    Manager manager;
+    manager._stateMgr.OnRssiMinChanged(-80);
+    QVERIFY(manager._stateMgr
+                .OnAdvReceived(Advertisement{MakeAdvertisementData(0x1234, -60, Side::Left)})
+                .has_value());
+
+    const Core::AAP::AAPAttempt session{0x1234, 7};
+    {
+        std::lock_guard lock{manager._aapWorkerMutex};
+        manager._aapConnectInProgress = true;
+        manager._aapActiveAttempt = session;
+    }
+
+    // Model the transport callback's entry point: it captures the reset generation before the
+    // handler captures the tracker epoch. Reset lands in that gap.
+    const auto callbackGeneration = manager._earResetGeneration.load();
+    manager.ResetEarDetection();
+    manager.OnEarDetectionChanged(
+        AAP::EarStatus::OutOfEar, AAP::EarStatus::OutOfEar, session, callbackGeneration);
+    QCoreApplication::processEvents();
+
+    QVERIFY(!manager._earDetection.Snapshot().session.has_value());
+    QCOMPARE(manager._earDetection.CurrentState(), EarState::Unknown);
+}
+
+void AirPodsDomainTests::QueuedAapReportRetainsCapturedPrimaryRole()
+{
+    using Manager = Core::AirPods::Manager;
+    Manager manager;
+    manager._stateMgr.OnRssiMinChanged(-80);
+    QVERIFY(manager._stateMgr
+                .OnAdvReceived(Advertisement{MakeAdvertisementData(0x1111, -60, Side::Left)})
+                .has_value());
+    QCOMPARE(manager._stateMgr.GetCurrentState()->primarySide, std::optional<Side>{Side::Left});
+
+    const Core::AAP::AAPAttempt session{0x1234, 7};
+    {
+        std::lock_guard lock{manager._aapWorkerMutex};
+        manager._aapConnectInProgress = true;
+        manager._aapActiveAttempt = session;
+    }
+    manager.OnEarDetectionChanged(
+        AAP::EarStatus::Unknown, AAP::EarStatus::InCase, session,
+        manager._earResetGeneration.load());
+
+    // The BLE primary role changes before the queued AAP report runs. The report must retain
+    // the identity captured with its input rather than remapping a partial Unknown role.
+    QVERIFY(manager._stateMgr
+                .OnAdvReceived(Advertisement{MakeAdvertisementData(0x2222, -50, Side::Right)})
+                .has_value());
+    QCOMPARE(manager._stateMgr.GetCurrentState()->primarySide, std::optional<Side>{Side::Right});
+    QCoreApplication::processEvents();
+
+    const auto snapshot = manager._earDetection.Snapshot();
+    QVERIFY(snapshot.session.has_value());
+    QCOMPARE(snapshot.primarySide, std::optional<Side>{Side::Left});
+}
+
+void AirPodsDomainTests::StateManagerGenerationInvalidatesQueuedUpdates()
+{
+    StateManager manager;
+    manager.OnRssiMinChanged(-80);
+    const auto before =
+        manager.OnAdvReceived(Advertisement{MakeAdvertisementData(0x1111, -60, Side::Left)});
+    QVERIFY(before.has_value());
+    const auto staleGeneration = before->generation;
+
+    manager.Disconnect();
+    QVERIFY(!manager.IsCurrentGeneration(staleGeneration));
+    const auto after =
+        manager.OnAdvReceived(Advertisement{MakeAdvertisementData(0x2222, -50, Side::Right)});
+    QVERIFY(after.has_value());
+    QVERIFY(after->generation > staleGeneration);
+    QVERIFY(manager.IsCurrentGeneration(after->generation));
+    QVERIFY(!manager.IsCurrentGeneration(staleGeneration));
 }
 
 void AirPodsDomainTests::AapDisconnectRequiresFreshBleConfirmation()

@@ -468,6 +468,10 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>귀 감지 디바운스: 낮음 600ms, 보통 300ms, 높음 150ms. 민감도가 높을수록 더 빨리 반응합니다.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -545,10 +549,6 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
     <message>
         <source>High</source>
         <translation>높음</translation>
-    </message>
-    <message>
-        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
-        <translation>귀 감지 디바운스: 낮음 600ms, 보통 300ms, 높음 150ms. 민감도가 높을수록 더 빨리 반응합니다.</translation>
     </message>
     <message>
         <source>Low audio latency</source>

@@ -468,6 +468,10 @@ Vous devez d&apos;abord appairer vos AirPods dans les paramètres Bluetooth de W
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>Anti-rebond de la détection des oreilles : faible 600 ms, normale 300 ms, élevée 150 ms. Une sensibilité plus élevée réagit plus vite.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -557,10 +561,6 @@ Vous devez d&apos;abord appairer vos AirPods dans les paramètres Bluetooth de W
     <message>
         <source>High</source>
         <translation>Élevée</translation>
-    </message>
-    <message>
-        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
-        <translation>Anti-rebond de la détection des oreilles : faible 600 ms, normale 300 ms, élevée 150 ms. Une sensibilité plus élevée réagit plus vite.</translation>
     </message>
     <message>
         <source>Low audio latency</source>

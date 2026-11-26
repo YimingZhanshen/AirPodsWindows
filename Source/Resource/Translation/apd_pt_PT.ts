@@ -468,6 +468,10 @@ Precisa primeiro de emparelhar os seus AirPods nas definições de Bluetooth do 
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>Debounce da deteção no ouvido: baixa 600 ms, normal 300 ms, alta 150 ms. A sensibilidade maior reage mais cedo.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -557,10 +561,6 @@ Precisa primeiro de emparelhar os seus AirPods nas definições de Bluetooth do 
     <message>
         <source>High</source>
         <translation>Alta</translation>
-    </message>
-    <message>
-        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
-        <translation>Debounce da deteção no ouvido: baixa 600 ms, normal 300 ms, alta 150 ms. A sensibilidade maior reage mais cedo.</translation>
     </message>
     <message>
         <source>Low audio latency</source>

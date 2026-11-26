@@ -468,6 +468,10 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>Penundaan deteksi telinga: rendah 600 ms, normal 300 ms, tinggi 150 ms. Kepekaan lebih tinggi bereaksi lebih cepat.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -561,10 +565,6 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
     <message>
         <source>High</source>
         <translation>Tinggi</translation>
-    </message>
-    <message>
-        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
-        <translation>Penundaan deteksi telinga: rendah 600 ms, normal 300 ms, tinggi 150 ms. Kepekaan lebih tinggi bereaksi lebih cepat.</translation>
     </message>
     <message>
         <source>Low audio latency</source>
