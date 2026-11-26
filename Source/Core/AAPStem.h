@@ -48,8 +48,8 @@
 // NOTE ON SUBSCRIPTION: opcode 0x39 (`StemConfig`, raw-gesture bitmask: single 0x01, double 0x02,
 // triple 0x04, long 0x08 - librepods `AACPManager.kt:1125-1136`, `control_commands.md:202-204`)
 // is how a host tells the firmware it wants the raw events instead of the built-in behaviour.
-// This pre-C7 branch sends it through AAP::Manager directly and replays the desired mask whenever
-// a transport finishes its handshake.
+// The Manager replays the desired mask through its attempt-bound send path whenever a transport
+// finishes its handshake, so a failed write is retried on the next session.
 
 namespace Core::AAP {
 
