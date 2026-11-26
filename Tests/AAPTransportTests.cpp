@@ -714,6 +714,7 @@ private slots:
         };
         manager.SetCallbacks(std::move(callbacks));
         const Core::AAP::AAPCommand command{Core::AAP::AAPCommandKind::SetNoiseControl, 0x02};
+        manager._commandBroker->BeginSession(manager._attempt.generation);
         QVERIFY(manager.SubmitCommand(command).accepted);
         QVERIFY(transport->WaitForRecordCount(1, std::chrono::seconds{1}));
         manager.ProcessPacket({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02, 0x00, 0x00, 0x00});
@@ -743,6 +744,7 @@ private slots:
         };
         manager.SetCallbacks(std::move(callbacks));
         const Core::AAP::AAPCommand command{Core::AAP::AAPCommandKind::SetLoudSoundReduction, 0x01};
+        manager._commandBroker->BeginSession(manager._attempt.generation);
         QVERIFY(manager.SubmitCommand(command).accepted);
         QCOMPARE(
             manager.CommandMode(command.kind, command.value), Core::AAP::AAPConfirmMode::Readback);
@@ -940,7 +942,7 @@ private slots:
         QVERIFY(!manager.GetNoiseControlMode().has_value());
     }
 
-    void AdaptiveNoiseStrengthRejectsResultFromOldGeneration()
+    void AdaptiveNoiseStrengthAttemptBarrierNeverReachesReplacementTransport()
     {
         Core::AAP::Manager manager;
         auto oldTransport = std::make_shared<AAPTestSupport::FakeTransport>();
@@ -953,28 +955,77 @@ private slots:
         manager._connected = true;
         manager._noiseControlMode = Core::AAP::NoiseControlMode::Adaptive;
 
-        std::future<bool> result;
-        struct SendUnblocker {
-            AAPTestSupport::FakeTransport &transport;
-            ~SendUnblocker()
-            {
-                transport.SetBlockSend(false);
-            }
-        } unblocker{*oldTransport};
-        result = std::async(
+        std::future<bool> result = std::async(
             std::launch::async, [&manager] { return manager.SetAdaptiveNoiseLevel(70); });
         QVERIFY(oldTransport->WaitForSendWaiter(std::chrono::seconds{1}));
+
+        // Retire generation 9 while its write is blocked. The attempt-bound cancellation must
+        // release the old send before a generation-10 transport is installed.
+        manager.Disconnect();
+        QVERIFY(result.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QVERIFY(!result.get());
+        QVERIFY(oldTransport->SentRecords().empty());
+        QVERIFY(!manager.GetAdaptiveNoiseLevel().has_value());
+
         {
             std::lock_guard<std::mutex> lock{manager._mutex};
             manager._attempt = Core::AAP::AAPAttempt{1, 10};
             manager._transport.store(newTransport);
-            manager._adaptiveNoiseLevel.reset();
+            manager._connected = true;
+            manager._noiseControlMode = Core::AAP::NoiseControlMode::Adaptive;
         }
-        oldTransport->SetBlockSend(false);
-        QVERIFY(result.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
-        QVERIFY(!result.get());
+        QCOMPARE(newTransport->SendCalls(), size_t{0});
+        QVERIFY(manager.SetAdaptiveNoiseLevel(40));
+        const auto records = newTransport->SentRecords();
+        QCOMPARE(records.size(), size_t{1});
+        QCOMPARE(records.front().at(7), uint8_t{40});
+        QVERIFY(oldTransport->SentRecords().empty());
+        manager.Disconnect();
+    }
+
+    void AdaptiveNoiseStrengthBrokerEchoConfirmsCurrentSessionOnly()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 11};
+        manager._connected = true;
+        manager._noiseControlMode = Core::AAP::NoiseControlMode::Off;
+        manager._commandBroker->BeginSession(manager._attempt.generation);
+
+        std::promise<Core::AAP::AAPCommandOutcome> settled;
+        auto settledFuture = settled.get_future();
+        Core::AAP::Callbacks callbacks;
+        callbacks.onCommandSettled = [&](const Core::AAP::AAPCommandOutcome &outcome,
+                                         const Core::AAP::AAPAttempt &) {
+            settled.set_value(outcome);
+        };
+        manager.SetCallbacks(std::move(callbacks));
+        const Core::AAP::AAPCommand command{Core::AAP::AAPCommandKind::SetAdaptiveNoiseLevel, 65};
+
+        // Settings still record desired state while Off, but do not queue a write or manufacture
+        // a rejection. The later Adaptive notification/submission owns the wire command.
+        QVERIFY(manager.SubmitCommand(command).accepted);
+        QCOMPARE(manager.DesiredCommand(command.kind), std::optional<uint32_t>{65});
+        QCOMPARE(manager._commandBroker->QueuedCount(), size_t{0});
+        QCOMPARE(transport->SendCalls(), size_t{0});
+
+        // A 0x2E record outside reported Adaptive mode is stale/misrouted evidence.
+        manager.ProcessPacket({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 65, 0x00, 0x00, 0x00});
+        QVERIFY(!manager.ConfirmedCommand(command.kind).has_value());
         QVERIFY(!manager.GetAdaptiveNoiseLevel().has_value());
-        QCOMPARE(oldTransport->LastSend().at(7), uint8_t{70});
+
+        manager._noiseControlMode = Core::AAP::NoiseControlMode::Adaptive;
+        QVERIFY(manager.SubmitCommand(command).accepted);
+        QVERIFY(transport->WaitForSendWaiter(std::chrono::seconds{1}));
+        manager.ProcessPacket({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 65, 0x00, 0x00, 0x00});
+        QVERIFY(settledFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        const auto outcome = settledFuture.get();
+        QCOMPARE(outcome.settlement, Core::AAP::AAPCommandSettlement::Confirmed);
+        QCOMPARE(manager.ConfirmedCommand(command.kind), std::optional<uint32_t>{65});
+        QCOMPARE(manager.GetAdaptiveNoiseLevel(), std::optional<uint8_t>{65});
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
         manager.Disconnect();
     }
 

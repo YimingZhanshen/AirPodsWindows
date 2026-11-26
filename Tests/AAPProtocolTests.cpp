@@ -232,6 +232,18 @@ private slots:
         const auto packet = Packets::BuildAdaptiveNoisePacket(50);
         QVERIFY(packet.size() >= 7);
         QVERIFY(packet[6] != 0x39);
+
+        // The UI is filtering strength, so the explicit mapping is identity at every endpoint
+        // and midpoint: UI 0/50/100 -> wire 0/50/100 (0=more ambient noise, 100=more filtering).
+        for (const uint8_t level : {uint8_t{0}, uint8_t{50}, uint8_t{100}}) {
+            QCOMPARE(Core::AAP::FilteringStrengthToWire(level), level);
+            QCOMPARE(Core::AAP::FilteringStrengthFromWire(level), level);
+            QCOMPARE(
+                Packets::BuildAdaptiveNoisePacket(Core::AAP::FilteringStrengthToWire(level))[7],
+                level);
+        }
+        QCOMPARE(Core::AAP::FilteringStrengthToWire(255), uint8_t{100});
+        QCOMPARE(Core::AAP::FilteringStrengthFromWire(255), uint8_t{100});
     }
 
     // Blueprint 0.1: automatic ear detection must send control command 0x0A
@@ -732,6 +744,28 @@ private slots:
                  .has_value());
     }
 
+    void AdaptiveNoiseLevelParserAcceptsOnlyValid0x2EEchoes()
+    {
+        QCOMPARE(
+            ParseAdaptiveNoiseLevelNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 0})),
+            std::optional<uint8_t>{0});
+        QCOMPARE(
+            ParseAdaptiveNoiseLevelNotification(
+                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 50})),
+            std::optional<uint8_t>{50});
+        QCOMPARE(
+            ParseAdaptiveNoiseLevelNotification(
+                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 100})),
+            std::optional<uint8_t>{100});
+        QVERIFY(!ParseAdaptiveNoiseLevelNotification(
+                     Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 101}))
+                     .has_value());
+        QVERIFY(!ParseAdaptiveNoiseLevelNotification(
+                     Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38, 50}))
+                     .has_value());
+        QVERIFY(!ParseAdaptiveNoiseLevelNotification({}).has_value());
+    }
+
     void PpeCapLevelParserReadsLevel()
     {
         QCOMPARE(
@@ -1072,6 +1106,203 @@ private slots:
             broker.AdvanceTimeForTesting(std::chrono::milliseconds{2000});
             QVERIFY(outcomes.Wait().has_value());
         }
+    }
+
+    void AdaptiveNoiseNoEchoRollsBackAndKeepsDesiredForReplay()
+    {
+        using namespace Core::AAP;
+        QCOMPARE(
+            AAPCommandBroker::ModeFor(AAPCommandKind::SetAdaptiveNoiseLevel, 50),
+            AAPConfirmMode::Echo);
+        AAPTestSupport::ManualClock clock;
+        AAPCommandBroker::Config config;
+        config.clock.now = [&clock] { return clock.Now(); };
+        config.clock.advance = [&clock](std::chrono::milliseconds delta) { clock.Advance(delta); };
+        OutcomeQueue outcomes;
+        std::promise<void> started;
+        auto startedFuture = started.get_future();
+        AAPCommandBroker broker(
+            [&](const AAPCommand &, uint64_t, std::stop_token) {
+                started.set_value();
+                return true;
+            },
+            [&](const AAPCommandOutcome &outcome) { outcomes.Push(outcome); }, config);
+        broker.BeginSession(1);
+        broker.OnEcho({AAPCommandKind::SetAdaptiveNoiseLevel, 25}, 1);
+        QVERIFY(broker.Submit({AAPCommandKind::SetAdaptiveNoiseLevel, 80}).accepted);
+        QVERIFY(startedFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        broker.AdvanceTimeForTesting(std::chrono::milliseconds{2000});
+        const auto outcome = outcomes.Wait();
+        QVERIFY(outcome.has_value());
+        QCOMPARE(outcome->settlement, AAPCommandSettlement::TimedOut);
+        QVERIFY(outcome->rollBackDesired);
+        QCOMPARE(outcome->rollbackValue, std::optional<uint32_t>{25});
+        QCOMPARE(
+            broker.Desired(AAPCommandKind::SetAdaptiveNoiseLevel), std::optional<uint32_t>{80});
+    }
+
+    void AdaptiveNoiseStaleEchoCannotConfirmReplacementSession()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        AAPCommandBroker::Config config;
+        config.clock.now = [&clock] { return clock.Now(); };
+        config.clock.advance = [&clock](std::chrono::milliseconds delta) { clock.Advance(delta); };
+        OutcomeQueue outcomes;
+        std::promise<void> firstStarted;
+        std::promise<void> secondStarted;
+        auto firstFuture = firstStarted.get_future();
+        auto secondFuture = secondStarted.get_future();
+        int calls = 0;
+        AAPCommandBroker broker(
+            [&](const AAPCommand &, uint64_t, std::stop_token) {
+                if (++calls == 1) {
+                    firstStarted.set_value();
+                }
+                else {
+                    secondStarted.set_value();
+                }
+                return true;
+            },
+            [&](const AAPCommandOutcome &outcome) { outcomes.Push(outcome); }, config);
+        const AAPCommand command{AAPCommandKind::SetAdaptiveNoiseLevel, 70};
+        broker.BeginSession(1);
+        QVERIFY(broker.Submit(command).accepted);
+        QVERIFY(firstFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        broker.EndSession();
+        QCOMPARE(outcomes.Wait()->settlement, AAPCommandSettlement::TransportClosed);
+        broker.BeginSession(2);
+        QVERIFY(broker.Submit(command).accepted);
+        QVERIFY(secondFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        broker.OnEcho(command, 1);
+        QVERIFY(!broker.Confirmed(command.kind).has_value());
+        broker.AdvanceTimeForTesting(std::chrono::milliseconds{2000});
+        const auto outcome = outcomes.Wait();
+        QVERIFY(outcome.has_value());
+        QCOMPARE(outcome->generation, uint64_t{2});
+        QCOMPARE(outcome->settlement, AAPCommandSettlement::TimedOut);
+    }
+
+    void AdaptiveNoiseDesiredStateReplaysAfterReconnect()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        AAPCommandBroker::Config config;
+        config.clock.now = [&clock] { return clock.Now(); };
+        config.clock.advance = [&clock](std::chrono::milliseconds delta) { clock.Advance(delta); };
+        OutcomeQueue outcomes;
+        std::mutex sentMutex;
+        std::vector<uint64_t> generations;
+        AAPCommandBroker *liveBroker = nullptr;
+        AAPCommandBroker broker(
+            [&](const AAPCommand &command, uint64_t generation, std::stop_token) {
+                {
+                    std::lock_guard lock{sentMutex};
+                    generations.push_back(generation);
+                }
+                liveBroker->OnEcho(command, generation);
+                return true;
+            },
+            [&](const AAPCommandOutcome &outcome) { outcomes.Push(outcome); }, config);
+        liveBroker = &broker;
+        const auto result = broker.Submit({AAPCommandKind::SetAdaptiveNoiseLevel, 65});
+        QVERIFY(!result.accepted);
+        QCOMPARE(result.failure, std::optional(AAPCommandFailure::TransportClosed));
+        broker.ReplayDesiredState(3);
+        QVERIFY(broker.WaitForIdle(std::chrono::seconds{1}));
+        broker.EndSession();
+        broker.ReplayDesiredState(4);
+        QVERIFY(broker.WaitForIdle(std::chrono::seconds{1}));
+        std::lock_guard lock{sentMutex};
+        QCOMPARE(generations, (std::vector<uint64_t>{3, 4}));
+        QCOMPARE(outcomes.Wait()->settlement, AAPCommandSettlement::Confirmed);
+        QCOMPARE(outcomes.Wait()->settlement, AAPCommandSettlement::Confirmed);
+    }
+
+    void AdaptiveNoiseRecordedWhileIneligibleReplaysOnlyWhenEligible()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        AAPCommandBroker::Config config;
+        config.clock.now = [&clock] { return clock.Now(); };
+        config.clock.advance = [&clock](std::chrono::milliseconds delta) { clock.Advance(delta); };
+        OutcomeQueue outcomes;
+        std::mutex sentMutex;
+        std::vector<uint32_t> sent;
+        AAPCommandBroker *liveBroker = nullptr;
+        AAPCommandBroker broker(
+            [&](const AAPCommand &command, uint64_t generation, std::stop_token) {
+                {
+                    std::lock_guard lock{sentMutex};
+                    sent.push_back(command.value);
+                }
+                liveBroker->OnEcho(command, generation);
+                return true;
+            },
+            [&](const AAPCommandOutcome &outcome) { outcomes.Push(outcome); }, config);
+        liveBroker = &broker;
+        QVERIFY(broker.RecordDesired({AAPCommandKind::SetAdaptiveNoiseLevel, 60}).accepted);
+        broker.ReplayDesiredState(
+            1, [](AAPCommandKind kind) { return kind != AAPCommandKind::SetAdaptiveNoiseLevel; });
+        QVERIFY(broker.WaitForIdle(std::chrono::seconds{1}));
+        QCOMPARE(outcomes.Size(), size_t{0});
+        {
+            std::lock_guard lock{sentMutex};
+            QVERIFY(sent.empty());
+        }
+        broker.EndSession();
+        broker.ReplayDesiredState(2);
+        QVERIFY(broker.WaitForIdle(std::chrono::seconds{1}));
+        std::lock_guard lock{sentMutex};
+        QCOMPARE(sent, (std::vector<uint32_t>{60}));
+        QCOMPARE(outcomes.Wait()->settlement, AAPCommandSettlement::Confirmed);
+    }
+
+    void AdaptiveNoiseRapidSliderKeepsOnlyLastQueuedValue()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        AAPCommandBroker::Config config;
+        config.clock.now = [&clock] { return clock.Now(); };
+        config.clock.advance = [&clock](std::chrono::milliseconds delta) { clock.Advance(delta); };
+        OutcomeQueue outcomes;
+        ManualGate gate;
+        std::mutex sentMutex;
+        std::vector<uint32_t> sent;
+        bool first = true;
+        std::promise<void> firstStarted;
+        auto firstFuture = firstStarted.get_future();
+        AAPCommandBroker *liveBroker = nullptr;
+        AAPCommandBroker broker(
+            [&](const AAPCommand &command, uint64_t generation, std::stop_token stop) {
+                {
+                    std::lock_guard lock{sentMutex};
+                    sent.push_back(command.value);
+                }
+                if (first) {
+                    first = false;
+                    firstStarted.set_value();
+                    gate.Wait(stop);
+                }
+                else {
+                    liveBroker->OnEcho(command, generation);
+                }
+                return true;
+            },
+            [&](const AAPCommandOutcome &outcome) { outcomes.Push(outcome); }, config);
+        liveBroker = &broker;
+        broker.BeginSession(1);
+        QVERIFY(broker.Submit({AAPCommandKind::SetAdaptiveNoiseLevel, 10}).accepted);
+        QVERIFY(firstFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        for (const uint32_t value : {20U, 30U, 40U, 50U}) {
+            QVERIFY(broker.Submit({AAPCommandKind::SetAdaptiveNoiseLevel, value}).accepted);
+        }
+        gate.Open();
+        QVERIFY(broker.WaitForIdle(std::chrono::seconds{1}));
+        std::lock_guard lock{sentMutex};
+        QCOMPARE(sent, (std::vector<uint32_t>{10, 50}));
+        QCOMPARE(outcomes.Wait()->settlement, AAPCommandSettlement::Superseded);
+        QCOMPARE(outcomes.Wait()->settlement, AAPCommandSettlement::Confirmed);
     }
 
     void StaleGenerationEchoCannotConfirmNewCommand()

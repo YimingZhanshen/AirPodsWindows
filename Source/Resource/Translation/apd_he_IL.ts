@@ -501,6 +501,8 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <translation>פעולה ללחיצה ארוכה על הידית הימנית.</translation>
         <source>Sets how strongly Adaptive mode shapes ambient noise (0-100). Adjustable only while the noise control mode is Adaptive.</source>
         <translation type="unfinished"></translation>
+        <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
+        <translation>מגדיר את עוצמת הסינון במצב Adaptive (0–100): 0 מאפשר יותר רעש סביבה; 100 מסנן יותר. זמין רק כאשר המכשיר המחובר מדווח על מצב Adaptive.</translation>
     </message>
 </context>
 <context>

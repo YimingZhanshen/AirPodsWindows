@@ -86,6 +86,7 @@ struct Callbacks {
     using FnOnPpeCapLevelChangedT = std::function<void(uint8_t, AAPAttempt)>;
     using FnOnBatteryChangedT = std::function<void(AAPBatterySnapshot, AAPAttempt)>;
     using FnOnStemPressT = std::function<void(StemEvent, AAPAttempt)>;
+    using FnOnAdaptiveNoiseLevelChangedT = std::function<void(uint8_t, AAPAttempt)>;
     using FnOnConnectedT = std::function<void(AAPAttempt)>;
     using FnOnDisconnectedT = std::function<void(AAPAttempt)>;
     using FnOnAttProbeResultT = std::function<void(AttPathState, AAPAttempt)>;
@@ -105,6 +106,7 @@ struct Callbacks {
     FnOnBatteryChangedT onBatteryChanged;
     // Transient stem gesture (opcode 0x19): never cached, only forwarded to the policy layer.
     FnOnStemPressT onStemPress;
+    FnOnAdaptiveNoiseLevelChangedT onAdaptiveNoiseLevelChanged;
     FnOnConnectedT onConnected;
     FnOnDisconnectedT onDisconnected;
     FnOnAttProbeResultT onAttProbeResult;
@@ -156,9 +158,10 @@ public:
     bool SetPpeCapLevel(uint8_t level);
     std::optional<uint8_t> GetPpeCapLevel() const;
 
-    // Adaptive noise level (0-100, only effective when noise control is Adaptive).
-    // Wire: control command 0x2E (AutoAncStrength), unchanged by D3. Get returns the level
-    // last written on the current session (nullopt before that or after Disconnect).
+    // Adaptive noise filtering strength (0-100, only effective when noise control is Adaptive).
+    // Wire: control command 0x2E, UI filtering strength maps identically (0=more ambient noise,
+    // 100=more filtering). This raw primitive is attempt-bound; normal callers use SubmitCommand.
+    // Get returns the last sent/confirmed value on the current session (nullopt when unknown).
     bool SetAdaptiveNoiseLevel(uint8_t level);
     std::optional<uint8_t> GetAdaptiveNoiseLevel() const;
 
@@ -274,6 +277,8 @@ private:
     std::atomic<std::shared_ptr<AAPTransport>> _transport{std::shared_ptr<AAPTransport>{}};
     // The broker serializes commands; this also serializes probe/refresh records with those writes.
     std::mutex _sendMutex;
+    // Cancels every send pinned to a retired attempt. A replacement transport never inherits it.
+    std::stop_source _sessionStop;
 
     // Retained after natural EOF so the next Connect (or Disconnect) joins it before reuse.
     std::jthread _readerThread;
@@ -292,6 +297,10 @@ private:
     bool SendPacket(
         const std::shared_ptr<AAPTransport> &transport, const std::vector<uint8_t> &packet,
         std::stop_token stopToken);
+    bool SendPacketForAttempt(
+        const AAPAttempt &attempt, const std::vector<uint8_t> &packet, std::stop_token stopToken,
+        std::optional<NoiseControlMode> requiredMode = std::nullopt,
+        bool allowPendingAdaptive = false);
     bool IsCurrentAttempt(AAPAttempt attempt) const;
     // Command broker seams (blueprint 2.7): the broker owns serialization and the desired
     // state, this layer supplies the wire encoding and the protocol evidence.

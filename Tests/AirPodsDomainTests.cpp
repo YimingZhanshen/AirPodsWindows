@@ -11,6 +11,7 @@
 #include <boost/pfr.hpp>
 #include <QtTest>
 #include <QCoreApplication>
+#include <QDir>
 #include <QFile>
 #include <QImage>
 #include <QMetaObject>
@@ -1745,11 +1746,109 @@ void AirPodsDomainTests::PersistsAdaptiveNoiseLevelDefaultAndReloads()
     QCOMPARE(Core::Settings::GetCurrent().adaptive_noise_level, uint8_t{100});
     QCOMPARE(memoryRepository->Read("adaptive_noise_level").toUInt(), uint{100});
 
+    // Repeated Load must not retain a previous nondefault when the new repository omits the key
+    // or stores a value that cannot be converted to uint8_t.
+    memoryRepository->Write("adaptive_noise_level", uint8_t{70});
+    QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+    QCOMPARE(Core::Settings::GetCurrent().adaptive_noise_level, uint8_t{70});
+    memoryRepository->Remove("adaptive_noise_level");
+    QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+    QCOMPARE(Core::Settings::GetCurrent().adaptive_noise_level, uint8_t{50});
+    Core::Settings::Apply();
+    QCOMPARE(observer.adaptiveNoiseLevel, uint8_t{50});
+
+    memoryRepository->Write("adaptive_noise_level", QStringLiteral("not-a-level"));
+    QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+    QCOMPARE(Core::Settings::GetCurrent().adaptive_noise_level, uint8_t{50});
+    Core::Settings::Apply();
+    QCOMPARE(observer.adaptiveNoiseLevel, uint8_t{50});
+
     Core::Settings::SetApplyObserver(nullptr);
     Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
 }
 
 // D3: pure clamp/gating policy (the same table the standalone MSVC harness replays).
+void AirPodsDomainTests::AdaptiveNoiseTranslationsAreCompleteInAllCatalogs()
+{
+    using Context = QString;
+    struct Entry {
+        QString translation;
+        bool unfinished{true};
+    };
+    const std::array<Context, 1> contexts{QStringLiteral("QObject")};
+    const std::array<const char *, 1> expected{
+        "Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 "
+        "filters more. Available only while the connected device reports Adaptive mode."};
+    const std::array<QString, 18> locales{"bg_BG", "de_DE", "es_ES", "fa_IR", "fr_FR", "he_IL",
+                                          "id_ID", "it_IT", "ja_JP", "ko_KR", "pl_PL", "pt_BR",
+                                          "pt_PT", "ru_RU", "tr_TR", "uk_UA", "zh_CN", "zh_TW"};
+
+    const QDir translationDir{QStringLiteral(APD_SOURCE_DIR) "/Source/Resource/Translation"};
+    QCOMPARE(
+        translationDir.entryList({QStringLiteral("apd_*.ts")}, QDir::Files).size(), qsizetype{18});
+    for (const auto &locale : locales) {
+        QFile file{translationDir.filePath(QStringLiteral("apd_%1.ts").arg(locale))};
+        QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable(file.fileName()));
+        QXmlStreamReader xml{&file};
+        Context context;
+        QString source;
+        QString translation;
+        bool inSource = false;
+        bool inTranslation = false;
+        bool unfinished = true;
+        QMap<QString, Entry> entries;
+        while (!xml.atEnd()) {
+            xml.readNext();
+            if (xml.isStartElement()) {
+                if (xml.name() == QLatin1String("context")) {
+                    context.clear();
+                }
+                else if (xml.name() == QLatin1String("message")) {
+                    source.clear();
+                    translation.clear();
+                    unfinished = true;
+                }
+                else if (xml.name() == QLatin1String("source")) {
+                    inSource = true;
+                }
+                else if (xml.name() == QLatin1String("translation")) {
+                    inTranslation = true;
+                    unfinished = xml.attributes().value(QLatin1String("type")) ==
+                                 QLatin1String("unfinished");
+                }
+            }
+            else if (xml.isEndElement()) {
+                if (xml.name() == QLatin1String("source")) {
+                    inSource = false;
+                }
+                else if (xml.name() == QLatin1String("translation")) {
+                    inTranslation = false;
+                }
+                else if (xml.name() == QLatin1String("message") && contexts.contains(context)) {
+                    entries.insert(source, Entry{translation, unfinished});
+                }
+            }
+            else if (xml.isCharacters()) {
+                if (inSource) {
+                    source += xml.text().toString();
+                }
+                if (inTranslation) {
+                    translation += xml.text().toString();
+                }
+            }
+        }
+        QVERIFY2(!xml.hasError(), qPrintable(xml.errorString()));
+        for (const auto *sourceText : expected) {
+            const QString key{QString::fromUtf8(sourceText)};
+            const auto entry = entries.constFind(key);
+            QVERIFY2(entry != entries.constEnd(), qPrintable(locale + ": missing " + key));
+            QVERIFY2(!entry->unfinished, qPrintable(locale + ": unfinished " + key));
+            QVERIFY2(
+                !entry->translation.trimmed().isEmpty(), qPrintable(locale + ": empty " + key));
+        }
+    }
+}
+
 void AirPodsDomainTests::ClampsAndGatesAdaptiveNoiseLevelPolicy()
 {
     static_assert(Core::AAP::kAdaptiveNoiseLevelDefault == 50, "");
@@ -1758,6 +1857,14 @@ void AirPodsDomainTests::ClampsAndGatesAdaptiveNoiseLevelPolicy()
     static_assert(Core::AAP::NormalizeAdaptiveNoiseLevel(100) == 100, "");
     static_assert(Core::AAP::NormalizeAdaptiveNoiseLevel(101) == 100, "");
     static_assert(Core::AAP::NormalizeAdaptiveNoiseLevel(255) == 100, "");
+
+    // D3 UI is filtering strength: identity mapping at 0/50/100, never 100-value.
+    static_assert(Core::AAP::FilteringStrengthToWire(0) == 0, "");
+    static_assert(Core::AAP::FilteringStrengthToWire(50) == 50, "");
+    static_assert(Core::AAP::FilteringStrengthToWire(100) == 100, "");
+    static_assert(Core::AAP::FilteringStrengthFromWire(0) == 0, "");
+    static_assert(Core::AAP::FilteringStrengthFromWire(50) == 50, "");
+    static_assert(Core::AAP::FilteringStrengthFromWire(100) == 100, "");
 
     // Only the Adaptive wire value (0x04) arms the control; unknown modes never do.
     static_assert(!Core::AAP::IsAdaptiveStrengthAdjustable(std::nullopt), "");

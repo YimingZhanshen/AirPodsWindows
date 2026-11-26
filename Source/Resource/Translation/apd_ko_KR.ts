@@ -501,6 +501,8 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
         <translation>오른쪽 스템을 길게 눌렀을 때의 동작입니다.</translation>
         <source>Sets how strongly Adaptive mode shapes ambient noise (0-100). Adjustable only while the noise control mode is Adaptive.</source>
         <translation type="unfinished"></translation>
+        <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
+        <translation>Adaptive 모드의 필터링 강도를 설정합니다(0~100). 0은 주변 소음을 더 많이 통과시키고 100은 더 많이 필터링합니다. 연결된 기기가 Adaptive 모드를 보고할 때만 사용할 수 있습니다.</translation>
     </message>
 </context>
 <context>

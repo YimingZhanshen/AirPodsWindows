@@ -96,15 +96,16 @@ enum class AAPCommandFailure : uint8_t {
 enum class AAPConfirmMode : uint8_t {
     // The device repeats the control identifier with the new value
     // (`04 00 04 00 09 00 <id> <value> …`): 0x0D listening mode, 0x28 conversation
-    // detection, 0x26 adaptive volume, 0x0A ear-detection config, 0x38 PPE cap.
+    // detection, 0x26 adaptive volume, 0x0A ear-detection config, 0x2E adaptive filtering
+    // strength (when firmware emits it), and 0x38 PPE cap. A missing 0x2E echo is a timeout,
+    // never proof of success.
     Echo,
     // The value is only observable by asking again: the ATT write/read answer for
     // handle 0x1B (loud sound reduction), or the 0x0017 sensor stream that proves head
     // tracking actually started.
     Readback,
-    // No reply is defined or parsed: 0x2E auto-ANC strength, and stopping head tracking
-    // (silence is not evidence). The command is applied and reported as such, but never
-    // confirmed and never timed out.
+    // No reply is defined or parsed: stopping head tracking (silence is not evidence).
+    // The command is applied and reported as such, but never confirmed and never timed out.
     Unverifiable,
 };
 
@@ -192,6 +193,11 @@ public:
     // desired value is still recorded for the next replay and the result says TransportClosed.
     AAPCommandResult Submit(AAPCommand command, std::stop_token stop = {});
 
+    // Records desired state without queueing a wire write. Used by mode-gated settings: the
+    // value survives reconnect, but no rejection/timeout is manufactured while the feature is not
+    // applicable. If the kind is already queued, its coalesced slot is updated to this value.
+    AAPCommandResult RecordDesired(AAPCommand command);
+
     // Evidence that the device holds `command`. Only a kind + value + generation match confirms
     // the in-flight command; a stale generation is dropped outright, and a same-generation
     // value mismatch only refreshes the known device state without confirming a newer command.
@@ -201,10 +207,12 @@ public:
     void OnObserved(AAPCommand command, uint64_t generation);
     void OnEcho(AAPCommand command, uint64_t generation, uint64_t requestId);
 
-    // Opens `generation` as the current session and re-pushes every desired value in
-    // declaration order. Idempotent and single-flight: repeated calls for the same generation
-    // never duplicate sends.
-    void ReplayDesiredState(uint64_t generation);
+    // Opens `generation` as the current session and re-pushes eligible desired values in
+    // declaration order. The optional filter lets mode-gated kinds wait without losing desired
+    // state. Idempotent and single-flight: repeated calls for the same generation never duplicate
+    // sends; callers explicitly submit a deferred kind when it becomes eligible.
+    void ReplayDesiredState(
+        uint64_t generation, const std::function<bool(AAPCommandKind)> &includeKind = {});
 
     // Opens `generation` as the current session. Confirmed baselines belong to this session only;
     // evidence received before the first open is retained in one bounded slot per kind.

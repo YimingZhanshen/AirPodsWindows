@@ -501,6 +501,8 @@ Vous devez d&apos;abord appairer vos AirPods dans les paramètres Bluetooth de W
         <translation>Action pour un appui long sur la tige droite.</translation>
         <source>Sets how strongly Adaptive mode shapes ambient noise (0-100). Adjustable only while the noise control mode is Adaptive.</source>
         <translation type="unfinished"></translation>
+        <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
+        <translation>Définit l’intensité du filtre du mode Adaptive (0 à 100) : 0 laisse passer plus de bruit ambiant ; 100 filtre davantage. Disponible uniquement lorsque l’appareil connecté signale le mode Adaptive.</translation>
     </message>
 </context>
 <context>
