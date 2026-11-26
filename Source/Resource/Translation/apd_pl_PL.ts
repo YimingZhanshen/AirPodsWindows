@@ -83,6 +83,14 @@ Miłego słuchania!</translation>
         <source>Please select your AirPods device below.</source>
         <translation>Wybierz poniżej swoje słuchawki AirPods.</translation>
     </message>
+    <message>
+        <source>Battery source: %1</source>
+        <translation>Źródło baterii: %1</translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP i BLE zgłaszają różne poziomy baterii.</translation>
+    </message>
 </context>
 <context>
     <name>Gui::SettingsWindow</name>
@@ -237,6 +245,10 @@ Miłego słuchania!</translation>
     <message>
         <source>Adaptive</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP i BLE zgłaszają różne poziomy baterii.</translation>
     </message>
 </context>
 <context>

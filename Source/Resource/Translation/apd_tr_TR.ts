@@ -83,6 +83,14 @@ Keyfini çıkarın.</translation>
         <source>Please select your AirPods device below.</source>
         <translation>Lütfen aşağıdan AirPods cihazınızı seçin.</translation>
     </message>
+    <message>
+        <source>Battery source: %1</source>
+        <translation>Pil kaynağı: %1</translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP ve BLE farklı pil değerleri bildiriyor.</translation>
+    </message>
 </context>
 <context>
     <name>Gui::SettingsWindow</name>
@@ -237,6 +245,10 @@ Keyfini çıkarın.</translation>
     <message>
         <source>Adaptive</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP ve BLE farklı pil değerleri bildiriyor.</translation>
     </message>
 </context>
 <context>

@@ -174,6 +174,12 @@ Manager::Manager(QObject *parent) : QObject{parent}
     StartAAPConnectWorker();
     _stateMgr.SetOnDiscardState([this] {
         _lidTracker.OnLost(Details::LidTracker::Clock::now());
+        // The BLE baseline is gone; battery events must not republish a stale state.
+        {
+            std::lock_guard lock{_batteryFusionMutex};
+            _lastBleState.reset();
+            _lastPublishedState.reset();
+        }
         QMetaObject::invokeMethod(this, [this] { emit Disconnected(); }, Qt::QueuedConnection);
     });
 
@@ -227,6 +233,10 @@ void Manager::SetupAAPCallbacks()
         [this](AAP::EarStatus primary, AAP::EarStatus secondary, AAP::AAPAttempt attempt) {
             OnEarDetectionChanged(primary, secondary, attempt);
         };
+
+    callbacks.onBatteryChanged = [this](AAP::AAPBatterySnapshot snapshot, AAP::AAPAttempt attempt) {
+        OnAAPBatteryChanged(snapshot, attempt);
+    };
 
     callbacks.onHeadTrackingData = [this](AAP::HeadTrackingData data, AAP::AAPAttempt attempt) {
         OnHeadTrackingData(data, attempt);
@@ -590,6 +600,15 @@ void Manager::DisconnectAAP()
     }
     _aapWorkerCv.notify_all();
     _currentNoiseControlMode = -1;
+
+    // P2 marks the attempt Stopping before AAP Manager invokes onDisconnected, so
+    // that callback cannot identify itself as current. Explicit teardown must
+    // therefore drop the overlay here as well; the next attempt starts from BLE.
+    {
+        std::lock_guard lock{_batteryFusionMutex};
+        _batteryFusion.Reset();
+    }
+    RequestFusedStatePublish();
 }
 
 void Manager::AAPConnectLoop(std::stop_token stopToken)
@@ -652,6 +671,15 @@ void Manager::AAPConnectLoop(std::stop_token stopToken)
         _aapActiveAttempt = begin.attempt;
         _aapConnectInProgress = true;
         _aapRetryScheduled = false;
+
+        // Reset before AAP Manager starts its reader. Resetting in onConnected
+        // would race an immediate first battery notification and could erase it.
+        {
+            std::lock_guard lock{_batteryFusionMutex};
+            _batteryFusion.Reset();
+        }
+        RequestFusedStatePublish();
+
         lock.unlock();
 
         const bool connected = _aapMgr.Connect(begin.attempt, stopToken);
@@ -729,6 +757,13 @@ void Manager::OnStateChanged(Details::StateManager::UpdateEvent updateEvent)
     newState.model = Details::ResolveModel(newState.model, _modelOverride);
 
     newState.displayName = Details::ResolveDisplayName(_deviceName, newState.model);
+
+    {
+        std::lock_guard lock{_batteryFusionMutex};
+        _lastBleState = newState;
+        OverlayBattery(newState);
+        _lastPublishedState = newState;
+    }
 
     emit StateUpdated(newState);
 
@@ -1086,6 +1121,78 @@ void Manager::OnEarDetectionChanged(
     // Note: We don't auto-resume when put back in ear to avoid unexpected playback
 }
 
+void Manager::OnAAPBatteryChanged(const AAP::AAPBatterySnapshot &snapshot, AAP::AAPAttempt attempt)
+{
+    if (!IsCurrentAAPAttempt(attempt)) {
+        LOG(Trace, "AAP: Discard battery event from a stale session.");
+        return;
+    }
+
+    bool changed = false;
+    {
+        std::lock_guard lock{_batteryFusionMutex};
+        changed = _batteryFusion.OnAapSnapshot(snapshot);
+    }
+    if (!changed) {
+        return;
+    }
+    RequestFusedStatePublish();
+}
+
+void Manager::OverlayBattery(State &state) const
+{
+    // Caller holds `_batteryFusionMutex`.
+    const auto overlay = [](const Details::BatteryFusion &fusion, AAP::BatteryComponent component,
+                            Details::BasicState &slot) {
+        std::optional<uint8_t> bleLevel;
+        if (slot.battery.Available()) {
+            bleLevel = static_cast<uint8_t>(std::min<uint32_t>(slot.battery.Value(), 100u));
+        }
+        const auto fused = fusion.Resolve(component, bleLevel);
+        if (!fused.has_value()) {
+            slot.batterySource = BatterySource::BLE;
+            slot.sourceConflict = false;
+            return;
+        }
+
+        slot.battery = Battery{fused->level};
+        slot.isCharging = fused->charging;
+        slot.batterySource = BatterySource::AAP;
+        slot.sourceConflict = fused->conflict;
+    };
+
+    overlay(_batteryFusion, AAP::BatteryComponent::Left, state.pods.left);
+    overlay(_batteryFusion, AAP::BatteryComponent::Right, state.pods.right);
+    overlay(_batteryFusion, AAP::BatteryComponent::Case, state.caseBox);
+}
+
+void Manager::RequestFusedStatePublish()
+{
+    // Battery events are produced on the AAP worker thread. Hopping to the thread that owns
+    // Manager keeps every StateUpdated producer serialized there and makes the publish below
+    // recompute from the newest BLE baseline at delivery time, so a fused frame can never
+    // overwrite a newer advertisement-driven one. A pending hop is dropped with the object.
+    QMetaObject::invokeMethod(this, [this] { PublishFusedState(); }, Qt::QueuedConnection);
+}
+
+void Manager::PublishFusedState()
+{
+    std::optional<State> fused;
+    {
+        std::lock_guard lock{_batteryFusionMutex};
+        if (!_lastBleState.has_value()) {
+            return;
+        }
+        fused = _lastBleState;
+        OverlayBattery(*fused);
+        if (_lastPublishedState == fused) {
+            return;
+        }
+        _lastPublishedState = fused;
+    }
+    emit StateUpdated(*fused);
+}
+
 void Manager::OnHeadTrackingData(AAP::HeadTrackingData data, AAP::AAPAttempt attempt)
 {
     if (!IsCurrentAAPAttempt(attempt)) {
@@ -1174,9 +1281,11 @@ void Manager::OnAAPConnected(AAP::AAPAttempt attempt)
 void Manager::OnAAPDisconnected(AAP::AAPAttempt attempt)
 {
     std::optional<std::chrono::milliseconds> retryDelay;
+    bool currentAttempt = false;
     {
         std::lock_guard lock{_aapWorkerMutex};
-        if (_aapConnection.IsCurrent(attempt)) {
+        currentAttempt = _aapConnection.IsCurrent(attempt);
+        if (currentAttempt) {
             retryDelay = _aapConnection.Lost(attempt, AAPClock::now());
             if (retryDelay.has_value()) {
                 _aapRetryAt = AAPClock::now() + *retryDelay;
@@ -1189,6 +1298,15 @@ void Manager::OnAAPDisconnected(AAP::AAPAttempt attempt)
     }
     _aapWorkerCv.notify_all();
     _currentNoiseControlMode = -1;
+
+    if (currentAttempt) {
+        // The session is over: drop the overlay and republish the BLE-only state.
+        {
+            std::lock_guard lock{_batteryFusionMutex};
+            _batteryFusion.Reset();
+        }
+        RequestFusedStatePublish();
+    }
 
     LOG(Info, "AAP connection lost - ANC features unavailable");
     emit AapConnectionStateChangedSafely(false);

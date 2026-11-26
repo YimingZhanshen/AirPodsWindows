@@ -27,6 +27,8 @@ PresentBattery(const Core::AirPods::Details::BasicState &state, BatteryBadge bad
         .charging = state.isCharging,
         .value = state.battery.Value(),
         .badge = badge,
+        .source = state.batterySource,
+        .sourceConflict = state.sourceConflict,
     };
 }
 
@@ -132,10 +134,16 @@ MainWindowPresentation MainWindowViewModel::Present() const
     const bool mergePods = result.scene == Scene::PodsInCase || matchingPods;
     if (mergePods) {
         if (result.leftBattery.visible && result.rightBattery.visible) {
+            // Attribute the merged ring to the component that owns the shown (weaker) value.
+            const bool leftShown = result.leftBattery.value <= result.rightBattery.value;
+            const BatteryPresentation shown = leftShown ? result.leftBattery : result.rightBattery;
             result.rightBattery.value =
                 (std::min)(result.leftBattery.value, result.rightBattery.value);
             result.rightBattery.charging =
                 result.leftBattery.charging && result.rightBattery.charging;
+            result.rightBattery.source = shown.source;
+            result.rightBattery.sourceConflict =
+                result.leftBattery.sourceConflict || result.rightBattery.sourceConflict;
         }
         else if (result.leftBattery.visible) {
             result.rightBattery = result.leftBattery;

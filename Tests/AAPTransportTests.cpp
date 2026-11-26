@@ -723,6 +723,95 @@ private slots:
         QVERIFY(!manager.Connect(attempt));
         QCOMPARE(transport->SendCalls(), size_t{0});
     }
+
+    // D2: routing of the battery notification through the production packet path.
+    void BatteryNotificationReachesCallbackAndCache()
+    {
+        Core::AAP::Manager manager;
+        int callbacks = 0;
+        std::optional<Core::AAP::AAPBatterySnapshot> lastSnapshot;
+        Core::AAP::Callbacks cb;
+        cb.onBatteryChanged = [&](const Core::AAP::AAPBatterySnapshot &snapshot,
+                                  const Core::AAP::AAPAttempt &attempt) {
+            QCOMPARE(attempt.address, uint64_t{1});
+            QCOMPARE(attempt.generation, uint64_t{1});
+            lastSnapshot = snapshot;
+            ++callbacks;
+        };
+        manager.SetCallbacks(cb);
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
+
+        const std::vector<uint8_t> frame{0x04, 0x00, 0x04, 0x00, 0x04, 0x00,
+                                         0x01, 0x04, 0x01, 87,   0x02, 0x01};
+        manager.ProcessPacket(frame);
+        QCOMPARE(callbacks, 1);
+        QVERIFY(lastSnapshot.has_value());
+        QCOMPARE(lastSnapshot->left->level, uint8_t(87));
+        auto cached = manager.GetBatterySnapshot();
+        QVERIFY(cached.has_value());
+        QCOMPARE(cached->left->level, uint8_t(87));
+
+        // A malformed record (dead spacer) passes the transport minimum but fails the
+        // strict parser: neither the cache nor the consumer may move.
+        std::vector<uint8_t> badSpacer = frame;
+        badSpacer[8] = 0x00;
+        manager.ProcessPacket(badSpacer);
+        QCOMPARE(callbacks, 1);
+        QCOMPARE(manager.GetBatterySnapshot()->left->level, uint8_t(87));
+
+        // Count/size mismatches are rejected the same way (count=2 with 12 bytes).
+        const std::vector<uint8_t> mismatched{0x04, 0x00, 0x04, 0x00, 0x04, 0x00,
+                                              0x02, 0x04, 0x01, 50,   0x02, 0x01};
+        manager.ProcessPacket(mismatched);
+        QCOMPARE(callbacks, 1);
+    }
+
+    void StaleGenerationBatteryEventsAreDiscarded()
+    {
+        Core::AAP::Manager manager;
+        int callbacks = 0;
+        Core::AAP::Callbacks cb;
+        cb.onBatteryChanged = [&](const Core::AAP::AAPBatterySnapshot &,
+                                  const Core::AAP::AAPAttempt &attempt) {
+            QCOMPARE(attempt.generation, uint64_t{2});
+            ++callbacks;
+        };
+        manager.SetCallbacks(cb);
+        manager._attempt = Core::AAP::AAPAttempt{1, 2};
+        manager._connected = true;
+
+        const std::vector<uint8_t> frame{0x04, 0x00, 0x04, 0x00, 0x04, 0x00,
+                                         0x01, 0x08, 0x01, 50,   0x02, 0x01};
+        // The reader of the retired generation must not publish through the new session.
+        manager.ProcessPacket(frame, Core::AAP::AAPAttempt{1, 1}, cb);
+        QCOMPARE(callbacks, 0);
+        QVERIFY(!manager.GetBatterySnapshot().has_value());
+
+        manager.ProcessPacket(frame, Core::AAP::AAPAttempt{1, 2}, cb);
+        QCOMPARE(callbacks, 1);
+        QVERIFY(manager.GetBatterySnapshot().has_value());
+    }
+
+    void BatteryCacheClearedOnDisconnect()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
+
+        const std::vector<uint8_t> frame{0x04, 0x00, 0x04, 0x00, 0x04, 0x00,
+                                         0x01, 0x04, 0x01, 66,   0x01, 0x01};
+        manager.ProcessPacket(frame);
+        QVERIFY(manager.GetBatterySnapshot().has_value());
+
+        // AAP disconnect: the cached session snapshot is gone, so no stale overlay
+        // can outlive the connection that produced it.
+        manager.Disconnect();
+        QVERIFY(!manager.GetBatterySnapshot().has_value());
+    }
 #endif
 };
 

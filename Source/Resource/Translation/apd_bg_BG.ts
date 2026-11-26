@@ -83,6 +83,14 @@ Enjoy it all.</source>
         <source>Please select your AirPods device below.</source>
         <translation>Моля, изберете вашето AirPods устройство по-долу.</translation>
     </message>
+    <message>
+        <source>Battery source: %1</source>
+        <translation>Източник на батерията: %1</translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP и BLE отчитат различни стойности на батерията.</translation>
+    </message>
 </context>
 <context>
     <name>Gui::SettingsWindow</name>
@@ -237,6 +245,10 @@ Enjoy it all.</source>
     <message>
         <source>Adaptive</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP и BLE отчитат различни стойности на батерията.</translation>
     </message>
 </context>
 <context>

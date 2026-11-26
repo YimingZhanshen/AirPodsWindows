@@ -83,6 +83,14 @@ Divertiti.</translation>
         <source>Please select your AirPods device below.</source>
         <translation>Per favore seleziona qui sotto il tuo dispositivo AirPods.</translation>
     </message>
+    <message>
+        <source>Battery source: %1</source>
+        <translation>Fonte batteria: %1</translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP e BLE segnalano valori di batteria diversi.</translation>
+    </message>
 </context>
 <context>
     <name>Gui::SettingsWindow</name>
@@ -238,6 +246,10 @@ Divertiti.</translation>
     <message>
         <source>Adaptive</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP e BLE segnalano valori di batteria diversi.</translation>
     </message>
 </context>
 <context>

@@ -52,6 +52,10 @@ struct BatteryPresentation {
     bool charging{false};
     uint32_t value{0};
     BatteryBadge badge{BatteryBadge::None};
+    // Which feed produced this ring's value, and whether the other feed disagrees.
+    // Defaults keep the pure-BLE presentation identical to before D2.
+    Core::AirPods::BatterySource source{Core::AirPods::BatterySource::BLE};
+    bool sourceConflict{false};
 
     bool operator==(const BatteryPresentation &) const = default;
 };

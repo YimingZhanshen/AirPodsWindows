@@ -83,6 +83,14 @@ Selamat menikmati.</translation>
         <source>Please select your AirPods device below.</source>
         <translation>Silakan pilih perangkat AirPods Anda di bawah ini.</translation>
     </message>
+    <message>
+        <source>Battery source: %1</source>
+        <translation>Sumber baterai: %1</translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP dan BLE melaporkan nilai baterai yang berbeda.</translation>
+    </message>
 </context>
 <context>
     <name>Gui::SettingsWindow</name>
@@ -237,6 +245,10 @@ Selamat menikmati.</translation>
     <message>
         <source>Adaptive</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP dan BLE melaporkan nilai baterai yang berbeda.</translation>
     </message>
 </context>
 <context>

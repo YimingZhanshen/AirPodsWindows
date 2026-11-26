@@ -83,6 +83,14 @@ Aproveite.</translation>
         <source>Please select your AirPods device below.</source>
         <translation>Selecione seu dispositivo AirPods abaixo.</translation>
     </message>
+    <message>
+        <source>Battery source: %1</source>
+        <translation>Fonte da bateria: %1</translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP e BLE relatam valores de bateria diferentes.</translation>
+    </message>
 </context>
 <context>
     <name>Gui::SettingsWindow</name>
@@ -237,6 +245,10 @@ Aproveite.</translation>
     <message>
         <source>Adaptive</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP e BLE relatam valores de bateria diferentes.</translation>
     </message>
 </context>
 <context>

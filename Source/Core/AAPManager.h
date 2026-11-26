@@ -28,6 +28,7 @@
 
 #include "AAP.h"
 #include "AAPAtt.h"
+#include "AAPBattery.h"
 #include "AAPConnectionStateMachine.h"
 #include "AAPTransport.h"
 #include "Base.h"
@@ -77,6 +78,7 @@ struct Callbacks {
     using FnOnLoudSoundReductionChangedT = std::function<void(LoudSoundReductionState, AAPAttempt)>;
     using FnOnAutomaticEarDetectionChangedT = std::function<void(bool, AAPAttempt)>;
     using FnOnPpeCapLevelChangedT = std::function<void(uint8_t, AAPAttempt)>;
+    using FnOnBatteryChangedT = std::function<void(AAPBatterySnapshot, AAPAttempt)>;
     using FnOnConnectedT = std::function<void(AAPAttempt)>;
     using FnOnDisconnectedT = std::function<void(AAPAttempt)>;
     using FnOnAttProbeResultT = std::function<void(AttPathState, AAPAttempt)>;
@@ -90,6 +92,7 @@ struct Callbacks {
     FnOnLoudSoundReductionChangedT onLoudSoundReductionChanged;
     FnOnAutomaticEarDetectionChangedT onAutomaticEarDetectionChanged;
     FnOnPpeCapLevelChangedT onPpeCapLevelChanged;
+    FnOnBatteryChangedT onBatteryChanged;
     FnOnConnectedT onConnected;
     FnOnDisconnectedT onDisconnected;
     FnOnAttProbeResultT onAttProbeResult;
@@ -144,6 +147,10 @@ public:
     bool StopHeadTracking();
     bool IsHeadTrackingActive() const;
 
+    // Cached battery snapshot of the current session (opcode 0x0004). Cleared when
+    // a connect starts and when the session ends; consumers fuse it over BLE values.
+    std::optional<AAPBatterySnapshot> GetBatterySnapshot() const;
+
     // Callbacks
     void SetCallbacks(Callbacks callbacks);
 
@@ -189,6 +196,7 @@ private:
     std::optional<bool> _automaticEarDetectionState;
     std::optional<LoudSoundReductionState> _loudSoundReductionState;
     std::optional<uint8_t> _ppeCapLevel;
+    std::optional<AAPBatterySnapshot> _batterySnapshot;
 
     // ATT path probe (blueprint 0.3): deadline in steady_clock milliseconds,
     // 0 when no probe is outstanding. GetAttPathState flips Pending to

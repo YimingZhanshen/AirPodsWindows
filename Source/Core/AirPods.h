@@ -37,6 +37,7 @@
 #include "AppleCP.h"
 #include "AAP.h"
 #include "AAPManager.h"
+#include "BatteryFusion.h"
 #include "../Helper.h"
 
 class AirPodsDomainTests;
@@ -52,6 +53,12 @@ namespace Details {
 struct BasicState {
     Battery battery;
     bool isCharging{false};
+    // D2 fusion metadata. Defaults describe the pure BLE path, so a driver-less
+    // session behaves exactly as before; the Manager overlays AAP readings right
+    // before a State is published.
+    BatterySource batterySource{BatterySource::BLE};
+    // AAP presents this component and BLE disagrees beyond one quantized bucket.
+    bool sourceConflict{false};
 
     bool operator==(const BasicState &rhs) const = default;
 };
@@ -307,6 +314,16 @@ private:
     std::atomic<bool> _loudSoundReductionEnabled{false};
     std::atomic<uint8_t> _ppeCapLevel{AAP::kPpeCapLevelDefault};
     std::atomic<int> _currentNoiseControlMode{-1};
+    // AAP-over-BLE battery fusion. `_batteryFusionMutex` guards the three fields
+    // below and is always a leaf lock: it may be taken while `_mutex` or
+    // `_aapWorkerMutex` is held, nothing else is locked while holding it and no
+    // signal is emitted under it. The BLE path overlays in place; the AAP path only
+    // posts RequestFusedStatePublish, so StateUpdated keeps a single producer thread
+    // and never publishes a torn or stale overlay.
+    mutable std::mutex _batteryFusionMutex;
+    Details::BatteryFusion _batteryFusion;
+    std::optional<State> _lastBleState;
+    std::optional<State> _lastPublishedState;
     uint64_t _requestedDeviceAddress{0};
     std::jthread _deviceLookupThread;
 
@@ -356,6 +373,7 @@ private:
     void OnSpeakingLevelChanged(AAP::SpeakingLevel level, AAP::AAPAttempt attempt);
     void OnEarDetectionChanged(
         AAP::EarStatus primary, AAP::EarStatus secondary, AAP::AAPAttempt attempt);
+    void OnAAPBatteryChanged(const AAP::AAPBatterySnapshot &snapshot, AAP::AAPAttempt attempt);
     void OnHeadTrackingData(AAP::HeadTrackingData data, AAP::AAPAttempt attempt);
     void OnAttProbeResult(AAP::AttPathState state, AAP::AAPAttempt attempt);
     void OnAAPConnected(AAP::AAPAttempt attempt);
@@ -367,6 +385,14 @@ private:
     void DisconnectAAP();
     void AAPConnectLoop(std::stop_token stopToken);
     bool IsCurrentAAPAttempt(AAP::AAPAttempt attempt) const;
+    // Applies the fused AAP battery view to a state right before it is published.
+    // The caller must hold `_batteryFusionMutex`.
+    void OverlayBattery(State &state) const;
+    // Posts a fused republish onto the thread that owns Manager; safe from any worker thread.
+    void RequestFusedStatePublish();
+    // Re-publishes the retained BLE state with the current fusion overlay applied; used when
+    // the AAP battery stream changes and after the fusion was reset. Runs on Manager's thread.
+    void PublishFusedState();
     void ScheduleScannerRetry();
     void StopScannerRetry();
     bool StartScannerOnce();

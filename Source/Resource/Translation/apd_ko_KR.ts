@@ -83,6 +83,14 @@ Enjoy it all.</source>
         <source>Please select your AirPods device below.</source>
         <translation>아래에서 AirPods를 선택합니다.</translation>
     </message>
+    <message>
+        <source>Battery source: %1</source>
+        <translation>배터리 출처: %1</translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP과 BLE가 다른 배터리 값을 보고합니다.</translation>
+    </message>
 </context>
 <context>
     <name>Gui::SettingsWindow</name>
@@ -237,6 +245,10 @@ Enjoy it all.</source>
     <message>
         <source>Battery</source>
         <translation>배터리</translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP과 BLE가 다른 배터리 값을 보고합니다.</translation>
     </message>
 </context>
 <context>

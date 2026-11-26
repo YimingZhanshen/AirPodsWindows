@@ -83,6 +83,14 @@ Enjoy it all.</source>
         <source>Please select your AirPods device below.</source>
         <translation>נא לבחור את מכשיר ה-AirPods שלך למטה.</translation>
     </message>
+    <message>
+        <source>Battery source: %1</source>
+        <translation>מקור הסוללה: %1</translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP ו-BLE מדווחים על ערכי סוללה שונים.</translation>
+    </message>
 </context>
 <context>
     <name>Gui::SettingsWindow</name>
@@ -237,6 +245,10 @@ Enjoy it all.</source>
     <message>
         <source>Battery</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP ו-BLE מדווחים על ערכי סוללה שונים.</translation>
     </message>
 </context>
 <context>

@@ -360,6 +360,87 @@ private Q_SLOTS:
         QCOMPARE(visible.front()->getBadge(), Gui::Widget::Battery::Badge::None);
     }
 
+    // D2: hover notes for the fused battery path. The pure-BLE presentation keeps
+    // its old look with no tooltip at all.
+    void BatteryRingsNoteAapSourceAndSourceConflict()
+    {
+        Gui::MainWindow window;
+        Core::AirPods::State state;
+        state.model = Core::AirPods::Model::AirPods_Pro_2;
+        state.displayName = QStringLiteral("AirPods Pro");
+        state.pods.left.battery = Core::AirPods::Battery{87};
+        state.pods.left.batterySource = Core::AirPods::BatterySource::AAP;
+        state.pods.left.sourceConflict = true;
+        state.pods.right.battery = Core::AirPods::Battery{85};
+        state.pods.right.batterySource = Core::AirPods::BatterySource::AAP;
+        state.caseBox.battery = Core::AirPods::Battery{50};
+        window.UpdateState(state);
+
+        // Created (and therefore found) in the order left, right, case.
+        const auto batteries = window.findChildren<Gui::Widget::Battery *>();
+        QCOMPARE(batteries.size(), 3);
+        const QString conflicting = batteries.at(0)->toolTip();
+        QVERIFY2(
+            conflicting.contains(QStringLiteral("Battery source: AAP / BLE")),
+            qPrintable(conflicting));
+        QVERIFY(conflicting.contains(QStringLiteral("different battery values")));
+        const QString agreed = batteries.at(1)->toolTip();
+        QVERIFY(agreed.contains(QStringLiteral("Battery source: AAP")));
+        QVERIFY(!agreed.contains(QStringLiteral("different")));
+        QVERIFY(batteries.at(2)->toolTip().isEmpty());
+
+        // A BLE-only state clears the notes again.
+        Core::AirPods::State bleOnly;
+        bleOnly.model = Core::AirPods::Model::AirPods_Pro_2;
+        bleOnly.displayName = QStringLiteral("AirPods Pro");
+        bleOnly.pods.left.battery = Core::AirPods::Battery{90};
+        bleOnly.pods.right.battery = Core::AirPods::Battery{80};
+        window.UpdateState(bleOnly);
+        const auto resetBatteries = window.findChildren<Gui::Widget::Battery *>();
+        for (auto *battery : resetBatteries) {
+            QVERIFY2(battery->toolTip().isEmpty(), qPrintable(battery->toolTip()));
+        }
+    }
+
+    void TrayTooltipMarksAapSourceAndConflict()
+    {
+        Core::QuickConnect::Controller quickConnect{
+            std::make_shared<Core::QuickConnect::NullBackend>()};
+        Gui::TrayIcon tray{[] { return 0; }, quickConnect};
+        auto *trayIcon = tray.findChild<QSystemTrayIcon *>();
+        QVERIFY(trayIcon != nullptr);
+
+        Core::AirPods::State state;
+        state.model = Core::AirPods::Model::AirPods_Pro_2;
+        state.displayName = QStringLiteral("AirPods Pro");
+        state.pods.left.battery = Core::AirPods::Battery{87};
+        state.pods.left.batterySource = Core::AirPods::BatterySource::AAP;
+        state.pods.left.sourceConflict = true;
+        state.pods.right.battery = Core::AirPods::Battery{85};
+        state.pods.right.batterySource = Core::AirPods::BatterySource::AAP;
+        state.caseBox.battery = Core::AirPods::Battery{50};
+        tray.UpdateState(state);
+
+        const QString fused = trayIcon->toolTip();
+        QVERIFY2(fused.contains(QStringLiteral("Left: 87% (AAP / BLE)")), qPrintable(fused));
+        QVERIFY(fused.contains(QStringLiteral("Right: 85% (AAP)")));
+        QVERIFY(!fused.contains(QStringLiteral("Case: 50% (AAP)")));
+        QVERIFY(fused.contains(QStringLiteral("AAP and BLE report different battery values.")));
+
+        // Driver-less BLE path: tooltip stays byte-identical to the pre-D2 text.
+        Core::AirPods::State bleOnly;
+        bleOnly.model = Core::AirPods::Model::AirPods_Pro_2;
+        bleOnly.displayName = QStringLiteral("AirPods Pro");
+        bleOnly.pods.left.battery = Core::AirPods::Battery{90};
+        bleOnly.pods.right.battery = Core::AirPods::Battery{80};
+        bleOnly.caseBox.battery = Core::AirPods::Battery{50};
+        tray.UpdateState(bleOnly);
+        const QString plain = trayIcon->toolTip();
+        QVERIFY(!plain.contains(QStringLiteral("(AAP)")));
+        QVERIFY(!plain.contains(QStringLiteral("different battery values")));
+        QVERIFY(plain.contains(QStringLiteral("Left: 90%")));
+    }
+
     void TrayQuitExitsWithBatteryWindowVisible()
     {
         QProcess child;

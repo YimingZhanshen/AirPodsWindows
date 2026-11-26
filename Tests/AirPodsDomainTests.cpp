@@ -18,6 +18,7 @@
 
 #include <Config.h>
 #include "Source/Core/AirPods.h"
+#include "Source/Core/BatteryFusion.h"
 #include "Source/Core/Settings.h"
 #include "Source/Core/SettingsRepository.h"
 #include "Source/Core/Update.h"
@@ -209,6 +210,20 @@ ReceivedData MakeTraceAdvertisementData(
     return data;
 }
 
+Core::AAP::AAPBatteryReading
+AapReading(Core::AAP::BatteryComponent component, uint8_t level, Core::AAP::BatteryStatus status)
+{
+    return {component, level, status};
+}
+
+Core::AAP::AAPBatterySnapshot LeftSnapshot(uint8_t level)
+{
+    Core::AAP::AAPBatterySnapshot snapshot;
+    snapshot.left =
+        AapReading(Core::AAP::BatteryComponent::Left, level, Core::AAP::BatteryStatus::Discharging);
+    return snapshot;
+}
+
 } // namespace
 
 class AirPodsDomainTests : public QObject
@@ -236,6 +251,15 @@ private Q_SLOTS:
     void RejectsConflictingBatterySources();
     void RecoversFromWeakerBatterySource();
     void AcceptsAdjacentBatteryBucketsAfterAddressRotation();
+    void FusesAapBatteryOverBleWithinSession();
+    void FallsBackWhenAapComponentDisconnects();
+    void FallsBackWhenAapSessionResets();
+    void ConfirmsLargeBatteryDropOnlyAfterTwoIdenticalReadings();
+    void AcceptsSmallBatteryDropsAndRisesImmediately();
+    void MarksBatterySourceConflictBeyondBleBucket();
+    void UsesAapStatusForBatteryCharging();
+    void BasicStateEqualityCoversBatterySourceFields();
+    void PresentationCarriesBatterySourceFields();
     void MergesAdvertisementsFromBothSides();
     void RejectsAdvertisementsFromDifferentModels();
     void AcceptsKnownModelAfterUnknownAdvertisement();
@@ -800,6 +824,239 @@ void AirPodsDomainTests::MergesAdvertisementsFromBothSides()
     QCOMPARE(update->newState.pods.left.battery.Value(), 90U);
     QCOMPARE(update->newState.pods.right.battery.Value(), 70U);
     QCOMPARE(update->newState.caseBox.battery.Value(), 50U);
+}
+
+// D2: battery fusion. The Manager copies the same Resolve() answers into State;
+// these tests pin the pure policy the overlay is built from.
+void AirPodsDomainTests::FusesAapBatteryOverBleWithinSession()
+{
+    Core::AirPods::Details::BatteryFusion fusion;
+
+    // Before any AAP data the fusion presents nothing: the BLE path is untouched.
+    QVERIFY(
+        !fusion.Resolve(Core::AAP::BatteryComponent::Left, std::optional<uint8_t>(90)).has_value());
+    QVERIFY(!fusion.Presents(Core::AAP::BatteryComponent::Left));
+
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(87)));
+    auto left = fusion.Resolve(Core::AAP::BatteryComponent::Left, std::optional<uint8_t>(90));
+    QVERIFY(left.has_value());
+    QCOMPARE(left->level, uint8_t(87));
+    QVERIFY(!left->conflict); // 3 points apart stays inside one advertisement bucket
+
+    // Components AAP never mentioned keep falling back to BLE; components from an earlier
+    // snapshot keep presenting even when the next snapshot omits them.
+    QVERIFY(
+        !fusion.Resolve(Core::AAP::BatteryComponent::Case, std::optional<uint8_t>(50)).has_value());
+    Core::AAP::AAPBatterySnapshot caseOnly;
+    caseOnly.caseBox =
+        AapReading(Core::AAP::BatteryComponent::Case, 42, Core::AAP::BatteryStatus::Discharging);
+    QVERIFY(fusion.OnAapSnapshot(caseOnly));
+    QVERIFY(fusion.Presents(Core::AAP::BatteryComponent::Left));
+    QVERIFY(fusion.Resolve(Core::AAP::BatteryComponent::Right, std::nullopt) == std::nullopt);
+    auto stored = fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt);
+    QVERIFY(stored.has_value());
+    QCOMPARE(stored->level, uint8_t(87));
+    QVERIFY(!stored->conflict); // no BLE value cannot conflict
+
+    // Feeding the identical snapshot changes nothing (no republish churn).
+    QVERIFY(!fusion.OnAapSnapshot(caseOnly));
+}
+
+void AirPodsDomainTests::FallsBackWhenAapComponentDisconnects()
+{
+    Core::AirPods::Details::BatteryFusion fusion;
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(87)));
+    QVERIFY(fusion.Presents(Core::AAP::BatteryComponent::Left));
+
+    Core::AAP::AAPBatterySnapshot disconnected;
+    disconnected.left =
+        AapReading(Core::AAP::BatteryComponent::Left, 0, Core::AAP::BatteryStatus::Disconnected);
+    QVERIFY(fusion.OnAapSnapshot(disconnected));
+    QVERIFY(!fusion.Presents(Core::AAP::BatteryComponent::Left));
+    QVERIFY(
+        !fusion.Resolve(Core::AAP::BatteryComponent::Left, std::optional<uint8_t>(90)).has_value());
+
+    // Reconnecting starts a fresh presentation (immediate acceptance again).
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(85)));
+    auto restored = fusion.Resolve(Core::AAP::BatteryComponent::Left, std::optional<uint8_t>(90));
+    QVERIFY(restored.has_value());
+    QCOMPARE(restored->level, uint8_t(85));
+}
+
+void AirPodsDomainTests::FallsBackWhenAapSessionResets()
+{
+    Core::AirPods::Details::BatteryFusion fusion;
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(87)));
+
+    // AAP disconnect (or a new session) drops every overlay without a time window.
+    fusion.Reset();
+    QVERIFY(!fusion.Presents(Core::AAP::BatteryComponent::Left));
+    QVERIFY(
+        !fusion.Resolve(Core::AAP::BatteryComponent::Left, std::optional<uint8_t>(90)).has_value());
+
+    // A pending large drop must not survive the reset either.
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(90)));
+    QVERIFY(!fusion.OnAapSnapshot(LeftSnapshot(40)));
+    fusion.Reset();
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(80))); // first value of the new session
+    auto value = fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt);
+    QVERIFY(value.has_value());
+    QCOMPARE(value->level, uint8_t(80));
+}
+
+void AirPodsDomainTests::ConfirmsLargeBatteryDropOnlyAfterTwoIdenticalReadings()
+{
+    Core::AirPods::Details::BatteryFusion fusion;
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(50)));
+
+    // One 10-point drop is held: the presented value stays 50.
+    QVERIFY(!fusion.OnAapSnapshot(LeftSnapshot(40)));
+    auto held = fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt);
+    QVERIFY(held.has_value());
+    QCOMPARE(held->level, uint8_t(50));
+
+    // A different candidate restarts the confirmation count.
+    QVERIFY(!fusion.OnAapSnapshot(LeftSnapshot(41)));
+    QCOMPARE(fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt)->level, uint8_t(50));
+
+    // Two consecutive identical candidates confirm the drop.
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(41)));
+    QCOMPARE(fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt)->level, uint8_t(41));
+    // Re-feeding the confirmed value changes nothing further.
+    QVERIFY(!fusion.OnAapSnapshot(LeftSnapshot(41)));
+}
+
+void AirPodsDomainTests::AcceptsSmallBatteryDropsAndRisesImmediately()
+{
+    Core::AirPods::Details::BatteryFusion fusion;
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(50)));
+
+    // A 2-point drop is inside the immediate window.
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(48)));
+    QCOMPARE(fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt)->level, uint8_t(48));
+
+    // Rises never wait for confirmation, not even by more than two points.
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(97)));
+    QCOMPARE(fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt)->level, uint8_t(97));
+
+    // A rise while a drop candidate is pending clears the pending state.
+    QVERIFY(!fusion.OnAapSnapshot(LeftSnapshot(30)));
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(96)));
+    auto pendingCleared = fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt);
+    QCOMPARE(pendingCleared->level, uint8_t(96));
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(30)));
+    QCOMPARE(fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt)->level, uint8_t(30));
+}
+
+void AirPodsDomainTests::MarksBatterySourceConflictBeyondBleBucket()
+{
+    Core::AirPods::Details::BatteryFusion fusion;
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(45)));
+
+    // AAP 45 vs BLE 90: more than one 10% bucket apart, the feeds really disagree.
+    auto conflicting =
+        fusion.Resolve(Core::AAP::BatteryComponent::Left, std::optional<uint8_t>(90));
+    QVERIFY(conflicting->conflict);
+
+    // AAP 91 vs BLE 90 is quantization noise, not a conflict.
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(91)));
+    auto agreed = fusion.Resolve(Core::AAP::BatteryComponent::Left, std::optional<uint8_t>(90));
+    QVERIFY(!agreed->conflict);
+
+    // Exactly one bucket apart still counts as agreement (difference must EXCEED 10).
+    QVERIFY(!fusion.OnAapSnapshot(LeftSnapshot(81))); // 10-point drop: still confirming
+    QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(81)));
+    auto edge = fusion.Resolve(Core::AAP::BatteryComponent::Left, std::optional<uint8_t>(90));
+    QCOMPARE(edge->level, uint8_t(81));
+    QVERIFY(!edge->conflict);
+}
+
+void AirPodsDomainTests::UsesAapStatusForBatteryCharging()
+{
+    Core::AirPods::Details::BatteryFusion fusion;
+    Core::AAP::AAPBatterySnapshot charging;
+    charging.left =
+        AapReading(Core::AAP::BatteryComponent::Left, 60, Core::AAP::BatteryStatus::Charging);
+    charging.right =
+        AapReading(Core::AAP::BatteryComponent::Right, 60, Core::AAP::BatteryStatus::Discharging);
+    charging.caseBox =
+        AapReading(Core::AAP::BatteryComponent::Case, 60, Core::AAP::BatteryStatus::Unknown);
+    QVERIFY(fusion.OnAapSnapshot(charging));
+
+    auto left = fusion.Resolve(Core::AAP::BatteryComponent::Left, std::optional<uint8_t>(50));
+    QVERIFY(left->charging);
+
+    auto right = fusion.Resolve(Core::AAP::BatteryComponent::Right, std::optional<uint8_t>(50));
+    QVERIFY(!right->charging);
+
+    // Unknown AAP status is still authoritative: it does not claim charging.
+    auto caseBox = fusion.Resolve(Core::AAP::BatteryComponent::Case, std::optional<uint8_t>(50));
+    QVERIFY(!caseBox->charging);
+}
+
+void AirPodsDomainTests::BasicStateEqualityCoversBatterySourceFields()
+{
+    Core::AirPods::PodState first;
+    first.battery = Core::AirPods::Battery{87};
+    auto second = first;
+    QVERIFY(first == second);
+
+    second.batterySource = Core::AirPods::BatterySource::AAP;
+    QVERIFY(!(first == second));
+
+    second = first;
+    second.sourceConflict = true;
+    QVERIFY(!(first == second));
+
+    // PodState/CaseState inherit the comparison through their defaulted operators.
+    Core::AirPods::State leftState;
+    leftState.pods.left = second;
+    Core::AirPods::State rightState;
+    QVERIFY(!(leftState == rightState));
+
+    // Defaults describe the pure BLE path (backward compatible with pre-D2 states).
+    QVERIFY(Core::AirPods::BatterySource::BLE == Core::AirPods::State{}.pods.left.batterySource);
+    QVERIFY(!Core::AirPods::State{}.pods.left.sourceConflict);
+    QVERIFY(!Core::AirPods::State{}.caseBox.sourceConflict);
+}
+
+void AirPodsDomainTests::PresentationCarriesBatterySourceFields()
+{
+    Core::AirPods::State state;
+    state.model = Model::AirPods_Pro_2;
+    state.displayName = QStringLiteral("AirPods Pro");
+    state.pods.left.battery = Core::AirPods::Battery{87};
+    state.pods.left.batterySource = Core::AirPods::BatterySource::AAP;
+    state.pods.left.sourceConflict = true;
+    state.pods.right.battery = Core::AirPods::Battery{85};
+    state.caseBox.battery = Core::AirPods::Battery{50};
+
+    Gui::MainWindowViewModel viewModel;
+    viewModel.UpdateState(state);
+    const auto presentation = viewModel.Present();
+
+    QVERIFY(presentation.leftBattery.visible);
+    QCOMPARE(presentation.leftBattery.source, Core::AirPods::BatterySource::AAP);
+    QVERIFY(presentation.leftBattery.sourceConflict);
+    QCOMPARE(presentation.rightBattery.source, Core::AirPods::BatterySource::BLE);
+    QVERIFY(!presentation.rightBattery.sourceConflict);
+    QVERIFY(presentation.leftBattery != presentation.rightBattery);
+
+    // In the merged (both-out, equal-value) layout the shown ring keeps the weaker
+    // component's source and reports either side's conflict.
+    Core::AirPods::State merged = state;
+    merged.pods.left.sourceConflict = false;
+    merged.pods.left.battery = Core::AirPods::Battery{90};
+    merged.pods.right.battery = Core::AirPods::Battery{90};
+    merged.pods.right.batterySource = Core::AirPods::BatterySource::AAP;
+    merged.pods.right.isCharging = true;
+    merged.pods.left.isCharging = true;
+    Gui::MainWindowViewModel mergedView;
+    mergedView.UpdateState(merged);
+    const auto mergedPresentation = mergedView.Present();
+    QVERIFY(!mergedPresentation.leftBattery.visible); // merged into the pods row
+    QCOMPARE(mergedPresentation.rightBattery.source, Core::AirPods::BatterySource::AAP);
+    QVERIFY(!mergedPresentation.rightBattery.sourceConflict);
 }
 
 void AirPodsDomainTests::RejectsAdvertisementsFromDifferentModels()

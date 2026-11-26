@@ -90,6 +90,9 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         _attempt = attempt;
         _connectStop = std::stop_source{};
         callbacks = _callbacks;
+        // A new session starts with no battery data; the fusion falls back to BLE until
+        // the device sends its first 0x0004 notification on this generation.
+        _batterySnapshot.reset();
 
         // A natural EOF intentionally leaves its reader joinable. Retire it before creating the
         // replacement so assignment can never destroy a live thread.
@@ -291,6 +294,7 @@ void Manager::Disconnect()
         _noiseControlMode.reset();
         _conversationalAwarenessState.reset();
         _loudSoundReductionState.reset();
+        _batterySnapshot.reset();
         _attPathState.store(AttPathState::Unknown);
         _attProbeDeadlineMs.store(0);
     }
@@ -311,6 +315,12 @@ AAPAttempt Manager::GetLastAttempt() const
 {
     std::lock_guard lock{_mutex};
     return _attempt;
+}
+
+std::optional<AAPBatterySnapshot> Manager::GetBatterySnapshot() const
+{
+    std::lock_guard lock{_mutex};
+    return _batterySnapshot;
 }
 
 bool Manager::IsCurrentAttempt(AAPAttempt attempt) const
@@ -838,6 +848,23 @@ void Manager::ProcessPacket(
         return;
     }
 
+    // Battery notification (opcode 0x0004, 1% precision). Malformed records never
+    // touch the cache or reach the fusion consumer.
+    if (IsBatteryNotification(packet)) {
+        auto snapshot = ParseBatteryNotification(packet);
+        if (snapshot.has_value()) {
+            {
+                std::lock_guard<std::mutex> lock{_mutex};
+                _batterySnapshot = snapshot;
+            }
+            LOG(Trace, "AAP: Battery notification ({} bytes)", packet.size());
+            if (callbacks.onBatteryChanged) {
+                callbacks.onBatteryChanged(snapshot.value(), attempt);
+            }
+        }
+        return;
+    }
+
     // Only opcode 0x0017 carries head-tracking data. Unknown AAP records are
     // valid for diagnostics but must never fall through into this parser.
     if (_headTrackingActive && packet.size() >= 56 && packet[0] == 0x04 && packet[1] == 0x00 &&
@@ -885,6 +912,7 @@ void Manager::ReaderLoop(
         _connected = false;
         _usingMagicAAP = false;
         _transport.store(std::shared_ptr<AAPTransport>{});
+        _batterySnapshot.reset();
         active = _attempt;
         callback = _callbacks.onDisconnected;
     }
@@ -996,6 +1024,10 @@ bool Manager::IsConnected() const
 AAPAttempt Manager::GetLastAttempt() const
 {
     return {};
+}
+std::optional<AAPBatterySnapshot> Manager::GetBatterySnapshot() const
+{
+    return std::nullopt;
 }
 bool Manager::SetNoiseControlMode(NoiseControlMode)
 {

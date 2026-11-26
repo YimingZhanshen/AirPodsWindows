@@ -625,6 +625,7 @@ void MainWindow::Repaint()
     const auto applyBattery = [](Widget::Battery *widget, const BatteryPresentation &battery) {
         if (!battery.visible) {
             widget->hide();
+            widget->setToolTip(QString{});
             return;
         }
 
@@ -635,6 +636,23 @@ void MainWindow::Repaint()
             "BatteryBadge and Widget::Battery::Badge must line up");
         widget->setBadge(static_cast<Widget::Battery::Badge>(battery.badge));
         widget->show();
+
+        // D2: only the fused path gets a hover note; the pure-BLE look stays untouched.
+        if (battery.source == Core::AirPods::BatterySource::AAP || battery.sourceConflict) {
+            QString tip = MainWindow::tr("Battery source: %1")
+                              .arg(
+                                  battery.source == Core::AirPods::BatterySource::AAP
+                                      ? (battery.sourceConflict ? QStringLiteral("AAP / BLE")
+                                                                : QStringLiteral("AAP"))
+                                      : QStringLiteral("BLE"));
+            if (battery.sourceConflict) {
+                tip += QChar{'\n'} + MainWindow::tr("AAP and BLE report different battery values.");
+            }
+            widget->setToolTip(tip);
+        }
+        else {
+            widget->setToolTip(QString{});
+        }
     };
 
     applyBattery(_leftBattery, presentation.leftBattery);

@@ -34,9 +34,8 @@ namespace Gui {
 TrayIcon::TrayIcon(
     std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect,
     std::function<Core::AirPods::Manager &()> getAirPodsManager)
-    : _quickConnect{quickConnect}, _settingsWindow{
-                                       std::move(getCurrentLocaleIndex), quickConnect,
-                                       getAirPodsManager}
+    : _quickConnect{quickConnect},
+      _settingsWindow{std::move(getCurrentLocaleIndex), quickConnect, getAirPodsManager}
 {
     _getAirPodsManager = std::move(getAirPodsManager);
     Theme::ConfigurePopupSurface(_menu);
@@ -269,13 +268,32 @@ void TrayIcon::Repaint()
         const auto textCharging = QString{" (%1)"}.arg(strCharging),
                    textPlaceHolder = QString{"\n%1: %2%%3"};
 
+        // D2: annotate fused rows and conflicts; BLE-only tooltips stay byte-identical to
+        // the driver-less path.
+        const auto sourceMarker = [](Core::AirPods::BatterySource source, bool conflict) {
+            if (conflict) {
+                return QStringLiteral(" (AAP / BLE)");
+            }
+            return source == Core::AirPods::BatterySource::AAP ? QStringLiteral(" (AAP)")
+                                                               : QString{};
+        };
+        const auto anySourceConflict = [](const Core::AirPods::State &value) {
+            return value.pods.left.sourceConflict || value.pods.right.sourceConflict ||
+                   value.caseBox.sourceConflict;
+        };
+
         if (Core::AirPods::HasSingleBattery(state.model)) {
             if (state.pods.left.battery.Available()) {
                 const auto batteryValue = state.pods.left.battery.Value();
-                toolTipContent += textPlaceHolder.arg(tr("Battery"))
-                                      .arg(batteryValue)
-                                      .arg(state.pods.left.isCharging ? textCharging : QString{});
+                toolTipContent +=
+                    textPlaceHolder.arg(tr("Battery"))
+                        .arg(batteryValue)
+                        .arg(state.pods.left.isCharging ? textCharging : QString{}) +
+                    sourceMarker(state.pods.left.batterySource, state.pods.left.sourceConflict);
                 minBattery = batteryValue;
+            }
+            if (state.pods.left.sourceConflict) {
+                toolTipContent += '\n' + tr("AAP and BLE report different battery values.");
             }
             break;
         }
@@ -287,7 +305,8 @@ void TrayIcon::Repaint()
             toolTipContent += textPlaceHolder
                 .arg(strLeft)
                 .arg(batteryValue)
-                .arg(state.pods.left.isCharging ? textCharging : QString{});
+                .arg(state.pods.left.isCharging ? textCharging : QString{})
+              + sourceMarker(state.pods.left.batterySource, state.pods.left.sourceConflict);
 
             minBattery = batteryValue;
         }
@@ -298,7 +317,8 @@ void TrayIcon::Repaint()
             toolTipContent += textPlaceHolder
                 .arg(strRight)
                 .arg(batteryValue)
-                .arg(state.pods.right.isCharging ? textCharging : QString{});
+                .arg(state.pods.right.isCharging ? textCharging : QString{})
+              + sourceMarker(state.pods.right.batterySource, state.pods.right.sourceConflict);
 
             if (minBattery.Available() && batteryValue < minBattery.Value() ||
                 !minBattery.Available()) {
@@ -310,7 +330,12 @@ void TrayIcon::Repaint()
             toolTipContent += textPlaceHolder
                 .arg(strCase)
                 .arg(state.caseBox.battery.Value())
-                .arg(state.caseBox.isCharging ? textCharging : QString{});
+                .arg(state.caseBox.isCharging ? textCharging : QString{})
+              + sourceMarker(state.caseBox.batterySource, state.caseBox.sourceConflict);
+        }
+
+        if (anySourceConflict(state)) {
+            toolTipContent += '\n' + tr("AAP and BLE report different battery values.");
         }
         // clang-format on
         break;

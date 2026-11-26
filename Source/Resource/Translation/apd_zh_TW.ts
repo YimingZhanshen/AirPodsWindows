@@ -83,6 +83,14 @@ Enjoy it all.</source>
         <source>Please select your AirPods device below.</source>
         <translation>請在下方選擇您的 AirPods 裝置。</translation>
     </message>
+    <message>
+        <source>Battery source: %1</source>
+        <translation>電量來源：%1</translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP 與 BLE 報告的電量不一致。</translation>
+    </message>
 </context>
 <context>
     <name>Gui::SettingsWindow</name>
@@ -237,6 +245,10 @@ Enjoy it all.</source>
     <message>
         <source>Battery</source>
         <translation>電池</translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP 與 BLE 報告的電量不一致。</translation>
     </message>
 </context>
 <context>

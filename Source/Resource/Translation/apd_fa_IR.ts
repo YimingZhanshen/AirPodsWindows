@@ -83,6 +83,14 @@ Enjoy it all.</source>
         <source>Please select your AirPods device below.</source>
         <translation>لطفاً ایرپادت رو از فهرست زیر انتخاب کن.</translation>
     </message>
+    <message>
+        <source>Battery source: %1</source>
+        <translation>منبع باتری: %1</translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP و BLE مقادیر باتری متفاوتی گزارش می‌کنند.</translation>
+    </message>
 </context>
 <context>
     <name>Gui::SettingsWindow</name>
@@ -237,6 +245,10 @@ Enjoy it all.</source>
     <message>
         <source>Adaptive</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP و BLE مقادیر باتری متفاوتی گزارش می‌کنند.</translation>
     </message>
 </context>
 <context>

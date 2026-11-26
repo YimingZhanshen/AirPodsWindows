@@ -83,6 +83,14 @@ Genieße es.</translation>
         <source>Please select your AirPods device below.</source>
         <translation>Bitte wähle unten deine AirPods aus.</translation>
     </message>
+    <message>
+        <source>Battery source: %1</source>
+        <translation>Akkustand: %1</translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP und BLE melden unterschiedliche Akkustände.</translation>
+    </message>
 </context>
 <context>
     <name>Gui::SettingsWindow</name>
@@ -237,6 +245,10 @@ Genieße es.</translation>
     <message>
         <source>Battery</source>
         <translation>Akku</translation>
+    </message>
+    <message>
+        <source>AAP and BLE report different battery values.</source>
+        <translation>AAP und BLE melden unterschiedliche Akkustände.</translation>
     </message>
 </context>
 <context>
