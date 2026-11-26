@@ -1708,7 +1708,8 @@ void AirPodsDomainTests::ResetGenerationRejectsReportCapturedBeforeReset()
     const auto callbackGeneration = manager._earResetGeneration.load();
     manager.ResetEarDetection();
     manager.OnEarDetectionChanged(
-        AAP::EarStatus::OutOfEar, AAP::EarStatus::OutOfEar, session, callbackGeneration);
+        Core::AAP::EarStatus::OutOfEar, Core::AAP::EarStatus::OutOfEar, session,
+        callbackGeneration);
     QCoreApplication::processEvents();
 
     QVERIFY(!manager._earDetection.Snapshot().session.has_value());
@@ -1732,7 +1733,7 @@ void AirPodsDomainTests::QueuedAapReportRetainsCapturedPrimaryRole()
         manager._aapActiveAttempt = session;
     }
     manager.OnEarDetectionChanged(
-        AAP::EarStatus::Unknown, AAP::EarStatus::InCase, session,
+        Core::AAP::EarStatus::Unknown, Core::AAP::EarStatus::InCase, session,
         manager._earResetGeneration.load());
 
     // The BLE primary role changes before the queued AAP report runs. The report must retain
