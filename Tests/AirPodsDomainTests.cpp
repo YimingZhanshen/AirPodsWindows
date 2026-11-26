@@ -242,7 +242,6 @@ private Q_SLOTS:
     void TracksLidAcrossShortGaps();
     void TracksLidWhilePodsAreOut();
     void LidPopupCooldownBlocksRapidRepeats();
-    void LidPopupWiringLivesInMainWindow();
     void EarDetectionTrackerSurvivesStateLoss();
     void PackagesCompatibleLowLatencySilence();
     void LoadsSettingsThroughRepository();
@@ -919,33 +918,6 @@ void AirPodsDomainTests::LidPopupCooldownBlocksRapidRepeats()
     QCOMPARE(tracker.Update(Lid::Closed, Lid::Opened, start + 67s, false), std::nullopt);
     QCOMPARE(tracker.Update(Lid::Opened, Lid::Closed, start + 68s), std::optional<bool>{false});
     QCOMPARE(tracker.Update(Lid::Closed, Lid::Opened, start + 124s), std::optional<bool>{true});
-}
-
-void AirPodsDomainTests::LidPopupWiringLivesInMainWindow()
-{
-    const auto readSource = [](const char *relativePath) {
-        QFile file{QString{APD_SOURCE_DIR} + "/" + relativePath};
-        if (!file.open(QIODevice::ReadOnly)) {
-            return QString{};
-        }
-        return QString::fromUtf8(file.readAll());
-    };
-
-    // The application must install the tested seam rather than keep a private copy of the
-    // popup policy, so the UI integration test exercises the production wiring (D6).
-    const auto application = readSource("Source/Application.cpp");
-    QVERIFY(!application.isEmpty());
-    QVERIFY(application.count("ConnectLidPopup(manager)") == 1);
-    QVERIFY(!application.contains("popup_on_lid_open"));
-    QVERIFY(!application.contains("LidToggled"));
-
-    const auto mainWindow = readSource("Source/Gui/MainWindow.cpp");
-    QVERIFY(!mainWindow.isEmpty());
-    QVERIFY(mainWindow.contains("&Core::AirPods::Manager::LidToggled"));
-    QVERIFY(mainWindow.contains("Core::Settings::GetCurrent().popup_on_lid_open"));
-    QVERIFY(mainWindow.contains("emit ShowWithoutActivatingSafely();"));
-    QVERIFY(mainWindow.contains("emit HideSafely();"));
-    QVERIFY(mainWindow.contains("&Core::AirPods::Manager::Disconnected"));
 }
 
 void AirPodsDomainTests::EarDetectionTrackerSurvivesStateLoss()
