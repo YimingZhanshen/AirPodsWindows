@@ -607,7 +607,7 @@ private slots:
         const auto &sample = DeviceInfoSample();
         // Every prefix that ends before the eleventh NUL delimiter is truncated,
         // including a packet containing all ten mapped fields but no field 11.
-        for (size_t length = 0; length < 168; ++length) {
+        for (size_t length = 0; length < 176; ++length) {
             const std::vector<uint8_t> prefix(
                 sample.begin(), sample.begin() + static_cast<ptrdiff_t>(length));
             QVERIFY2(

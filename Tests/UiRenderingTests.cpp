@@ -2338,9 +2338,11 @@ private Q_SLOTS:
         // Values stay mouse-selectable only (no focus capture, no automatic
         // clipboard access - blueprint rule 5 privacy contract).
         for (const auto *label : labels) {
-            QVERIFY(
-                label->textInteractionFlags().testFlag(Qt::TextSelectableByMouse) ||
-                label->textInteractionFlags() == Qt::NoTextInteraction);
+            const auto flags = label->textInteractionFlags();
+            QVERIFY(flags.testFlag(Qt::TextSelectableByMouse) || flags == Qt::NoTextInteraction);
+            if (flags.testFlag(Qt::TextSelectableByMouse)) {
+                QCOMPARE(label->textFormat(), Qt::PlainText);
+            }
         }
     }
 

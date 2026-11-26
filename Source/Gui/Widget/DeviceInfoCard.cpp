@@ -124,7 +124,9 @@ void DeviceInfoCard::Refresh()
         auto *label = new QLabel{row.label, this};
         label->setProperty("cssClass", kLabelClass);
 
-        auto *value = new QLabel{row.value, this};
+        auto *value = new QLabel{this};
+        value->setTextFormat(Qt::PlainText);
+        value->setText(row.value);
         value->setProperty("cssClass", kValueClass);
         value->setWordWrap(true);
         // Manual mouse selection only: no buttons, no clipboard automation,
