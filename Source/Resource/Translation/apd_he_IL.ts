@@ -468,6 +468,38 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Action for a single press of the left stem.</source>
+        <translation>פעולה ללחיצה אחת על הידית השמאלית.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the left stem.</source>
+        <translation>פעולה ללחיצה כפולה על הידית השמאלית.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the left stem.</source>
+        <translation>פעולה ללחיצה משולשת על הידית השמאלית.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the left stem.</source>
+        <translation>פעולה ללחיצה ארוכה על הידית השמאלית.</translation>
+    </message>
+    <message>
+        <source>Action for a single press of the right stem.</source>
+        <translation>פעולה ללחיצה אחת על הידית הימנית.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the right stem.</source>
+        <translation>פעולה ללחיצה כפולה על הידית הימנית.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the right stem.</source>
+        <translation>פעולה ללחיצה משולשת על הידית הימנית.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the right stem.</source>
+        <translation>פעולה ללחיצה ארוכה על הידית הימנית.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -637,6 +669,66 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     <message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stem press actions</source>
+        <translation>פעולות לחיצת הידית</translation>
+    </message>
+    <message>
+        <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
+        <translation>בחר את פעולת ה־Windows עבור כל תנועת לחיצה. השינויים נשמרים אוטומטית.</translation>
+    </message>
+    <message>
+        <source>Single</source>
+        <translation>אחת</translation>
+    </message>
+    <message>
+        <source>Double</source>
+        <translation>כפולה</translation>
+    </message>
+    <message>
+        <source>Triple</source>
+        <translation>שלוש</translation>
+    </message>
+    <message>
+        <source>Long</source>
+        <translation>ארוכה</translation>
+    </message>
+    <message>
+        <source>Left stem</source>
+        <translation>ידית שמאלית</translation>
+    </message>
+    <message>
+        <source>Right stem</source>
+        <translation>ידית ימנית</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>ללא</translation>
+    </message>
+    <message>
+        <source>Play / Pause</source>
+        <translation>השמעה / השהיה</translation>
+    </message>
+    <message>
+        <source>Next track</source>
+        <translation>הרצעה הבאה</translation>
+    </message>
+    <message>
+        <source>Previous track</source>
+        <translation>הרצעה הקודמת</translation>
+    </message>
+    <message>
+        <source>Volume up</source>
+        <translation>הגברת עוצמת הקול</translation>
+    </message>
+    <message>
+        <source>Volume down</source>
+        <translation>הנמכת עוצמת הקול</translation>
+    </message>
+    <message>
+        <source>Toggle noise control</source>
+        <translation>מעבר בין מצבי שליטה ברעש</translation>
     </message>
 </context>
 <context>

@@ -25,6 +25,7 @@
 
 #include "Base.h"
 #include "AAPBattery.h"
+#include "AAPStem.h"
 #include "../Helper.h"
 #include "../Logger.h"
 #include "PpeCapLevel.h"

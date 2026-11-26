@@ -25,6 +25,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <vector>
 
 // Stem (force sensor) press notifications, AAP opcode 0x0019.
 //
@@ -47,7 +48,8 @@
 // NOTE ON SUBSCRIPTION: opcode 0x39 (`StemConfig`, raw-gesture bitmask: single 0x01, double 0x02,
 // triple 0x04, long 0x08 - librepods `AACPManager.kt:1125-1136`, `control_commands.md:202-204`)
 // is how a host tells the firmware it wants the raw events instead of the built-in behaviour.
-// Sending it is a command-broker concern (task C7) and is deliberately not done here.
+// This pre-C7 branch sends it through AAP::Manager directly and replays the desired mask whenever
+// a transport finishes its handshake.
 
 namespace Core::AAP {
 
@@ -74,6 +76,23 @@ struct StemEvent {
     friend constexpr bool operator==(const StemEvent &, const StemEvent &) = default;
 };
 
+// Identity carried across the queued worker-to-owner boundary. The owner must revalidate it before
+// doing media or ANC work; action alone cannot distinguish a live gesture from a pre-disconnect
+// one.
+struct StemActionRequest {
+    int action{0};
+    uint64_t address{0};
+    uint64_t generation{0};
+};
+
+constexpr bool IsCurrentStemActionRequest(
+    const StemActionRequest &request, uint64_t currentAddress, uint64_t currentGeneration,
+    bool connected) noexcept
+{
+    return connected && request.generation != 0 && request.address == currentAddress &&
+           request.generation == currentGeneration;
+}
+
 constexpr size_t kStemSideCount = 2;
 constexpr size_t kStemPressCount = 4;
 constexpr size_t kStemActionCount = kStemSideCount * kStemPressCount;
@@ -95,6 +114,22 @@ enum class StemAction : uint32_t {
 };
 
 using StemActionTable = std::array<StemAction, kStemActionCount>;
+
+// A press bit is subscribed when either bud maps that press to a host action. The firmware has one
+// raw-gesture mask for both buds; an invalid persisted action is treated as disabled.
+constexpr uint8_t kStemSingleMask = 0x01;
+constexpr uint8_t kStemDoubleMask = 0x02;
+constexpr uint8_t kStemTripleMask = 0x04;
+constexpr uint8_t kStemLongMask = 0x08;
+constexpr uint8_t kAllStemMasks =
+    kStemSingleMask | kStemDoubleMask | kStemTripleMask | kStemLongMask;
+
+uint8_t StemConfigMask(const StemActionTable &actions) noexcept;
+
+namespace Packets {
+// Control command 0x0039, Raw Gestures config. The four payload bytes are mask, zero, zero, zero.
+std::vector<uint8_t> BuildStemConfigPacket(uint8_t mask);
+} // namespace Packets
 
 // Used before the first settings apply as well as by SETTINGS_FIELDS, so a newly constructed
 // manager has the same media-control behaviour as a fresh installation.

@@ -18,6 +18,8 @@
 
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <optional>
 
@@ -32,6 +34,63 @@ enum class MediaAction : uint32_t {
     PreviousTrack,
     VolumeUp,
     VolumeDown,
+};
+
+// Float endpoint reads avoid cumulative integer truncation. A failed read yields no target, so a
+// stem press can never turn an unknown volume into an accidental write.
+inline std::optional<float>
+CalculateStemVolume(std::optional<float> currentPercent, int direction, int stepPercent) noexcept
+{
+    if (!currentPercent.has_value() || !std::isfinite(*currentPercent)) {
+        return std::nullopt;
+    }
+    const auto target = std::round(std::clamp(
+        *currentPercent + static_cast<float>(direction) * static_cast<float>(stepPercent), 0.0f,
+        100.0f));
+    return target;
+}
+
+// Conversational-awareness policy: attenuation is relative to the volume at the start of a session.
+// A manual stem adjustment ends that session before writing. Any late restoration signal is then a
+// no-op, and the next speaking session captures the user's adjusted volume as its new baseline.
+class VolumeReductionPolicy
+{
+public:
+    bool Begin(std::optional<float> currentPercent) noexcept
+    {
+        if (!currentPercent.has_value() || !std::isfinite(*currentPercent)) {
+            return false;
+        }
+        _baseline = std::clamp(*currentPercent, 0.0f, 100.0f);
+        return true;
+    }
+
+    float ReductionTarget(int reductionPercent) const noexcept
+    {
+        if (!_baseline.has_value()) {
+            return 0.0f;
+        }
+        const auto factor = static_cast<float>(std::clamp(reductionPercent, 0, 100)) / 100.0f;
+        return std::round(*_baseline * factor);
+    }
+
+    std::optional<float> RestorationTarget() const noexcept
+    {
+        return _baseline.has_value() ? std::optional<float>{std::round(*_baseline)} : std::nullopt;
+    }
+
+    void End() noexcept
+    {
+        _baseline.reset();
+    }
+
+    bool IsActive() const noexcept
+    {
+        return _baseline.has_value();
+    }
+
+private:
+    std::optional<float> _baseline;
 };
 
 class ControllerAbstract

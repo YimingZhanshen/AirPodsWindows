@@ -468,6 +468,38 @@ Kopple deine AirPods zuerst in den Windows Bluetooth-Einstellungen.</translation
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Action for a single press of the left stem.</source>
+        <translation>Aktion für einfaches Drücken von dem linken Stem.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the left stem.</source>
+        <translation>Aktion für doppeltes Drücken von dem linken Stem.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the left stem.</source>
+        <translation>Aktion für dreifaches Drücken von dem linken Stem.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the left stem.</source>
+        <translation>Aktion für langes Drücken von dem linken Stem.</translation>
+    </message>
+    <message>
+        <source>Action for a single press of the right stem.</source>
+        <translation>Aktion für einfaches Drücken von dem rechten Stem.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the right stem.</source>
+        <translation>Aktion für doppeltes Drücken von dem rechten Stem.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the right stem.</source>
+        <translation>Aktion für dreifaches Drücken von dem rechten Stem.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the right stem.</source>
+        <translation>Aktion für langes Drücken von dem rechten Stem.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -637,6 +669,66 @@ Kopple deine AirPods zuerst in den Windows Bluetooth-Einstellungen.</translation
     <message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stem press actions</source>
+        <translation>Stem-Drückaktionen</translation>
+    </message>
+    <message>
+        <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
+        <translation>Wählen Sie die Windows-Aktion für jede Drückgeste. Änderungen werden automatisch gespeichert.</translation>
+    </message>
+    <message>
+        <source>Single</source>
+        <translation>Einfach</translation>
+    </message>
+    <message>
+        <source>Double</source>
+        <translation>Doppelt</translation>
+    </message>
+    <message>
+        <source>Triple</source>
+        <translation>Dreifach</translation>
+    </message>
+    <message>
+        <source>Long</source>
+        <translation>Lang</translation>
+    </message>
+    <message>
+        <source>Left stem</source>
+        <translation>Linker Stem</translation>
+    </message>
+    <message>
+        <source>Right stem</source>
+        <translation>Rechter Stem</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Keine</translation>
+    </message>
+    <message>
+        <source>Play / Pause</source>
+        <translation>Wiedergabe / Pause</translation>
+    </message>
+    <message>
+        <source>Next track</source>
+        <translation>Nächster Titel</translation>
+    </message>
+    <message>
+        <source>Previous track</source>
+        <translation>Vorheriger Titel</translation>
+    </message>
+    <message>
+        <source>Volume up</source>
+        <translation>Lautstärke erhöhen</translation>
+    </message>
+    <message>
+        <source>Volume down</source>
+        <translation>Lautstärke verringern</translation>
+    </message>
+    <message>
+        <source>Toggle noise control</source>
+        <translation>Geräuschunterdrückung umschalten</translation>
     </message>
 </context>
 <context>

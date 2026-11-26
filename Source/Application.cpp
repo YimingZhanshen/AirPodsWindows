@@ -548,25 +548,42 @@ void ApdApplication::OnStemActionsChanged(const Core::AAP::StemActionTable &acti
     _airPodsManager->SetStemActions(actions);
 }
 
-void ApdApplication::ExecuteStemAction(int action)
+void ApdApplication::ExecuteStemAction(int action, qulonglong address, qulonglong generation)
 {
+    const Core::AAP::StemActionRequest request{action, address, generation};
+    if (!_airPodsManager->IsCurrentStemActionRequest(request)) {
+        LOG(Warn, "Discard stale queued stem action {} for a retired AAP attempt", action);
+        return;
+    }
+
     const auto plan = Core::AAP::PlanStemDispatch(static_cast<Core::AAP::StemAction>(action));
     switch (plan.operation) {
     case Core::AAP::StemDispatchPlan::Operation::TogglePlayPause:
-        Core::GlobalMedia::Execute(Core::GlobalMedia::Details::MediaAction::TogglePlayPause, 0);
+        if (!Core::GlobalMedia::Execute(
+                Core::GlobalMedia::Details::MediaAction::TogglePlayPause, 0))
+        {
+            LOG(Warn, "Stem play/pause action failed");
+        }
         break;
     case Core::AAP::StemDispatchPlan::Operation::NextTrack:
-        Core::GlobalMedia::Execute(Core::GlobalMedia::Details::MediaAction::NextTrack, 0);
+        if (!Core::GlobalMedia::Execute(Core::GlobalMedia::Details::MediaAction::NextTrack, 0)) {
+            LOG(Warn, "Stem next-track action failed");
+        }
         break;
     case Core::AAP::StemDispatchPlan::Operation::PreviousTrack:
-        Core::GlobalMedia::Execute(Core::GlobalMedia::Details::MediaAction::PreviousTrack, 0);
+        if (!Core::GlobalMedia::Execute(Core::GlobalMedia::Details::MediaAction::PreviousTrack, 0))
+        {
+            LOG(Warn, "Stem previous-track action failed");
+        }
         break;
     case Core::AAP::StemDispatchPlan::Operation::VolumeUp:
     case Core::AAP::StemDispatchPlan::Operation::VolumeDown: {
         const auto mediaAction = plan.operation == Core::AAP::StemDispatchPlan::Operation::VolumeUp
                                      ? Core::GlobalMedia::Details::MediaAction::VolumeUp
                                      : Core::GlobalMedia::Details::MediaAction::VolumeDown;
-        Core::GlobalMedia::Execute(mediaAction, plan.volumeStepPercent);
+        if (!Core::GlobalMedia::Execute(mediaAction, plan.volumeStepPercent)) {
+            LOG(Warn, "Stem volume action failed");
+        }
         break;
     }
     case Core::AAP::StemDispatchPlan::Operation::ToggleNoiseControl:

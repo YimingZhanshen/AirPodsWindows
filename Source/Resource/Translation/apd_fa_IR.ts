@@ -468,6 +468,38 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Action for a single press of the left stem.</source>
+        <translation>عمل برای فشار تک روی دسته چپ.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the left stem.</source>
+        <translation>عمل برای فشار دوگانه روی دسته چپ.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the left stem.</source>
+        <translation>عمل برای فشار سه‌گانه روی دسته چپ.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the left stem.</source>
+        <translation>عمل برای فشار طولانی روی دسته چپ.</translation>
+    </message>
+    <message>
+        <source>Action for a single press of the right stem.</source>
+        <translation>عمل برای فشار تک روی دسته راست.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the right stem.</source>
+        <translation>عمل برای فشار دوگانه روی دسته راست.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the right stem.</source>
+        <translation>عمل برای فشار سه‌گانه روی دسته راست.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the right stem.</source>
+        <translation>عمل برای فشار طولانی روی دسته راست.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -637,6 +669,66 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     <message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stem press actions</source>
+        <translation>اعمال فشار دسته</translation>
+    </message>
+    <message>
+        <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
+        <translation>عمل ویندوز را برای هر حرکت فشار انتخاب کنید. تغییرها به‌صورت خودکار ذخیره می‌شوند.</translation>
+    </message>
+    <message>
+        <source>Single</source>
+        <translation>تک</translation>
+    </message>
+    <message>
+        <source>Double</source>
+        <translation>دوبله</translation>
+    </message>
+    <message>
+        <source>Triple</source>
+        <translation>سه‌گانه</translation>
+    </message>
+    <message>
+        <source>Long</source>
+        <translation>طولانی</translation>
+    </message>
+    <message>
+        <source>Left stem</source>
+        <translation>دسته چپ</translation>
+    </message>
+    <message>
+        <source>Right stem</source>
+        <translation>دسته راست</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>هیچ‌کدام</translation>
+    </message>
+    <message>
+        <source>Play / Pause</source>
+        <translation>پخش / توقف</translation>
+    </message>
+    <message>
+        <source>Next track</source>
+        <translation>آهنگ بعدی</translation>
+    </message>
+    <message>
+        <source>Previous track</source>
+        <translation>آهنگ قبلی</translation>
+    </message>
+    <message>
+        <source>Volume up</source>
+        <translation>افزایش صدا</translation>
+    </message>
+    <message>
+        <source>Volume down</source>
+        <translation>کاهش صدا</translation>
+    </message>
+    <message>
+        <source>Toggle noise control</source>
+        <translation>تغییر وضعیت کنترل نویز</translation>
     </message>
 </context>
 <context>

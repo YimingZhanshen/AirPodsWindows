@@ -60,6 +60,34 @@ int ClampVolumeStep(int volumeStepPercent) noexcept
 
 } // namespace
 
+uint8_t StemConfigMask(const StemActionTable &actions) noexcept
+{
+    uint8_t mask = 0;
+    constexpr std::array<uint8_t, kStemPressCount> pressMasks{
+        kStemSingleMask, kStemDoubleMask, kStemTripleMask, kStemLongMask};
+    for (size_t pressIndex = 0; pressIndex < kStemPressCount; ++pressIndex) {
+        const auto left = actions[pressIndex];
+        const auto right = actions[kStemPressCount + pressIndex];
+        const auto enabled = [](StemAction action) {
+            return PlanStemDispatch(action).operation != StemDispatchPlan::Operation::None;
+        };
+        if (enabled(left) || enabled(right)) {
+            mask |= pressMasks[pressIndex];
+        }
+    }
+    return mask;
+}
+
+namespace Packets {
+
+std::vector<uint8_t> BuildStemConfigPacket(uint8_t mask)
+{
+    return {0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x39, static_cast<uint8_t>(mask & kAllStemMasks),
+            0x00, 0x00, 0x00};
+}
+
+} // namespace Packets
+
 std::optional<StemEvent> ParseStemEvent(std::span<const uint8_t> packet) noexcept
 {
     // Exact length, exact header, documented field values only: a truncated, over-long or

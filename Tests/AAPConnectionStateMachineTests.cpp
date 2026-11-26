@@ -85,6 +85,17 @@ private slots:
         QVERIFY(machine.IsCurrent(current));
     }
 
+    void StemOwnerGuardRejectsAddressAndGenerationMismatches()
+    {
+        AAPConnectionStateMachine machine{NoJitter};
+        const auto current = machine.Begin(42).attempt;
+        QVERIFY(machine.TransportConnected(current));
+        QVERIFY(machine.Connected(current, AAPConnectionStateMachine::Clock::now()));
+        QVERIFY(machine.IsCurrent(current));
+        QVERIFY(!machine.IsCurrent({43, current.generation}));
+        QVERIFY(!machine.IsCurrent({42, current.generation + 1}));
+    }
+
     void ExplicitDisconnectSuppressesRetryAndStaleResults()
     {
         AAPConnectionStateMachine machine{NoJitter};

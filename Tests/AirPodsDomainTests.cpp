@@ -14,6 +14,7 @@
 #include <QFile>
 #include <QImage>
 #include <QMetaObject>
+#include <QMap>
 #include <QTemporaryFile>
 #include <QVector>
 #include <QXmlStreamReader>
@@ -310,6 +311,9 @@ private Q_SLOTS:
     void PreservesForkAnimationMappingsAndColors();
     void PlacesPopupInsideMultimonitorBounds();
     void TranslationLocalesIncludeUpstreamAndForkLanguages();
+    void StemSettingsXmlExposesAllLabels();
+    void StemTranslationsAreFinished_data();
+    void StemTranslationsAreFinished();
     void HebrewUpdateWindowTranslationsAreFinished_data();
     void HebrewUpdateWindowTranslationsAreFinished();
     void MapsMainWindowAnimationResources();
@@ -2112,6 +2116,133 @@ void AirPodsDomainTests::TranslationLocalesIncludeUpstreamAndForkLanguages()
         QVERIFY2(
             locales.contains(locale),
             qPrintable(QString{"Missing translation locale: %1"}.arg(locale)));
+    }
+}
+
+void AirPodsDomainTests::StemSettingsXmlExposesAllLabels()
+{
+    QFile ui{QString{APD_SOURCE_DIR} + "/Source/Gui/SettingsWindow.ui"};
+    QVERIFY(ui.open(QIODevice::ReadOnly | QIODevice::Text));
+    QXmlStreamReader xml{&ui};
+    QStringList labels;
+    while (!xml.atEnd()) {
+        xml.readNext();
+        if (xml.isStartElement() && xml.name() == QStringLiteral("string")) {
+            labels << xml.readElementText();
+        }
+    }
+    QVERIFY2(!xml.hasError(), qPrintable(xml.errorString()));
+    for (const auto *source :
+         {"Stem press actions",
+          "Choose the Windows action for each press gesture. Changes are saved automatically.",
+          "Single", "Double", "Triple", "Long", "Left stem", "Right stem"})
+    {
+        QVERIFY2(
+            labels.contains(source), qPrintable(QString{"Missing stem UI label: %1"}.arg(source)));
+    }
+}
+
+void AirPodsDomainTests::StemTranslationsAreFinished_data()
+{
+    QTest::addColumn<QString>("locale");
+    const auto locales =
+        QString{Config::TranslationLocales}.split(QStringLiteral(";"), Qt::SkipEmptyParts);
+    QCOMPARE(locales.size(), 18);
+    for (const auto &locale : locales) {
+        QTest::newRow(qPrintable(locale)) << locale;
+    }
+}
+
+void AirPodsDomainTests::StemTranslationsAreFinished()
+{
+    QFETCH(QString, locale);
+    const std::array<QString, 23> expectedSources{
+        QStringLiteral("Action for a single press of the left stem."),
+        QStringLiteral("Action for a double press of the left stem."),
+        QStringLiteral("Action for a triple press of the left stem."),
+        QStringLiteral("Action for a long press of the left stem."),
+        QStringLiteral("Action for a single press of the right stem."),
+        QStringLiteral("Action for a double press of the right stem."),
+        QStringLiteral("Action for a triple press of the right stem."),
+        QStringLiteral("Action for a long press of the right stem."),
+        QStringLiteral("Stem press actions"),
+        QStringLiteral(
+            "Choose the Windows action for each press gesture. Changes are saved automatically."),
+        QStringLiteral("Single"),
+        QStringLiteral("Double"),
+        QStringLiteral("Triple"),
+        QStringLiteral("Long"),
+        QStringLiteral("Left stem"),
+        QStringLiteral("Right stem"),
+        QStringLiteral("None"),
+        QStringLiteral("Play / Pause"),
+        QStringLiteral("Next track"),
+        QStringLiteral("Previous track"),
+        QStringLiteral("Volume up"),
+        QStringLiteral("Volume down"),
+        QStringLiteral("Toggle noise control"),
+    };
+
+    QFile catalog{QString{APD_SOURCE_DIR} + "/Source/Resource/Translation/apd_" + locale + ".ts"};
+    QVERIFY2(catalog.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(catalog.fileName()));
+    QXmlStreamReader xml{&catalog};
+    QString context;
+    QString source;
+    QMap<QString, QString> translations;
+    QMap<QString, int> counts;
+    QMap<QString, bool> unfinished;
+    while (!xml.atEnd()) {
+        xml.readNext();
+        if (xml.isEndElement() && xml.name() == QStringLiteral("context")) {
+            context.clear();
+            source.clear();
+            continue;
+        }
+        if (!xml.isStartElement()) {
+            continue;
+        }
+        if (xml.name() == QStringLiteral("context")) {
+            context.clear();
+            source.clear();
+        }
+        else if (xml.name() == QStringLiteral("name")) {
+            context = xml.readElementText();
+        }
+        else if (xml.name() == QStringLiteral("source")) {
+            source = xml.readElementText();
+        }
+        else if (xml.name() == QStringLiteral("translation")) {
+            const auto key = context + QLatin1Char{'\\'} + source;
+            ++counts[key];
+            unfinished[key] = xml.attributes().value(QStringLiteral("type")).toString() ==
+                              QStringLiteral("unfinished");
+            translations[key] = xml.readElementText().trimmed();
+        }
+    }
+    QVERIFY2(!xml.hasError(), qPrintable(xml.errorString()));
+
+    for (const auto &expected : expectedSources) {
+        const bool isDescription = expected.startsWith(QStringLiteral("Action for "));
+        const auto key =
+            (isDescription ? QStringLiteral("QObject") : QStringLiteral("SettingsWindow")) +
+            QLatin1Char{'\\'} + expected;
+        QVERIFY2(counts.value(key) == 1, qPrintable(QString{"%1: missing or duplicate %2/%3"})
+                                                   .arg(locale, key.section(QLatin1Char{'\\'}, 0, 0),
+                                                        expected)));
+        QVERIFY2(!unfinished.value(key, true),
+            qPrintable(QString{"%1: unfinished translation for %2"}).arg(locale, expected)));
+        const auto translation = translations.value(key);
+        QVERIFY2(!translation.isEmpty(), qPrintable(QString{"%1: empty translation for %2"})
+                                                  .arg(locale, expected)));
+        // Spanish "Triple" and French "Double"/"Triple"/"Long" are correctly identical to the
+        // source; every other entry must be a real translation rather than an untranslated
+        // fallback.
+        QVERIFY2((locale == QStringLiteral("es_ES") && expected == QStringLiteral("Triple")) ||
+                     (locale == QStringLiteral("fr_FR") &&
+                      (expected == QStringLiteral("Double") || expected == QStringLiteral("Triple") ||
+                       expected == QStringLiteral("Long"))) ||
+                     translation != expected,
+            qPrintable(QString{"%1: untranslated fallback for %2"}).arg(locale, expected)));
     }
 }
 

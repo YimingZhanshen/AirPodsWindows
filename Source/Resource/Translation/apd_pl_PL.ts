@@ -468,6 +468,38 @@ Najpierw sparuj słuchawki AirPods w ustawieniach Bluetooth systemu Windows.</tr
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Action for a single press of the left stem.</source>
+        <translation>Działanie po jednokrotnym naciśnięciu lewego trzonka.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the left stem.</source>
+        <translation>Działanie po dwukrotnym naciśnięciu lewego trzonka.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the left stem.</source>
+        <translation>Działanie po trzykrotnym naciśnięciu lewego trzonka.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the left stem.</source>
+        <translation>Działanie po długim naciśnięciu lewego trzonka.</translation>
+    </message>
+    <message>
+        <source>Action for a single press of the right stem.</source>
+        <translation>Działanie po jednokrotnym naciśnięciu prawego trzonka.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the right stem.</source>
+        <translation>Działanie po dwukrotnym naciśnięciu prawego trzonka.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the right stem.</source>
+        <translation>Działanie po trzykrotnym naciśnięciu prawego trzonka.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the right stem.</source>
+        <translation>Działanie po długim naciśnięciu prawego trzonka.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -637,6 +669,66 @@ Najpierw sparuj słuchawki AirPods w ustawieniach Bluetooth systemu Windows.</tr
     <message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stem press actions</source>
+        <translation>Działania naciskania trzonka</translation>
+    </message>
+    <message>
+        <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
+        <translation>Wybierz działanie systemu Windows dla każdego gestu naciśnięcia. Zmiany są zapisywane automatycznie.</translation>
+    </message>
+    <message>
+        <source>Single</source>
+        <translation>Pojedyncze</translation>
+    </message>
+    <message>
+        <source>Double</source>
+        <translation>Podwójne</translation>
+    </message>
+    <message>
+        <source>Triple</source>
+        <translation>Potrójne</translation>
+    </message>
+    <message>
+        <source>Long</source>
+        <translation>Długie</translation>
+    </message>
+    <message>
+        <source>Left stem</source>
+        <translation>Lewy trzonek</translation>
+    </message>
+    <message>
+        <source>Right stem</source>
+        <translation>Prawy trzonek</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Brak</translation>
+    </message>
+    <message>
+        <source>Play / Pause</source>
+        <translation>Odtwarzanie / Wstrzymanie</translation>
+    </message>
+    <message>
+        <source>Next track</source>
+        <translation>Następny utwór</translation>
+    </message>
+    <message>
+        <source>Previous track</source>
+        <translation>Poprzedni utwór</translation>
+    </message>
+    <message>
+        <source>Volume up</source>
+        <translation>Zwiększ głośność</translation>
+    </message>
+    <message>
+        <source>Volume down</source>
+        <translation>Zmniejsz głośność</translation>
+    </message>
+    <message>
+        <source>Toggle noise control</source>
+        <translation>Przełącz kontrolę hałasu</translation>
     </message>
 </context>
 <context>

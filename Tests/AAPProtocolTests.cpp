@@ -38,6 +38,7 @@
 #include "Source/Core/AAPBattery.h"
 #include "Source/Core/AAPStem.h"
 #include "Source/Core/ConnectionDiagnostics.h"
+#include "Source/Core/GlobalMedia_abstract.h"
 
 // Table-driven coverage for the AAP protocol layer (blueprint items 0.1 / 0.2 / 0.5):
 // every packet builder emits exactly the documented bytes, every parser accepts the
@@ -262,6 +263,33 @@ private slots:
         QCOMPARE(Packets::BuildLoudSoundReductionPacket(false), Hex({0x12, 0x1B, 0x00, 0x00}));
     }
 
+    void StemConfigMaskAndPacketFollowRawGestureBits()
+    {
+        StemActionTable actions{};
+        QCOMPARE(StemConfigMask(actions), uint8_t{0});
+        QCOMPARE(
+            Packets::BuildStemConfigPacket(0),
+            Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x39, 0x00, 0x00, 0x00, 0x00}));
+
+        constexpr std::array<uint8_t, 4> bits{0x01, 0x02, 0x04, 0x08};
+        for (size_t press = 0; press < bits.size(); ++press) {
+            actions = {};
+            actions[press] = StemAction::PlayPause;
+            QCOMPARE(StemConfigMask(actions), bits[press]);
+            actions = {};
+            actions[4 + press] = StemAction::VolumeUp;
+            QCOMPARE(StemConfigMask(actions), bits[press]);
+            QCOMPARE(
+                Packets::BuildStemConfigPacket(bits[press]),
+                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x39, bits[press], 0x00, 0x00, 0x00}));
+        }
+        actions = {};
+        actions[0] = static_cast<StemAction>(0xFF);
+        QCOMPARE(StemConfigMask(actions), uint8_t{0});
+        QCOMPARE(StemConfigMask(DefaultStemActions()), uint8_t{0x0F});
+        QCOMPARE(Packets::BuildStemConfigPacket(0xFF).at(7), uint8_t{0x0F});
+    }
+
     void StemParserCoversEverySideAndPress()
     {
         constexpr StemSide sides[]{StemSide::Left, StemSide::Right};
@@ -328,6 +356,36 @@ private slots:
         QCOMPARE(
             SelectStemAction(actions, {static_cast<StemSide>(0xFF), StemPress::Single}),
             StemAction::None);
+    }
+
+    void QueuedStemActionRejectsStaleAttempts()
+    {
+        constexpr StemActionRequest request{static_cast<int>(StemAction::PlayPause), 0x1234, 7};
+        QVERIFY(IsCurrentStemActionRequest(request, 0x1234, 7, true));
+        QVERIFY(!IsCurrentStemActionRequest(request, 0x1234, 8, true));
+        QVERIFY(!IsCurrentStemActionRequest(request, 0x5678, 7, true));
+        QVERIFY(!IsCurrentStemActionRequest(request, 0x1234, 7, false));
+        QVERIFY(!IsCurrentStemActionRequest({}, 0, 0, true));
+    }
+
+    void StemVolumeUsesFloatReadsAndEndsOldAttenuationSession()
+    {
+        using Core::GlobalMedia::Details::CalculateStemVolume;
+        using Core::GlobalMedia::Details::VolumeReductionPolicy;
+        QCOMPARE(CalculateStemVolume(29.6F, 1, 5), std::optional<float>{35.0F});
+        QCOMPARE(CalculateStemVolume(29.6F, -1, 5), std::optional<float>{25.0F});
+        QCOMPARE(CalculateStemVolume(99.6F, 1, 5), std::optional<float>{100.0F});
+        QVERIFY(!CalculateStemVolume(std::nullopt, 1, 5).has_value());
+
+        VolumeReductionPolicy policy;
+        QVERIFY(policy.Begin(63.6F));
+        QCOMPARE(policy.ReductionTarget(40), 25.0F);
+        QCOMPARE(policy.RestorationTarget(), std::optional<float>{64.0F});
+        policy.End();
+        QVERIFY(!policy.RestorationTarget().has_value());
+        QVERIFY(policy.Begin(35.0F)); // A new session captures the manually adjusted baseline.
+        QCOMPARE(policy.ReductionTarget(40), 14.0F);
+        QVERIFY(!VolumeReductionPolicy{}.Begin(std::nullopt));
     }
 
     void StemDeduperCollapsesRepeatedLongPressBurstsAndReleaseTails()

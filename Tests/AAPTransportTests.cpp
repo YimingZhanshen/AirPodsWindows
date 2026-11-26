@@ -914,14 +914,78 @@ private slots:
         QVERIFY(manager.IsConnected());
         QCOMPARE(manager.GetLastAttempt().generation, attempt.generation);
 
-        // Handshake, feature flags, notification subscriptions, then one ATT read.
-        QCOMPARE(transport->SendCalls(), size_t{4});
+        // Handshake, raw stem config, feature flags, notification subscriptions, then one ATT read.
+        QCOMPARE(transport->SendCalls(), size_t{5});
+        const auto records = transport->SentRecords();
+        QCOMPARE(records.at(0), Core::AAP::Packets::Handshake);
+        QCOMPARE(
+            records.at(1), (std::vector<uint8_t>{
+                               0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x39, 0x0F, 0x00, 0x00, 0x00}));
+        QCOMPARE(records.at(2), Core::AAP::Packets::EnableFeatures);
+        QCOMPARE(records.at(3), Core::AAP::Packets::RequestNotifications);
         QCOMPARE(transport->LastSend(), (std::vector<uint8_t>{0x0A, 0x1B, 0x00}));
         QVERIFY(manager._readerThread.joinable());
 
         manager.Disconnect();
         QVERIFY(!manager.IsConnected());
         QVERIFY(!manager._readerThread.joinable());
+    }
+
+    void StemConfigSendsOnChangeAndReplaysOnReconnect()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transportFactory =
+            [transport](Core::AAP::AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            return transport;
+        };
+
+        QVERIFY(manager.SetStemConfig(0x05)); // Saved before the transport exists.
+        QVERIFY(manager.Connect({0x1234, 1}));
+        QCOMPARE(transport->SentRecords().at(1).at(7), uint8_t{0x05});
+        QVERIFY(manager.SetStemConfig(0x0A));
+        QCOMPARE(transport->LastSend().at(7), uint8_t{0x0A});
+        QCOMPARE(transport->SendCalls(), size_t{6});
+        manager.Disconnect();
+
+        QVERIFY(manager.Connect({0x1234, 2}));
+        const auto records = transport->SentRecords();
+        QCOMPARE(records.size(), size_t{11});
+        QCOMPARE(records.at(6), Core::AAP::Packets::Handshake);
+        QCOMPARE(records.at(7).at(7), uint8_t{0x0A});
+        manager.Disconnect();
+    }
+
+    void FailedStemConfigWriteRemainsPendingForReconnect()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transportFactory =
+            [transport](Core::AAP::AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            return transport;
+        };
+        QVERIFY(manager.Connect({0x1234, 1}));
+        transport->SetSendError(true);
+        QVERIFY(!manager.SetStemConfig(0x03));
+        transport->SetSendError(false);
+        manager.Disconnect();
+
+        QVERIFY(manager.Connect({0x1234, 2}));
+        const auto records = transport->SentRecords();
+        QCOMPARE(records.at(6).at(7), uint8_t{0x03});
+        manager.Disconnect();
+    }
+
+    void ManagerRejectsStaleStemAttemptIdentity()
+    {
+        Core::AAP::Manager manager;
+        manager._attempt = {0x1234, 7};
+        manager._connected = true;
+        QVERIFY(manager.IsCurrentAttempt({0x1234, 7}));
+        QVERIFY(!manager.IsCurrentAttempt({0x1234, 8}));
+        QVERIFY(!manager.IsCurrentAttempt({0x5678, 7}));
+        manager._connected = false;
+        QVERIFY(!manager.IsCurrentAttempt({0x1234, 7}));
     }
 
     void CancelConnectBeforeAttemptStartsSuppressesThatGeneration()

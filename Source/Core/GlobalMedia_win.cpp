@@ -325,7 +325,10 @@ public:
     bool Play() override
     {
         try {
-            _currentSession->TryPlayAsync().get();
+            if (!_currentSession->TryPlayAsync().get()) {
+                LOG(Warn, "UniversalSystemSession rejected TryPlayAsync()");
+                return false;
+            }
             return true;
         }
         catch (const OS::Windows::Winrt::Exception &ex) {
@@ -337,7 +340,10 @@ public:
     bool Pause() override
     {
         try {
-            _currentSession->TryPauseAsync().get();
+            if (!_currentSession->TryPauseAsync().get()) {
+                LOG(Warn, "UniversalSystemSession rejected TryPauseAsync()");
+                return false;
+            }
             return true;
         }
         catch (const OS::Windows::Winrt::Exception &ex) {
@@ -560,7 +566,21 @@ bool Controller::Execute(Details::MediaAction action, int volumeStepPercent)
             return false;
         }
         const int direction = action == Details::MediaAction::VolumeUp ? 1 : -1;
-        return SetEndpointVolume(GetVolume() + direction * step);
+        const auto target = Details::CalculateStemVolume(GetVolume(), direction, step);
+        if (!target.has_value()) {
+            LOG(Warn, "Stem volume: cannot adjust without a valid endpoint volume read");
+            return false;
+        }
+        // Manual adjustment wins over an old attenuation session. A late speaking-level restore
+        // will see no active baseline and therefore cannot overwrite this value. If the write
+        // fails, retain the old session so its eventual restore can still recover the endpoint.
+        auto previousSession = _volumeReduction;
+        _volumeReduction.End();
+        if (!SetEndpointVolume(*target)) {
+            _volumeReduction = previousSession;
+            return false;
+        }
+        return true;
     }
 
     const auto withCurrentSession = [](auto &&operation) {
@@ -572,7 +592,10 @@ bool Controller::Execute(Details::MediaAction action, int volumeStepPercent)
                 LOG(Trace, "Stem media action: no current system media session.");
                 return false;
             }
-            operation(session);
+            if (!operation(session)) {
+                LOG(Warn, "Stem media action was rejected by the current system media session");
+                return false;
+            }
             return true;
         }
         catch (const OS::Windows::Winrt::Exception &ex) {
@@ -587,17 +610,16 @@ bool Controller::Execute(Details::MediaAction action, int volumeStepPercent)
             if (session.GetPlaybackInfo().PlaybackStatus() ==
                 GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing)
             {
-                session.TryPauseAsync().get();
+                return session.TryPauseAsync().get();
             }
-            else {
-                session.TryPlayAsync().get();
-            }
+            return session.TryPlayAsync().get();
         });
     case Details::MediaAction::NextTrack:
-        return withCurrentSession([](const auto &session) { session.TrySkipNextAsync().get(); });
+        return withCurrentSession(
+            [](const auto &session) { return session.TrySkipNextAsync().get(); });
     case Details::MediaAction::PreviousTrack:
         return withCurrentSession(
-            [](const auto &session) { session.TrySkipPreviousAsync().get(); });
+            [](const auto &session) { return session.TrySkipPreviousAsync().get(); });
     case Details::MediaAction::VolumeUp:
     case Details::MediaAction::VolumeDown:
         break;
@@ -605,9 +627,9 @@ bool Controller::Execute(Details::MediaAction action, int volumeStepPercent)
     return false;
 }
 
-bool Controller::SetEndpointVolume(int percent)
+bool Controller::SetEndpointVolume(float percent)
 {
-    const int targetPercent = std::clamp(percent, 0, 100);
+    const float targetPercent = std::clamp(percent, 0.0f, 100.0f);
     try {
         OS::Windows::Com::UniquePtr<IMMDeviceEnumerator> deviceEnumerator;
         HRESULT result = CoCreateInstance(
@@ -635,8 +657,7 @@ bool Controller::SetEndpointVolume(int percent)
             return false;
         }
 
-        result = endpointVolume->SetMasterVolumeLevelScalar(
-            static_cast<float>(targetPercent) / 100.0f, nullptr);
+        result = endpointVolume->SetMasterVolumeLevelScalar(targetPercent / 100.0f, nullptr);
         if (FAILED(result)) {
             LOG(Warn, "Stem volume: SetMasterVolumeLevelScalar failed. HRESULT: {:#x}", result);
             return false;
@@ -652,116 +673,37 @@ bool Controller::SetEndpointVolume(int percent)
 void Controller::SetVolume(int percent)
 {
     std::lock_guard<std::mutex> lock{_mutex};
+    percent = std::clamp(percent, 0, 100);
 
-    if (percent < 0)
-        percent = 0;
-    if (percent > 100)
-        percent = 100;
-
-    // Track if we're in "reduced volume" state using _savedVolume as indicator
-    // _savedVolume > 0 means we have a saved volume to restore to
-    bool isReducing = percent < 100;
-    bool hasVolumeReduction = _savedVolume > 0;
-
-    // Save current volume before reducing
-    // ALWAYS re-read the actual volume to ensure we capture user's manual changes
-    if (isReducing && !_inReductionSession) {
-        // Get actual current volume from the system
-        int currentVolume = 100;
-        try {
-            OS::Windows::Com::UniquePtr<IMMDeviceEnumerator> deviceEnumerator;
-            HRESULT result = CoCreateInstance(
-                __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, deviceEnumerator.GetIID(),
-                (void **)deviceEnumerator.ReleaseAndAddressOf());
-            if (SUCCEEDED(result)) {
-                OS::Windows::Com::UniquePtr<IMMDevice> audioEndpoint;
-                result = deviceEnumerator->GetDefaultAudioEndpoint(
-                    eRender, eMultimedia, audioEndpoint.ReleaseAndAddressOf());
-                if (SUCCEEDED(result)) {
-                    OS::Windows::Com::UniquePtr<IAudioEndpointVolume> endpointVolume;
-                    result = audioEndpoint->Activate(
-                        endpointVolume.GetIID(), CLSCTX_ALL, nullptr,
-                        (void **)endpointVolume.ReleaseAndAddressOf());
-                    if (SUCCEEDED(result)) {
-                        float volumeLevel = 0.0f;
-                        if (SUCCEEDED(endpointVolume->GetMasterVolumeLevelScalar(&volumeLevel))) {
-                            currentVolume = static_cast<int>(volumeLevel * 100.0f);
-                        }
-                    }
-                }
-            }
-        }
-        catch (...) {
-        }
-        _savedVolume = currentVolume;
-        _inReductionSession = true;
-        LOG(Trace, "SetVolume: Saved current volume {}% before reduction, starting session",
-            _savedVolume);
-    }
-
-    // Calculate target volume
-    int targetPercent;
-    if (percent == 100 && hasVolumeReduction) {
-        // Restoring - use saved volume
-        // Keep _savedVolume to handle duplicate restoration calls
-        // It will be cleared when the next reduction cycle starts
-        targetPercent = _savedVolume;
-        _inReductionSession = false;
-        LOG(Trace, "SetVolume: Restoring to saved volume {}%, ending session", targetPercent);
-    }
-    else if (isReducing && _savedVolume > 0) {
-        // Reducing - calculate relative to saved volume
-        targetPercent = (percent * _savedVolume) / 100;
-        LOG(Trace, "SetVolume: Reducing to {}% ({}% of saved {}%)", targetPercent, percent,
-            _savedVolume);
-    }
-    else {
-        // No reduction state - just set the percent
-        targetPercent = percent;
-    }
-
-    try {
-        OS::Windows::Com::UniquePtr<IMMDeviceEnumerator> deviceEnumerator;
-        HRESULT result = CoCreateInstance(
-            __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, deviceEnumerator.GetIID(),
-            (void **)deviceEnumerator.ReleaseAndAddressOf());
-        if (FAILED(result)) {
-            LOG(Warn, "SetVolume: Create IMMDeviceEnumerator failed. HRESULT: {:#x}", result);
+    const bool restoring = percent == 100;
+    if (restoring) {
+        const auto target = _volumeReduction.RestorationTarget();
+        if (!target.has_value()) {
+            // Duplicate or late restore after a manual stem adjustment: never force the endpoint
+            // to 100% merely because an old speaking session has already ended.
+            LOG(Trace, "SetVolume: Ignore restore without an active attenuation session");
             return;
         }
-
-        OS::Windows::Com::UniquePtr<IMMDevice> audioEndpoint;
-        result = deviceEnumerator->GetDefaultAudioEndpoint(
-            eRender, eMultimedia, audioEndpoint.ReleaseAndAddressOf());
-        if (FAILED(result)) {
-            LOG(Warn, "SetVolume: GetDefaultAudioEndpoint failed. HRESULT: {:#x}", result);
+        if (!SetEndpointVolume(*target)) {
             return;
         }
-
-        OS::Windows::Com::UniquePtr<IAudioEndpointVolume> endpointVolume;
-        result = audioEndpoint->Activate(
-            endpointVolume.GetIID(), CLSCTX_ALL, nullptr,
-            (void **)endpointVolume.ReleaseAndAddressOf());
-        if (FAILED(result)) {
-            LOG(Warn, "SetVolume: Activate IAudioEndpointVolume failed. HRESULT: {:#x}", result);
-            return;
-        }
-
-        float volumeLevel = static_cast<float>(targetPercent) / 100.0f;
-        result = endpointVolume->SetMasterVolumeLevelScalar(volumeLevel, nullptr);
-        if (FAILED(result)) {
-            LOG(Warn, "SetVolume: SetMasterVolumeLevelScalar failed. HRESULT: {:#x}", result);
-            return;
-        }
-
-        LOG(Trace, "SetVolume: Volume set to {}%", targetPercent);
+        _volumeReduction.End();
+        LOG(Trace, "SetVolume: Restored to {}% and ended attenuation session", *target);
+        return;
     }
-    catch (const std::exception &ex) {
-        LOG(Warn, "SetVolume: Exception: {}", ex.what());
+
+    if (!_volumeReduction.IsActive() && !_volumeReduction.Begin(GetVolume())) {
+        LOG(Warn, "SetVolume: Cannot start attenuation without a valid endpoint volume read");
+        return;
     }
+    const float target = _volumeReduction.ReductionTarget(percent);
+    if (!SetEndpointVolume(target)) {
+        return;
+    }
+    LOG(Trace, "SetVolume: Applied {}% attenuation relative to the session baseline", percent);
 }
 
-int Controller::GetVolume() const
+std::optional<float> Controller::GetVolume() const
 {
     try {
         OS::Windows::Com::UniquePtr<IMMDeviceEnumerator> deviceEnumerator;
@@ -770,7 +712,7 @@ int Controller::GetVolume() const
             (void **)deviceEnumerator.ReleaseAndAddressOf());
         if (FAILED(result)) {
             LOG(Warn, "GetVolume: Create IMMDeviceEnumerator failed. HRESULT: {:#x}", result);
-            return 100;
+            return std::nullopt;
         }
 
         OS::Windows::Com::UniquePtr<IMMDevice> audioEndpoint;
@@ -778,7 +720,7 @@ int Controller::GetVolume() const
             eRender, eMultimedia, audioEndpoint.ReleaseAndAddressOf());
         if (FAILED(result)) {
             LOG(Warn, "GetVolume: GetDefaultAudioEndpoint failed. HRESULT: {:#x}", result);
-            return 100;
+            return std::nullopt;
         }
 
         OS::Windows::Com::UniquePtr<IAudioEndpointVolume> endpointVolume;
@@ -787,29 +729,31 @@ int Controller::GetVolume() const
             (void **)endpointVolume.ReleaseAndAddressOf());
         if (FAILED(result)) {
             LOG(Warn, "GetVolume: Activate IAudioEndpointVolume failed. HRESULT: {:#x}", result);
-            return 100;
+            return std::nullopt;
         }
 
         float volumeLevel = 0.0f;
         result = endpointVolume->GetMasterVolumeLevelScalar(&volumeLevel);
         if (FAILED(result)) {
             LOG(Warn, "GetVolume: GetMasterVolumeLevelScalar failed. HRESULT: {:#x}", result);
-            return 100;
+            return std::nullopt;
         }
-
-        return static_cast<int>(volumeLevel * 100.0f);
+        if (!std::isfinite(volumeLevel)) {
+            LOG(Warn, "GetVolume: Endpoint returned a non-finite volume");
+            return std::nullopt;
+        }
+        return std::clamp(volumeLevel, 0.0f, 1.0f) * 100.0f;
     }
     catch (const std::exception &ex) {
         LOG(Warn, "GetVolume: Exception: {}", ex.what());
-        return 100;
+        return std::nullopt;
     }
 }
 
 void Controller::ClearVolumeReductionState()
 {
     std::lock_guard<std::mutex> lock{_mutex};
-    _savedVolume = 0;
-    _inReductionSession = false;
+    _volumeReduction.End();
     LOG(Trace, "ClearVolumeReductionState: Cleared saved volume state");
 }
 

@@ -80,6 +80,7 @@ private:
     void InitCreditsText();
     void SetupDriverStatusCard();
     void SetupStemActionsCard();
+    void RetranslateStemActions();
     void RestoreDefaults();
     void Update(const Fields &fields, bool trigger);
     void UpdateQuickConnectDevices(const Fields &fields);
@@ -132,6 +133,7 @@ private:
     UTILS_QT_DISABLE_ESC_QUIT(QDialog);
     UTILS_QT_REGISTER_LANGUAGECHANGE(QDialog, [this] {
         _ui.retranslateUi(this);
+        RetranslateStemActions();
         _ui.cbLowAudioLatency->setAccessibleName(_ui.lbLowAudioLatency->text());
         _ui.cbAutoEarDetection->setAccessibleName(_ui.lbAutoEarDetection->text());
         _ui.cbConversationalAwareness->setAccessibleName(_ui.lbConversationalAwareness->text());

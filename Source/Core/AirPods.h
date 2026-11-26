@@ -288,6 +288,8 @@ public:
     bool IsCurrentAAPCommandRequest(AAP::AAPCommandKind kind, uint64_t requestId) const;
     bool HasPendingAAPCommand(AAP::AAPCommandKind kind) const;
     void RefreshAAPCommand(AAP::AAPCommandKind kind);
+    // Owner-thread guard for queued stem work. Address and generation must both still be current.
+    bool IsCurrentStemActionRequest(const AAP::StemActionRequest &request) const;
 
     // AAP link introspection (blueprint 1.1/1.3)
     bool IsAAPConnectedViaMagicAAP() const;
@@ -447,10 +449,10 @@ Q_SIGNALS:
         uint64_t generation, uint64_t requestId, int kind, uint32_t value, uint32_t rollbackValue,
         bool hasRollbackValue);
     void AapCommandStateSafely(uint64_t generation, int kind, uint32_t value);
-    // Emitted from the AAP reader thread for a validated stem gesture. Payload is
-    // Core::AAP::StemAction cast to int; the receiver performs the host work on the GUI thread,
-    // so no widget and no media API is ever touched from the worker.
-    void StemActionRequestedSafely(int action);
+    // Emitted from the AAP reader thread for a validated stem gesture. The receiver performs the
+    // host work on the GUI thread only after revalidating the address and generation, so no widget
+    // or media API is touched from the worker and stale queued gestures cannot cross a reconnect.
+    void StemActionRequestedSafely(int action, qulonglong address, qulonglong generation);
 };
 
 std::vector<Core::Bluetooth::Device> GetDevices();

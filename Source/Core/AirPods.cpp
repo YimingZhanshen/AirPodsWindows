@@ -758,6 +758,25 @@ bool Manager::IsCurrentAAPAttempt(AAP::AAPAttempt attempt) const
             _aapMgr.GetLastAttempt().address == attempt.address);
 }
 
+bool Manager::IsCurrentStemActionRequest(const AAP::StemActionRequest &request) const
+{
+    if (request.generation == 0) {
+        return false;
+    }
+    std::lock_guard lock{_aapWorkerMutex};
+    const bool transportConnected = _aapMgr.IsConnected();
+    if (_aapConnectInProgress && transportConnected &&
+        _aapActiveAttempt.address == request.address &&
+        _aapActiveAttempt.generation == request.generation)
+    {
+        return true;
+    }
+    const auto current = _aapMgr.GetLastAttempt();
+    const bool connected =
+        _aapConnection.State() == AAP::AAPConnectionState::Connected && transportConnected;
+    return AAP::IsCurrentStemActionRequest(request, current.address, current.generation, connected);
+}
+
 bool Manager::SupportsANC(Model model)
 {
     switch (model) {
@@ -1049,7 +1068,11 @@ void Manager::SetStemActions(const AAP::StemActionTable &actions)
         std::lock_guard lock{_stemActionsMutex};
         _stemActions = actions;
     }
-    LOG(Info, "Stem gesture actions updated");
+    const auto mask = AAP::StemConfigMask(actions);
+    if (!_aapMgr.SetStemConfig(mask)) {
+        LOG(Warn, "Stem gesture actions updated, but the device rejected the raw gesture mask");
+    }
+    LOG(Info, "Stem gesture actions updated (raw gesture mask 0x{:02X})", mask);
 }
 
 AAP::StemActionTable Manager::GetStemActions() const
@@ -1420,7 +1443,9 @@ void Manager::OnStemPress(AAP::StemEvent event, AAP::AAPAttempt attempt)
     LOG(Info, "Stem gesture {} {} -> action {}", AAP::StemSideName(event.side),
         AAP::StemPressName(event.press), AAP::StemActionName(action));
     // Queued delivery: the host work happens on the GUI thread, never on this reader thread.
-    emit StemActionRequestedSafely(static_cast<int>(action));
+    emit StemActionRequestedSafely(
+        static_cast<int>(action), static_cast<qulonglong>(attempt.address),
+        static_cast<qulonglong>(attempt.generation));
 }
 
 // Volume levels for conversational awareness

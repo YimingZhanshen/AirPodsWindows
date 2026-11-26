@@ -468,6 +468,38 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Action for a single press of the left stem.</source>
+        <translation>Tindakan untuk tekan sekali pada stem kiri.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the left stem.</source>
+        <translation>Tindakan untuk tekan dua kali pada stem kiri.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the left stem.</source>
+        <translation>Tindakan untuk tekan tiga kali pada stem kiri.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the left stem.</source>
+        <translation>Tindakan untuk tekan lama pada stem kiri.</translation>
+    </message>
+    <message>
+        <source>Action for a single press of the right stem.</source>
+        <translation>Tindakan untuk tekan sekali pada stem kanan.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the right stem.</source>
+        <translation>Tindakan untuk tekan dua kali pada stem kanan.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the right stem.</source>
+        <translation>Tindakan untuk tekan tiga kali pada stem kanan.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the right stem.</source>
+        <translation>Tindakan untuk tekan lama pada stem kanan.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -637,6 +669,66 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
     <message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stem press actions</source>
+        <translation>Tindakan tekan stem</translation>
+    </message>
+    <message>
+        <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
+        <translation>Pilih tindakan Windows untuk setiap gestur tekan. Perubahan disimpan otomatis.</translation>
+    </message>
+    <message>
+        <source>Single</source>
+        <translation>Sekali</translation>
+    </message>
+    <message>
+        <source>Double</source>
+        <translation>Dua kali</translation>
+    </message>
+    <message>
+        <source>Triple</source>
+        <translation>Tiga kali</translation>
+    </message>
+    <message>
+        <source>Long</source>
+        <translation>Lama</translation>
+    </message>
+    <message>
+        <source>Left stem</source>
+        <translation>Stem kiri</translation>
+    </message>
+    <message>
+        <source>Right stem</source>
+        <translation>Stem kanan</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Tidak ada</translation>
+    </message>
+    <message>
+        <source>Play / Pause</source>
+        <translation>Putar / Jeda</translation>
+    </message>
+    <message>
+        <source>Next track</source>
+        <translation>Trek berikutnya</translation>
+    </message>
+    <message>
+        <source>Previous track</source>
+        <translation>Trek sebelumnya</translation>
+    </message>
+    <message>
+        <source>Volume up</source>
+        <translation>Naikkan volume</translation>
+    </message>
+    <message>
+        <source>Volume down</source>
+        <translation>Turunkan volume</translation>
+    </message>
+    <message>
+        <source>Toggle noise control</source>
+        <translation>Alihkan kontrol noise</translation>
     </message>
 </context>
 <context>

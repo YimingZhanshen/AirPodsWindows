@@ -468,6 +468,38 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Action for a single press of the left stem.</source>
+        <translation>Дія після одноразового натискання лівого стебла.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the left stem.</source>
+        <translation>Дія після дворазового натискання лівого стебла.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the left stem.</source>
+        <translation>Дія після триразового натискання лівого стебла.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the left stem.</source>
+        <translation>Дія після тривалого натискання лівого стебла.</translation>
+    </message>
+    <message>
+        <source>Action for a single press of the right stem.</source>
+        <translation>Дія після одноразового натискання правого стебла.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the right stem.</source>
+        <translation>Дія після дворазового натискання правого стебла.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the right stem.</source>
+        <translation>Дія після триразового натискання правого стебла.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the right stem.</source>
+        <translation>Дія після тривалого натискання правого стебла.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -637,6 +669,66 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     <message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stem press actions</source>
+        <translation>Дії натискання стебла</translation>
+    </message>
+    <message>
+        <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
+        <translation>Виберіть дію Windows для кожного жесту натискання. Зміни зберігаються автоматично.</translation>
+    </message>
+    <message>
+        <source>Single</source>
+        <translation>Одинарне</translation>
+    </message>
+    <message>
+        <source>Double</source>
+        <translation>Подвійне</translation>
+    </message>
+    <message>
+        <source>Triple</source>
+        <translation>Потрійне</translation>
+    </message>
+    <message>
+        <source>Long</source>
+        <translation>Тривале</translation>
+    </message>
+    <message>
+        <source>Left stem</source>
+        <translation>Лівий стебель</translation>
+    </message>
+    <message>
+        <source>Right stem</source>
+        <translation>Правий стебель</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Немає</translation>
+    </message>
+    <message>
+        <source>Play / Pause</source>
+        <translation>Відтворення / Пауза</translation>
+    </message>
+    <message>
+        <source>Next track</source>
+        <translation>Наступний трек</translation>
+    </message>
+    <message>
+        <source>Previous track</source>
+        <translation>Попередній трек</translation>
+    </message>
+    <message>
+        <source>Volume up</source>
+        <translation>Збільшити гучність</translation>
+    </message>
+    <message>
+        <source>Volume down</source>
+        <translation>Зменшити гучність</translation>
+    </message>
+    <message>
+        <source>Toggle noise control</source>
+        <translation>Перемкнути керування шумом</translation>
     </message>
 </context>
 <context>

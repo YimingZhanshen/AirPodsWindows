@@ -468,6 +468,38 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Action for a single press of the left stem.</source>
+        <translation>Sol çubuk bir kez basıldığında uygulanacak eylem.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the left stem.</source>
+        <translation>Sol çubuk iki kez basıldığında uygulanacak eylem.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the left stem.</source>
+        <translation>Sol çubuk üç kez basıldığında uygulanacak eylem.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the left stem.</source>
+        <translation>Sol çubuk uzun süre basıldığında uygulanacak eylem.</translation>
+    </message>
+    <message>
+        <source>Action for a single press of the right stem.</source>
+        <translation>Sağ çubuk bir kez basıldığında uygulanacak eylem.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the right stem.</source>
+        <translation>Sağ çubuk iki kez basıldığında uygulanacak eylem.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the right stem.</source>
+        <translation>Sağ çubuk üç kez basıldığında uygulanacak eylem.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the right stem.</source>
+        <translation>Sağ çubuk uzun süre basıldığında uygulanacak eylem.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -637,6 +669,66 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     <message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stem press actions</source>
+        <translation>Çubuk basma eylemleri</translation>
+    </message>
+    <message>
+        <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
+        <translation>Her basma hareketi için Windows eylemini seçin. Değişiklikler otomatik olarak kaydedilir.</translation>
+    </message>
+    <message>
+        <source>Single</source>
+        <translation>Tek</translation>
+    </message>
+    <message>
+        <source>Double</source>
+        <translation>Çift</translation>
+    </message>
+    <message>
+        <source>Triple</source>
+        <translation>Üçlü</translation>
+    </message>
+    <message>
+        <source>Long</source>
+        <translation>Uzun</translation>
+    </message>
+    <message>
+        <source>Left stem</source>
+        <translation>Sol çubuk</translation>
+    </message>
+    <message>
+        <source>Right stem</source>
+        <translation>Sağ çubuk</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Yok</translation>
+    </message>
+    <message>
+        <source>Play / Pause</source>
+        <translation>Oynat / Duraklat</translation>
+    </message>
+    <message>
+        <source>Next track</source>
+        <translation>Sonraki parça</translation>
+    </message>
+    <message>
+        <source>Previous track</source>
+        <translation>Önceki parça</translation>
+    </message>
+    <message>
+        <source>Volume up</source>
+        <translation>Sesi aç</translation>
+    </message>
+    <message>
+        <source>Volume down</source>
+        <translation>Sesi kıs</translation>
+    </message>
+    <message>
+        <source>Toggle noise control</source>
+        <translation>Gürültü denetimini değiştir</translation>
     </message>
 </context>
 <context>

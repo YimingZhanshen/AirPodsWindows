@@ -468,6 +468,38 @@ Vous devez d&apos;abord appairer vos AirPods dans les paramètres Bluetooth de W
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Action for a single press of the left stem.</source>
+        <translation>Action pour un appui simple sur la tige gauche.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the left stem.</source>
+        <translation>Action pour un double appui sur la tige gauche.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the left stem.</source>
+        <translation>Action pour un triple appui sur la tige gauche.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the left stem.</source>
+        <translation>Action pour un appui long sur la tige gauche.</translation>
+    </message>
+    <message>
+        <source>Action for a single press of the right stem.</source>
+        <translation>Action pour un appui simple sur la tige droite.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the right stem.</source>
+        <translation>Action pour un double appui sur la tige droite.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the right stem.</source>
+        <translation>Action pour un triple appui sur la tige droite.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the right stem.</source>
+        <translation>Action pour un appui long sur la tige droite.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -637,6 +669,66 @@ Vous devez d&apos;abord appairer vos AirPods dans les paramètres Bluetooth de W
     <message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stem press actions</source>
+        <translation>Actions des pressions sur la tige</translation>
+    </message>
+    <message>
+        <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
+        <translation>Choisissez l’action Windows pour chaque geste de pression. Les modifications sont enregistrées automatiquement.</translation>
+    </message>
+    <message>
+        <source>Single</source>
+        <translation>Simple</translation>
+    </message>
+    <message>
+        <source>Double</source>
+        <translation>Double</translation>
+    </message>
+    <message>
+        <source>Triple</source>
+        <translation>Triple</translation>
+    </message>
+    <message>
+        <source>Long</source>
+        <translation>Long</translation>
+    </message>
+    <message>
+        <source>Left stem</source>
+        <translation>Tige gauche</translation>
+    </message>
+    <message>
+        <source>Right stem</source>
+        <translation>Tige droite</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Aucune</translation>
+    </message>
+    <message>
+        <source>Play / Pause</source>
+        <translation>Lecture / Pause</translation>
+    </message>
+    <message>
+        <source>Next track</source>
+        <translation>Piste suivante</translation>
+    </message>
+    <message>
+        <source>Previous track</source>
+        <translation>Piste précédente</translation>
+    </message>
+    <message>
+        <source>Volume up</source>
+        <translation>Augmenter le volume</translation>
+    </message>
+    <message>
+        <source>Volume down</source>
+        <translation>Diminuer le volume</translation>
+    </message>
+    <message>
+        <source>Toggle noise control</source>
+        <translation>Basculer le contrôle du bruit</translation>
     </message>
 </context>
 <context>

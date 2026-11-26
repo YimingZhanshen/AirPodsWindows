@@ -468,6 +468,38 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Action for a single press of the left stem.</source>
+        <translation>왼쪽 스템을 한 번 눌렀을 때의 동작입니다.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the left stem.</source>
+        <translation>왼쪽 스템을 두 번 눌렀을 때의 동작입니다.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the left stem.</source>
+        <translation>왼쪽 스템을 세 번 눌렀을 때의 동작입니다.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the left stem.</source>
+        <translation>왼쪽 스템을 길게 눌렀을 때의 동작입니다.</translation>
+    </message>
+    <message>
+        <source>Action for a single press of the right stem.</source>
+        <translation>오른쪽 스템을 한 번 눌렀을 때의 동작입니다.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the right stem.</source>
+        <translation>오른쪽 스템을 두 번 눌렀을 때의 동작입니다.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the right stem.</source>
+        <translation>오른쪽 스템을 세 번 눌렀을 때의 동작입니다.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the right stem.</source>
+        <translation>오른쪽 스템을 길게 눌렀을 때의 동작입니다.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -637,6 +669,66 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
     <message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stem press actions</source>
+        <translation>스템 누르기 동작</translation>
+    </message>
+    <message>
+        <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
+        <translation>각 누르기 동작에 대한 Windows 작업을 선택하세요. 변경 사항은 자동으로 저장됩니다.</translation>
+    </message>
+    <message>
+        <source>Single</source>
+        <translation>한 번</translation>
+    </message>
+    <message>
+        <source>Double</source>
+        <translation>두 번</translation>
+    </message>
+    <message>
+        <source>Triple</source>
+        <translation>세 번</translation>
+    </message>
+    <message>
+        <source>Long</source>
+        <translation>길게</translation>
+    </message>
+    <message>
+        <source>Left stem</source>
+        <translation>왼쪽 스템</translation>
+    </message>
+    <message>
+        <source>Right stem</source>
+        <translation>오른쪽 스템</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>없음</translation>
+    </message>
+    <message>
+        <source>Play / Pause</source>
+        <translation>재생 / 일시 정지</translation>
+    </message>
+    <message>
+        <source>Next track</source>
+        <translation>다음 트랙</translation>
+    </message>
+    <message>
+        <source>Previous track</source>
+        <translation>이전 트랙</translation>
+    </message>
+    <message>
+        <source>Volume up</source>
+        <translation>음량 높이기</translation>
+    </message>
+    <message>
+        <source>Volume down</source>
+        <translation>음량 낮추기</translation>
+    </message>
+    <message>
+        <source>Toggle noise control</source>
+        <translation>노이즈 제어 전환</translation>
     </message>
 </context>
 <context>

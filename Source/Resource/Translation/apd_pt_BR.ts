@@ -468,6 +468,38 @@ Você precisa emparelhar seus AirPods nas Configurações de Bluetooth do Window
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Action for a single press of the left stem.</source>
+        <translation>Ação para uma pressão única de haste esquerda.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the left stem.</source>
+        <translation>Ação para uma pressão dupla de haste esquerda.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the left stem.</source>
+        <translation>Ação para uma pressão tripla de haste esquerda.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the left stem.</source>
+        <translation>Ação para uma pressão longa de haste esquerda.</translation>
+    </message>
+    <message>
+        <source>Action for a single press of the right stem.</source>
+        <translation>Ação para uma pressão única de haste direita.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the right stem.</source>
+        <translation>Ação para uma pressão dupla de haste direita.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the right stem.</source>
+        <translation>Ação para uma pressão tripla de haste direita.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the right stem.</source>
+        <translation>Ação para uma pressão longa de haste direita.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -637,6 +669,66 @@ Você precisa emparelhar seus AirPods nas Configurações de Bluetooth do Window
     <message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stem press actions</source>
+        <translation>Ações de pressão da haste</translation>
+    </message>
+    <message>
+        <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
+        <translation>Escolha a ação do Windows para cada gesto de pressão. As alterações são salvas automaticamente.</translation>
+    </message>
+    <message>
+        <source>Single</source>
+        <translation>Única</translation>
+    </message>
+    <message>
+        <source>Double</source>
+        <translation>Dupla</translation>
+    </message>
+    <message>
+        <source>Triple</source>
+        <translation>Tripla</translation>
+    </message>
+    <message>
+        <source>Long</source>
+        <translation>Longa</translation>
+    </message>
+    <message>
+        <source>Left stem</source>
+        <translation>Haste esquerda</translation>
+    </message>
+    <message>
+        <source>Right stem</source>
+        <translation>Haste direita</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Nenhuma</translation>
+    </message>
+    <message>
+        <source>Play / Pause</source>
+        <translation>Reproduzir / Pausar</translation>
+    </message>
+    <message>
+        <source>Next track</source>
+        <translation>Próxima faixa</translation>
+    </message>
+    <message>
+        <source>Previous track</source>
+        <translation>Faixa anterior</translation>
+    </message>
+    <message>
+        <source>Volume up</source>
+        <translation>Aumentar volume</translation>
+    </message>
+    <message>
+        <source>Volume down</source>
+        <translation>Diminuir volume</translation>
+    </message>
+    <message>
+        <source>Toggle noise control</source>
+        <translation>Alternar controle de ruído</translation>
     </message>
 </context>
 <context>

@@ -30,6 +30,7 @@
 #include <winrt/Windows.Media.Control.h>
 
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 #include <memory>
@@ -80,17 +81,16 @@ public:
     // command - no media session, or the audio endpoint refused - and the reason is logged.
     bool Execute(Details::MediaAction action, int volumeStepPercent) override;
     void SetVolume(int percent);
-    int GetVolume() const;
+    std::optional<float> GetVolume() const;
     void ClearVolumeReductionState(); // Explicitly clear saved volume state
 
 private:
     std::mutex _mutex;
     std::vector<std::unique_ptr<Details::MediaProgramAbstract>> _pausedPrograms;
-    int _savedVolume{0};             // Saved volume before reduction; 0 means no active reduction
-    bool _inReductionSession{false}; // Track if we're currently in a volume reduction session
+    Details::VolumeReductionPolicy _volumeReduction;
 
     // Endpoint volume write that skips the conversational-awareness bookkeeping: an explicit
-    // user nudge from a stem press must not be recorded as a reduction to restore from later.
-    bool SetEndpointVolume(int percent);
+    // user nudge from a stem press ends any old attenuation session before applying the new value.
+    bool SetEndpointVolume(float percent);
 };
 } // namespace Core::GlobalMedia

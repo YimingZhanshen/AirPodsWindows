@@ -154,6 +154,10 @@ public:
     // Adaptive noise level (0-100, only effective when noise control is Adaptive)
     bool SetAdaptiveNoiseLevel(uint8_t level);
 
+    // Raw stem gesture subscription (0x0039). The desired mask survives disconnects and is replayed
+    // after every handshake. This direct path is temporary until the C7 command broker owns writes.
+    bool SetStemConfig(uint8_t mask);
+
     // Head tracking
     bool StartHeadTracking();
     bool StopHeadTracking();
@@ -248,6 +252,11 @@ private:
     // Why the last Connect() attempt failed; reset to None on success.
     std::atomic<ConnectFailure> _lastConnectFailure{ConnectFailure::None};
     std::atomic<uint64_t> _cancelledGeneration{0};
+    // Serializes raw-gesture writes so an older handshake replay cannot overwrite a newer setting.
+    std::mutex _stemConfigMutex;
+    uint8_t _stemConfigMask{kAllStemMasks};
+    uint64_t _stemConfigRevision{0};
+    std::optional<uint64_t> _stemConfigSentRevision;
     std::function<std::shared_ptr<AAPTransport>(AAPTransportKind)> _transportFactory;
 
     // Callbacks

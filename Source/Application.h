@@ -132,7 +132,7 @@ private:
     void OnTaskbarBatteryChanged(Core::Settings::TaskbarStatusBehavior behavior) override;
     void OnStemActionsChanged(const Core::AAP::StemActionTable &actions) override;
 
-    void ExecuteStemAction(int action);
+    void ExecuteStemAction(int action, qulonglong address, qulonglong generation);
 };
 
 #define ApdApp (dynamic_cast<ApdApplication *>(QCoreApplication::instance()))

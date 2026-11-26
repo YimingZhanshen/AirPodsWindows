@@ -50,7 +50,7 @@ inline void SetVolume(int percent)
     Controller::GetInstance().SetVolume(percent);
 }
 
-inline int GetVolume()
+inline std::optional<float> GetVolume()
 {
     return Controller::GetInstance().GetVolume();
 }

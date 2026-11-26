@@ -468,6 +468,38 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Action for a single press of the left stem.</source>
+        <translation>左のステムを1回押したときの操作。</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the left stem.</source>
+        <translation>左のステムを2回押したときの操作。</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the left stem.</source>
+        <translation>左のステムを3回押したときの操作。</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the left stem.</source>
+        <translation>左のステムを長押ししたときの操作。</translation>
+    </message>
+    <message>
+        <source>Action for a single press of the right stem.</source>
+        <translation>右のステムを1回押したときの操作。</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the right stem.</source>
+        <translation>右のステムを2回押したときの操作。</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the right stem.</source>
+        <translation>右のステムを3回押したときの操作。</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the right stem.</source>
+        <translation>右のステムを長押ししたときの操作。</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -637,6 +669,66 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     <message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stem press actions</source>
+        <translation>ステムの押下操作</translation>
+    </message>
+    <message>
+        <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
+        <translation>各押下操作に対する Windows の動作を選択します。変更は自動的に保存されます。</translation>
+    </message>
+    <message>
+        <source>Single</source>
+        <translation>1回</translation>
+    </message>
+    <message>
+        <source>Double</source>
+        <translation>2回</translation>
+    </message>
+    <message>
+        <source>Triple</source>
+        <translation>3回</translation>
+    </message>
+    <message>
+        <source>Long</source>
+        <translation>長押し</translation>
+    </message>
+    <message>
+        <source>Left stem</source>
+        <translation>左ステム</translation>
+    </message>
+    <message>
+        <source>Right stem</source>
+        <translation>右ステム</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>なし</translation>
+    </message>
+    <message>
+        <source>Play / Pause</source>
+        <translation>再生 / 一時停止</translation>
+    </message>
+    <message>
+        <source>Next track</source>
+        <translation>次のトラック</translation>
+    </message>
+    <message>
+        <source>Previous track</source>
+        <translation>前のトラック</translation>
+    </message>
+    <message>
+        <source>Volume up</source>
+        <translation>音量を上げる</translation>
+    </message>
+    <message>
+        <source>Volume down</source>
+        <translation>音量を下げる</translation>
+    </message>
+    <message>
+        <source>Toggle noise control</source>
+        <translation>ノイズコントロールを切り替える</translation>
     </message>
 </context>
 <context>

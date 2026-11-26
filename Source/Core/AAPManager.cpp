@@ -217,6 +217,20 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
     // order. BeginSession also accepts any evidence buffered before the reader started.
     _commandBroker->ReplayDesiredState(attempt.generation);
 
+    // A settings change can race the handshake replay. The revision check closes that window:
+    // changes made while the gate was closed are sent immediately after it opens.
+    {
+        std::lock_guard lock{_stemConfigMutex};
+        if (_stemConfigSentRevision != _stemConfigRevision) {
+            if (!SendPacket(Packets::BuildStemConfigPacket(_stemConfigMask))) {
+                LOG(Warn, "AAP: Failed to send pending stem config after connection");
+            }
+            else {
+                _stemConfigSentRevision = _stemConfigRevision;
+            }
+        }
+    }
+
     if (callbacks.onConnected) {
         callbacks.onConnected(attempt);
     }
@@ -456,6 +470,25 @@ bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
     return SubmitCommand({AAPCommandKind::SetAdaptiveNoiseLevel,
                           static_cast<uint32_t>(std::min<uint8_t>(level, uint8_t{100}))})
         .accepted;
+}
+
+bool Manager::SetStemConfig(uint8_t mask)
+{
+    mask &= kAllStemMasks;
+    std::lock_guard lock{_stemConfigMutex};
+    _stemConfigMask = mask;
+    ++_stemConfigRevision;
+    if (!_connected) {
+        LOG(Info, "AAP: Saved stem config mask 0x{:02X} for the next connection", mask);
+        return true;
+    }
+    if (!SendPacket(Packets::BuildStemConfigPacket(mask))) {
+        LOG(Warn, "AAP: Failed to send stem config mask 0x{:02X}", mask);
+        return false;
+    }
+    _stemConfigSentRevision = _stemConfigRevision;
+    LOG(Info, "AAP: Set stem config mask to 0x{:02X}", mask);
+    return true;
 }
 
 bool Manager::StartHeadTracking()
@@ -1310,6 +1343,18 @@ bool Manager::InitializeConnection(
         return false;
     }
 
+    // Subscribe to raw stem gestures only after the handshake. Failure is non-fatal: the desired
+    // mask remains stored and is retried on the next connection.
+    {
+        std::lock_guard stemConfigLock{_stemConfigMutex};
+        if (!SendPacket(transport, Packets::BuildStemConfigPacket(_stemConfigMask), stopToken)) {
+            LOG(Warn, "AAP: Failed to replay stem config mask 0x{:02X}", _stemConfigMask);
+        }
+        else {
+            _stemConfigSentRevision = _stemConfigRevision;
+        }
+    }
+
     // Enable features (Conversational Awareness, Adaptive Transparency)
     if (!SendPacket(transport, Packets::EnableFeatures, stopToken)) {
         LOG(Warn, "AAP: Failed to send enable features packet");
@@ -1432,6 +1477,10 @@ std::optional<uint8_t> Manager::GetPpeCapLevel() const
     return std::nullopt;
 }
 bool Manager::SetAdaptiveNoiseLevel(uint8_t)
+{
+    return false;
+}
+bool Manager::SetStemConfig(uint8_t)
 {
     return false;
 }

@@ -468,6 +468,38 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Action for a single press of the left stem.</source>
+        <translation>左侧耳机柄单按一次时执行的操作。</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the left stem.</source>
+        <translation>左侧耳机柄双按一次时执行的操作。</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the left stem.</source>
+        <translation>左侧耳机柄三按一次时执行的操作。</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the left stem.</source>
+        <translation>左侧耳机柄长按时执行的操作。</translation>
+    </message>
+    <message>
+        <source>Action for a single press of the right stem.</source>
+        <translation>右侧耳机柄单按一次时执行的操作。</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the right stem.</source>
+        <translation>右侧耳机柄双按一次时执行的操作。</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the right stem.</source>
+        <translation>右侧耳机柄三按一次时执行的操作。</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the right stem.</source>
+        <translation>右侧耳机柄长按时执行的操作。</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -637,6 +669,66 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     <message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stem press actions</source>
+        <translation>耳机柄按压操作</translation>
+    </message>
+    <message>
+        <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
+        <translation>为每次按压手势选择 Windows 操作。更改会自动保存。</translation>
+    </message>
+    <message>
+        <source>Single</source>
+        <translation>单按</translation>
+    </message>
+    <message>
+        <source>Double</source>
+        <translation>双按</translation>
+    </message>
+    <message>
+        <source>Triple</source>
+        <translation>三按</translation>
+    </message>
+    <message>
+        <source>Long</source>
+        <translation>长按</translation>
+    </message>
+    <message>
+        <source>Left stem</source>
+        <translation>左侧耳机柄</translation>
+    </message>
+    <message>
+        <source>Right stem</source>
+        <translation>右侧耳机柄</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>无</translation>
+    </message>
+    <message>
+        <source>Play / Pause</source>
+        <translation>播放 / 暂停</translation>
+    </message>
+    <message>
+        <source>Next track</source>
+        <translation>下一首</translation>
+    </message>
+    <message>
+        <source>Previous track</source>
+        <translation>上一首</translation>
+    </message>
+    <message>
+        <source>Volume up</source>
+        <translation>提高音量</translation>
+    </message>
+    <message>
+        <source>Volume down</source>
+        <translation>降低音量</translation>
+    </message>
+    <message>
+        <source>Toggle noise control</source>
+        <translation>切换噪声控制</translation>
     </message>
 </context>
 <context>

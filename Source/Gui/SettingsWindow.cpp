@@ -485,6 +485,38 @@ void SettingsWindow::SetupStemActionsCard()
     _trigger = previousTrigger;
 }
 
+void SettingsWindow::RetranslateStemActions()
+{
+    const auto actionTexts = std::array{
+        StemActionText(Core::AAP::StemAction::None),
+        StemActionText(Core::AAP::StemAction::PlayPause),
+        StemActionText(Core::AAP::StemAction::NextTrack),
+        StemActionText(Core::AAP::StemAction::PreviousTrack),
+        StemActionText(Core::AAP::StemAction::VolumeUp),
+        StemActionText(Core::AAP::StemAction::VolumeDown),
+        StemActionText(Core::AAP::StemAction::ToggleNoiseControl),
+    };
+    for (size_t index = 0; index < _stemActionCombos.size(); ++index) {
+        auto *combo = _stemActionCombos[index];
+        if (combo == nullptr) {
+            continue;
+        }
+        for (size_t actionIndex = 0; actionIndex < actionTexts.size(); ++actionIndex) {
+            combo->setItemText(static_cast<int>(actionIndex), actionTexts[actionIndex]);
+        }
+        const auto &binding = StemActionBindings[index];
+        const auto &sideLabel = binding.side == Core::AAP::StemSide::Left ? _ui.lbStemLeft->text()
+                                                                          : _ui.lbStemRight->text();
+        const auto &pressLabel =
+            binding.press == Core::AAP::StemPress::Single   ? _ui.lbStemSingle->text()
+            : binding.press == Core::AAP::StemPress::Double ? _ui.lbStemDouble->text()
+            : binding.press == Core::AAP::StemPress::Triple ? _ui.lbStemTriple->text()
+                                                            : _ui.lbStemLong->text();
+        combo->setAccessibleName(QString{"%1 — %2"}.arg(sideLabel, pressLabel));
+        combo->setToolTip(QCoreApplication::translate("QObject", binding.description));
+    }
+}
+
 int SettingsWindow::GetTabCount() const
 {
     return _ui.pages->count();

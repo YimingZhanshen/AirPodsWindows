@@ -468,6 +468,38 @@ Primero debes emparejar tus AirPods en la configuración de Bluetooth de Windows
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Action for a single press of the left stem.</source>
+        <translation>Acción para una pulsación única de el tallo izquierdo.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the left stem.</source>
+        <translation>Acción para una pulsación doble de el tallo izquierdo.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the left stem.</source>
+        <translation>Acción para una pulsación triple de el tallo izquierdo.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the left stem.</source>
+        <translation>Acción para una pulsación larga de el tallo izquierdo.</translation>
+    </message>
+    <message>
+        <source>Action for a single press of the right stem.</source>
+        <translation>Acción para una pulsación única de el tallo derecho.</translation>
+    </message>
+    <message>
+        <source>Action for a double press of the right stem.</source>
+        <translation>Acción para una pulsación doble de el tallo derecho.</translation>
+    </message>
+    <message>
+        <source>Action for a triple press of the right stem.</source>
+        <translation>Acción para una pulsación triple de el tallo derecho.</translation>
+    </message>
+    <message>
+        <source>Action for a long press of the right stem.</source>
+        <translation>Acción para una pulsación larga de el tallo derecho.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -637,6 +669,66 @@ Primero debes emparejar tus AirPods en la configuración de Bluetooth de Windows
     <message>
         <source>Hearing protection cap (PPE)</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stem press actions</source>
+        <translation>Acciones de pulsación del tallo</translation>
+    </message>
+    <message>
+        <source>Choose the Windows action for each press gesture. Changes are saved automatically.</source>
+        <translation>Elige la acción de Windows para cada gesto de pulsación. Los cambios se guardan automáticamente.</translation>
+    </message>
+    <message>
+        <source>Single</source>
+        <translation>Única</translation>
+    </message>
+    <message>
+        <source>Double</source>
+        <translation>Doble</translation>
+    </message>
+    <message>
+        <source>Triple</source>
+        <translation>Triple</translation>
+    </message>
+    <message>
+        <source>Long</source>
+        <translation>Larga</translation>
+    </message>
+    <message>
+        <source>Left stem</source>
+        <translation>Tallo izquierdo</translation>
+    </message>
+    <message>
+        <source>Right stem</source>
+        <translation>Tallo derecho</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Ninguna</translation>
+    </message>
+    <message>
+        <source>Play / Pause</source>
+        <translation>Reproducir / Pausar</translation>
+    </message>
+    <message>
+        <source>Next track</source>
+        <translation>Pista siguiente</translation>
+    </message>
+    <message>
+        <source>Previous track</source>
+        <translation>Pista anterior</translation>
+    </message>
+    <message>
+        <source>Volume up</source>
+        <translation>Subir volumen</translation>
+    </message>
+    <message>
+        <source>Volume down</source>
+        <translation>Bajar volumen</translation>
+    </message>
+    <message>
+        <source>Toggle noise control</source>
+        <translation>Alternar control de ruido</translation>
     </message>
 </context>
 <context>
