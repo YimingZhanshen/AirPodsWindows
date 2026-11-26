@@ -335,6 +335,7 @@ set(
     "Source/Core/AirPods.cpp"
     "Source/Core/AAPAtt.cpp"
     "Source/Core/AAPMessage.cpp"
+    "Source/Core/MagicAAPDeviceBinding.cpp"
     "Source/Core/ConnectionDiagnostics.cpp"
     "Source/Core/QuickConnect.cpp"
     "Source/Core/PlaybackMonitor.cpp"

@@ -21,16 +21,18 @@
 #include "AAPMessage.h"
 
 #include <Windows.h>
+#include <combaseapi.h>
 #include <SetupAPI.h>
 #include <initguid.h>
 #include <devguid.h>
+#include <devpkey.h>
 #include <cfgmgr32.h>
 #include <winsvc.h>
 #include <locale>
 #include <codecvt>
-#include <algorithm>
+#include <exception>
 #include <limits>
-#include <cwctype>
+#include <utility>
 
 #include <spdlog/spdlog.h>
 
@@ -274,8 +276,9 @@ bool MagicAAPWinRTClient::Connect(uint64_t bluetoothAddress)
         _connected.store(true);
         _stopReceiver.store(false);
 
-        // Start receiver thread
-        _receiverThread = std::thread(&MagicAAPWinRTClient::ReceiverLoop, this);
+        // Copy callbacks and publish the session before the thread can run.
+        auto snapshot = StartSession();
+        _receiverThread = std::thread(&MagicAAPWinRTClient::ReceiverLoop, this, snapshot);
 
         return true;
     }
@@ -289,6 +292,7 @@ bool MagicAAPWinRTClient::Connect(uint64_t bluetoothAddress)
         return false;
     }
 #else
+    std::lock_guard<std::mutex> lock(_mutex);
     spdlog::error("[MagicAAPWinRT] WinRT Bluetooth not available");
     SetError(L"WinRT Bluetooth headers not available");
     return false;
@@ -342,8 +346,9 @@ bool MagicAAPWinRTClient::ConnectById(const std::wstring &deviceId)
         _connected.store(true);
         _stopReceiver.store(false);
 
-        // Start receiver thread
-        _receiverThread = std::thread(&MagicAAPWinRTClient::ReceiverLoop, this);
+        // Copy callbacks and publish the session before the thread can run.
+        auto snapshot = StartSession();
+        _receiverThread = std::thread(&MagicAAPWinRTClient::ReceiverLoop, this, snapshot);
 
         return true;
     }
@@ -357,6 +362,7 @@ bool MagicAAPWinRTClient::ConnectById(const std::wstring &deviceId)
         return false;
     }
 #else
+    std::lock_guard<std::mutex> lock(_mutex);
     SetError(L"WinRT Bluetooth not available");
     return false;
 #endif
@@ -371,6 +377,7 @@ void MagicAAPWinRTClient::Disconnect()
     }
 
     std::lock_guard<std::mutex> lock(_mutex);
+    _sessions.Close();
     CleanupWinRTObjects();
     CleanupDeviceHandle();
     _connected.store(false);
@@ -501,20 +508,25 @@ bool MagicAAPWinRTClient::SendData(const std::vector<uint8_t> &data)
 #endif
 }
 
-void MagicAAPWinRTClient::ReceiverLoop()
+MagicAAPWinRTClient::ReceiverSnapshot MagicAAPWinRTClient::StartSession()
+{
+    ReceiverSnapshot snapshot;
+    snapshot.session = _sessions.Start();
+    snapshot.deviceHandle = _deviceHandle;
+    snapshot.impl = _impl;
+    snapshot.usingDeviceInterface = _usingDeviceInterface;
+    snapshot.onDataReceived = _onDataReceived;
+    snapshot.onDisconnected = _onDisconnected;
+    return snapshot;
+}
+
+void MagicAAPWinRTClient::ReceiverLoop(ReceiverSnapshot snapshot)
 {
     spdlog::info("[MagicAAPWinRT] Receiver thread started");
-    OnDataReceivedCallback onDataReceived;
-    OnDisconnectedCallback onDisconnected;
-    {
-        std::lock_guard<std::mutex> lock(_mutex);
-        onDataReceived = _onDataReceived;
-        onDisconnected = _onDisconnected;
-    }
 
     // Handle device interface mode
-    if (_usingDeviceInterface && _deviceHandle) {
-        HANDLE hDevice = static_cast<HANDLE>(_deviceHandle);
+    if (snapshot.usingDeviceInterface && snapshot.deviceHandle) {
+        HANDLE hDevice = static_cast<HANDLE>(snapshot.deviceHandle);
         // One extra byte detects an overlong driver record; the transport rejects
         // anything above the 4096-byte AAPMessage limit.
         std::vector<uint8_t> buffer(Core::AAP::AAPMessage::kMaxRecordSize + 1);
@@ -552,8 +564,10 @@ void MagicAAPWinRTClient::ReceiverLoop()
                 std::vector<uint8_t> data(buffer.begin(), buffer.begin() + bytesRead);
                 spdlog::debug("[MagicAAPWinRT] Received {} bytes via device interface", bytesRead);
 
-                if (onDataReceived) {
-                    onDataReceived(data);
+                if (snapshot.onDataReceived && _connected.load() &&
+                    _sessions.IsCurrent(snapshot.session))
+                {
+                    snapshot.onDataReceived(data);
                 }
             }
             else if (result) {
@@ -565,8 +579,8 @@ void MagicAAPWinRTClient::ReceiverLoop()
         }
 
         spdlog::info("[MagicAAPWinRT] Receiver thread stopped (device interface)");
-        if (onDisconnected && _connected.load()) {
-            onDisconnected();
+        if (snapshot.onDisconnected && _connected.load() && _sessions.IsCurrent(snapshot.session)) {
+            snapshot.onDisconnected();
         }
         return;
     }
@@ -574,10 +588,10 @@ void MagicAAPWinRTClient::ReceiverLoop()
 #if HAS_WINRT_BLUETOOTH
     try {
         while (!_stopReceiver.load() && _connected.load()) {
-            if (!_impl)
+            if (!snapshot.impl)
                 break;
 
-            auto impl = static_cast<MagicAAPWinRTClientImpl *>(_impl);
+            auto impl = static_cast<MagicAAPWinRTClientImpl *>(snapshot.impl);
             if (!impl->reader)
                 break;
 
@@ -598,8 +612,10 @@ void MagicAAPWinRTClient::ReceiverLoop()
                         spdlog::debug("[MagicAAPWinRT] Received {} bytes", bytesRead);
 
                         // Call callback
-                        if (onDataReceived) {
-                            onDataReceived(buffer);
+                        if (snapshot.onDataReceived && _connected.load() &&
+                            _sessions.IsCurrent(snapshot.session))
+                        {
+                            snapshot.onDataReceived(buffer);
                         }
                     }
                 }
@@ -630,8 +646,8 @@ void MagicAAPWinRTClient::ReceiverLoop()
     spdlog::info("[MagicAAPWinRT] Receiver thread stopped");
 
     // Notify disconnection
-    if (onDisconnected && _connected.load()) {
-        onDisconnected();
+    if (snapshot.onDisconnected && _connected.load() && _sessions.IsCurrent(snapshot.session)) {
+        snapshot.onDisconnected();
     }
 }
 
@@ -652,338 +668,187 @@ void MagicAAPWinRTClient::SetError(const std::wstring &error)
     _lastError = error;
 }
 
-std::vector<std::wstring> MagicAAPWinRTClient::EnumerateMagicAAPDevices()
+std::vector<MagicAAPDeviceInterface> MagicAAPWinRTClient::EnumerateInterfaces()
 {
-    std::vector<std::wstring> devices;
+    std::vector<MagicAAPDeviceInterface> interfaces;
+    const GUID *guidsToTry[] = {&GUID_DEVINTERFACE_MAGICAAP, &GUID_DEVINTERFACE_AAP_SERVICE};
 
-    // Method 1: Search via BTHENUM enumerator (the way Python found the device)
-    // This searches for Bluetooth devices that have a specific interface GUID
-    {
-        const GUID *guidsToTry[] = {&GUID_DEVINTERFACE_MAGICAAP, &GUID_DEVINTERFACE_AAP_SERVICE};
+    auto enumerate = [&](const GUID *interfaceGuid, const wchar_t *enumerator) {
+        HDEVINFO hDevInfo = SetupDiGetClassDevsW(
+            interfaceGuid, enumerator, nullptr, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+        if (hDevInfo == INVALID_HANDLE_VALUE) {
+            return;
+        }
 
-        for (const GUID *pGuid : guidsToTry) {
-            HDEVINFO hDevInfo = SetupDiGetClassDevsW(
-                pGuid,
-                L"BTHENUM", // Bluetooth enumerator
-                nullptr, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
-
-            if (hDevInfo == INVALID_HANDLE_VALUE) {
+        SP_DEVICE_INTERFACE_DATA interfaceData = {};
+        interfaceData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
+        for (DWORD index = 0;
+             SetupDiEnumDeviceInterfaces(hDevInfo, nullptr, interfaceGuid, index, &interfaceData);
+             ++index)
+        {
+            DWORD requiredSize = 0;
+            SetupDiGetDeviceInterfaceDetailW(
+                hDevInfo, &interfaceData, nullptr, 0, &requiredSize, nullptr);
+            if (requiredSize == 0) {
                 continue;
             }
 
-            SP_DEVICE_INTERFACE_DATA interfaceData = {};
-            interfaceData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
-
-            for (DWORD index = 0;
-                 SetupDiEnumDeviceInterfaces(hDevInfo, nullptr, pGuid, index, &interfaceData);
-                 ++index)
-            {
-
-                DWORD requiredSize = 0;
-                SetupDiGetDeviceInterfaceDetailW(
-                    hDevInfo, &interfaceData, nullptr, 0, &requiredSize, nullptr);
-
-                if (requiredSize == 0)
-                    continue;
-
-                std::vector<uint8_t> buffer(requiredSize);
-                auto detailData =
-                    reinterpret_cast<PSP_DEVICE_INTERFACE_DETAIL_DATA_W>(buffer.data());
-                detailData->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
-
-                SP_DEVINFO_DATA devInfoData = {};
-                devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
-
-                if (SetupDiGetDeviceInterfaceDetailW(
-                        hDevInfo, &interfaceData, detailData, requiredSize, nullptr, &devInfoData))
-                {
-                    std::wstring devicePath = detailData->DevicePath;
-
-                    // Avoid duplicates
-                    bool found = false;
-                    for (const auto &existing : devices) {
-                        if (existing == devicePath) {
-                            found = true;
-                            break;
-                        }
-                    }
-
-                    if (!found) {
-                        devices.push_back(devicePath);
-
-                        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-                        std::string pathStr = converter.to_bytes(devicePath);
-                        spdlog::info(
-                            "[MagicAAPWinRT] Found MagicAAP device via BTHENUM: {}", pathStr);
-                    }
-                }
-            }
-
-            SetupDiDestroyDeviceInfoList(hDevInfo);
-        }
-    }
-
-    // Method 2: Search without specifying enumerator (fallback)
-    if (devices.empty()) {
-        const GUID *guidsToTry[] = {&GUID_DEVINTERFACE_MAGICAAP, &GUID_DEVINTERFACE_AAP_SERVICE};
-
-        for (const GUID *pGuid : guidsToTry) {
-            HDEVINFO hDevInfo = SetupDiGetClassDevsW(
-                pGuid, nullptr, nullptr, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
-
-            if (hDevInfo == INVALID_HANDLE_VALUE) {
-                continue;
-            }
-
-            SP_DEVICE_INTERFACE_DATA interfaceData = {};
-            interfaceData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
-
-            for (DWORD index = 0;
-                 SetupDiEnumDeviceInterfaces(hDevInfo, nullptr, pGuid, index, &interfaceData);
-                 ++index)
-            {
-
-                DWORD requiredSize = 0;
-                SetupDiGetDeviceInterfaceDetailW(
-                    hDevInfo, &interfaceData, nullptr, 0, &requiredSize, nullptr);
-
-                if (requiredSize == 0)
-                    continue;
-
-                std::vector<uint8_t> buffer(requiredSize);
-                auto detailData =
-                    reinterpret_cast<PSP_DEVICE_INTERFACE_DETAIL_DATA_W>(buffer.data());
-                detailData->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
-
-                SP_DEVINFO_DATA devInfoData = {};
-                devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
-
-                if (SetupDiGetDeviceInterfaceDetailW(
-                        hDevInfo, &interfaceData, detailData, requiredSize, nullptr, &devInfoData))
-                {
-                    std::wstring devicePath = detailData->DevicePath;
-
-                    // Avoid duplicates
-                    bool found = false;
-                    for (const auto &existing : devices) {
-                        if (existing == devicePath) {
-                            found = true;
-                            break;
-                        }
-                    }
-
-                    if (!found) {
-                        devices.push_back(devicePath);
-
-                        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-                        std::string pathStr = converter.to_bytes(devicePath);
-                        spdlog::info("[MagicAAPWinRT] Found MagicAAP device: {}", pathStr);
-                    }
-                }
-            }
-
-            SetupDiDestroyDeviceInfoList(hDevInfo);
-        }
-    }
-
-    if (devices.empty()) {
-        spdlog::warn("[MagicAAPWinRT] No MagicAAP device interfaces found");
-    }
-
-    return devices;
-}
-
-bool MagicAAPWinRTClient::ConnectViaDeviceInterface(uint64_t bluetoothAddress)
-{
-    std::lock_guard<std::mutex> lock(_mutex);
-
-    if (_connected.load()) {
-        SetError(L"Already connected");
-        return false;
-    }
-
-    spdlog::info("[MagicAAPWinRT] Attempting connection via device interface...");
-
-    // Convert address to hex string for matching (format: XXXXXXXXXXXXXX)
-    wchar_t addrStr[16];
-    swprintf_s(addrStr, L"%012llX", bluetoothAddress);
-    std::wstring addressHex = addrStr;
-    spdlog::info(
-        "[MagicAAPWinRT] Looking for device with address: {}",
-        std::string(addressHex.begin(), addressHex.end()));
-
-    // First enumerate available MagicAAP devices
-    auto devicePaths = EnumerateMagicAAPDevices();
-
-    if (devicePaths.empty()) {
-        spdlog::warn("[MagicAAPWinRT] No enumerated devices, trying to construct path directly...");
-
-        // Try to construct the device path directly based on known format:
-        // \\?\BTHENUM#{74ec2172-0bad-4d01-8f77-997b2be0722a}_VID&0001004c_PID&xxxx#...#{9eec98bb-...}
-        // We need to search for a pattern that includes the Bluetooth address
-
-        // Try with the known interface GUID suffix
-        HDEVINFO hDevInfo =
-            SetupDiGetClassDevsW(nullptr, L"BTHENUM", nullptr, DIGCF_PRESENT | DIGCF_ALLCLASSES);
-
-        if (hDevInfo != INVALID_HANDLE_VALUE) {
+            std::vector<uint8_t> buffer(requiredSize);
+            auto detailData = reinterpret_cast<PSP_DEVICE_INTERFACE_DETAIL_DATA_W>(buffer.data());
+            detailData->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
             SP_DEVINFO_DATA devInfoData = {};
             devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+            if (!SetupDiGetDeviceInterfaceDetailW(
+                    hDevInfo, &interfaceData, detailData, requiredSize, nullptr, &devInfoData))
+            {
+                continue;
+            }
 
-            for (DWORD i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &devInfoData); ++i) {
-                // Get device instance ID
-                wchar_t instanceId[512] = {};
-                if (SetupDiGetDeviceInstanceIdW(
-                        hDevInfo, &devInfoData, instanceId, sizeof(instanceId) / sizeof(wchar_t),
-                        nullptr))
-                {
+            MagicAAPDeviceInterface device;
+            device.interfacePath = detailData->DevicePath;
 
-                    std::wstring instanceStr = instanceId;
-                    // Check if this instance ID contains our Bluetooth address
-                    // Format: BTHENUM\{GUID}_VID&xxxx_PID&xxxx\{InstID}&{Address}_C00000000
+            wchar_t instanceId[MAX_DEVICE_ID_LEN] = {};
+            if (SetupDiGetDeviceInstanceIdW(
+                    hDevInfo, &devInfoData, instanceId, MAX_DEVICE_ID_LEN, nullptr))
+            {
+                device.deviceInstanceId = instanceId;
+            }
 
-                    // Also search without leading zeros in address
-                    wchar_t addrStrNoZero[16];
-                    swprintf_s(addrStrNoZero, L"%llX", bluetoothAddress);
-                    std::wstring addressHexNoZero = addrStrNoZero;
-
-                    if (instanceStr.find(addressHex) != std::wstring::npos ||
-                        instanceStr.find(addressHexNoZero) != std::wstring::npos)
-                    {
-
-                        spdlog::info(
-                            "[MagicAAPWinRT] Found matching device instance: {}",
-                            std::string(instanceStr.begin(), instanceStr.end()));
-
-                        // Now get the device interface for this device
-                        SP_DEVICE_INTERFACE_DATA interfaceData = {};
-                        interfaceData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
-
-                        if (SetupDiEnumDeviceInterfaces(
-                                hDevInfo, &devInfoData, &GUID_DEVINTERFACE_MAGICAAP, 0,
-                                &interfaceData))
-                        {
-
-                            DWORD requiredSize = 0;
-                            SetupDiGetDeviceInterfaceDetailW(
-                                hDevInfo, &interfaceData, nullptr, 0, &requiredSize, nullptr);
-
-                            if (requiredSize > 0) {
-                                std::vector<uint8_t> buffer(requiredSize);
-                                auto detailData =
-                                    reinterpret_cast<PSP_DEVICE_INTERFACE_DETAIL_DATA_W>(
-                                        buffer.data());
-                                detailData->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
-
-                                if (SetupDiGetDeviceInterfaceDetailW(
-                                        hDevInfo, &interfaceData, detailData, requiredSize, nullptr,
-                                        nullptr))
-                                {
-                                    devicePaths.push_back(detailData->DevicePath);
-                                    spdlog::info(
-                                        "[MagicAAPWinRT] Found device path: {}",
-                                        std::string(
-                                            detailData->DevicePath,
-                                            detailData->DevicePath +
-                                                wcslen(detailData->DevicePath)));
-                                }
-                            }
-                        }
-                    }
+            DEVINST parent = 0;
+            if (CM_Get_Parent(&parent, devInfoData.DevInst, 0) == CR_SUCCESS) {
+                wchar_t parentId[MAX_DEVICE_ID_LEN] = {};
+                if (CM_Get_Device_IDW(parent, parentId, MAX_DEVICE_ID_LEN, 0) == CR_SUCCESS) {
+                    device.parentInstanceId = parentId;
                 }
             }
-            SetupDiDestroyDeviceInfoList(hDevInfo);
+
+            DEVPROPTYPE propertyType = DEVPROP_TYPE_EMPTY;
+            GUID containerId = {};
+            if (SetupDiGetDevicePropertyW(
+                    hDevInfo, &devInfoData, &DEVPKEY_Device_ContainerId, &propertyType,
+                    reinterpret_cast<PBYTE>(&containerId), sizeof(containerId), nullptr, 0) &&
+                propertyType == DEVPROP_TYPE_GUID)
+            {
+                wchar_t container[39] = {};
+                if (StringFromGUID2(containerId, container, ARRAYSIZE(container)) > 0) {
+                    device.containerId = container;
+                }
+            }
+            interfaces.push_back(std::move(device));
+        }
+        SetupDiDestroyDeviceInfoList(hDevInfo);
+    };
+
+    for (const GUID *interfaceGuid : guidsToTry) {
+        enumerate(interfaceGuid, L"BTHENUM");
+    }
+    // Some driver packages omit the enumerator qualifier. This broadens only
+    // enumeration; it never broadens the identity gate or opens a device.
+    if (interfaces.empty()) {
+        for (const GUID *interfaceGuid : guidsToTry) {
+            enumerate(interfaceGuid, nullptr);
         }
     }
 
-    if (devicePaths.empty()) {
-        SetError(L"No MagicAAP device interfaces found");
-        return false;
+    SortInterfacesByPath(interfaces);
+    DeduplicateInterfaces(interfaces);
+    spdlog::info("[MagicAAPWinRT] Enumerated {} identifiable device interfaces", interfaces.size());
+    return interfaces;
+}
+
+MagicAAPBindStatus
+MagicAAPWinRTClient::ConnectViaDeviceInterface(uint64_t bluetoothAddress, std::stop_token stop)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+    if (_connected.load()) {
+        SetError(L"Already connected");
+        return MagicAAPBindStatus::TransportError;
+    }
+    if (stop.stop_requested()) {
+        SetError(L"Connection cancelled");
+        return MagicAAPBindStatus::Cancelled;
+    }
+    if (!IsDriverInstalled() || !IsDriverRunning()) {
+        SetError(L"MagicAAP driver is not installed or not running");
+        return MagicAAPBindStatus::DriverMissing;
     }
 
-    // Try to connect to devices that match the Bluetooth address
-    for (const auto &devicePath : devicePaths) {
-        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-        std::string pathStr = converter.to_bytes(devicePath);
-
-        // Check if this device path contains our Bluetooth address
-        std::wstring pathUpper = devicePath;
-        std::transform(pathUpper.begin(), pathUpper.end(), pathUpper.begin(), ::towupper);
-
-        std::wstring addrUpper = addressHex;
-        std::transform(addrUpper.begin(), addrUpper.end(), addrUpper.begin(), ::towupper);
-
-        // Also try without leading zeros
-        wchar_t addrStrNoZero[16];
-        swprintf_s(addrStrNoZero, L"%llX", bluetoothAddress);
-        std::wstring addrNoZeroUpper = addrStrNoZero;
-        std::transform(
-            addrNoZeroUpper.begin(), addrNoZeroUpper.end(), addrNoZeroUpper.begin(), ::towupper);
-
-        if (pathUpper.find(addrUpper) == std::wstring::npos &&
-            pathUpper.find(addrNoZeroUpper) == std::wstring::npos)
-        {
-            spdlog::info("[MagicAAPWinRT] Skipping device (address mismatch): {}", pathStr);
-            continue;
-        }
-
-        spdlog::info("[MagicAAPWinRT] Trying to open matching device: {}", pathStr);
-
-        // Open the device
-        HANDLE hDevice = CreateFileW(
-            devicePath.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
-            nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
-
-        if (hDevice == INVALID_HANDLE_VALUE) {
-            DWORD err = ::GetLastError();
-            spdlog::warn("[MagicAAPWinRT] CreateFile failed: {} (error {})", pathStr, err);
-            continue;
-        }
-
-        spdlog::info("[MagicAAPWinRT] Successfully opened device!");
-
-        _deviceHandle = hDevice;
-        _usingDeviceInterface = true;
-        _connected.store(true);
-        _stopReceiver.store(false);
-
-        // Start receiver thread for device interface
-        _receiverThread = std::thread(&MagicAAPWinRTClient::ReceiverLoop, this);
-
-        return true;
+    auto interfaces = EnumerateInterfaces();
+    if (interfaces.empty()) {
+        SetError(L"MagicAAP published no device interfaces; reinstall or restart the driver");
+        return MagicAAPBindStatus::TransportError;
     }
 
-    // If we had devices but none matched the address, try them all as fallback
-    spdlog::info("[MagicAAPWinRT] No address-matched device found, trying all devices...");
-    for (const auto &devicePath : devicePaths) {
-        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-        std::string pathStr = converter.to_bytes(devicePath);
-        spdlog::info("[MagicAAPWinRT] Trying to open device (fallback): {}", pathStr);
+    DWORD openError = 0;
+    auto outcome = BindToTargetInterface(
+        interfaces, bluetoothAddress,
+        [&](const MagicAAPDeviceInterface &device) -> MagicAAPDeviceHandle {
+            if (stop.stop_requested()) {
+                return nullptr;
+            }
+            HANDLE handle = CreateFileW(
+                device.interfacePath.c_str(), GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED,
+                nullptr);
+            if (handle == INVALID_HANDLE_VALUE) {
+                openError = ::GetLastError();
+                spdlog::warn("[MagicAAPWinRT] Exact target interface open failed: {}", openError);
+                return nullptr;
+            }
+            return handle;
+        },
+        stop);
 
-        HANDLE hDevice = CreateFileW(
-            devicePath.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
-            nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
-
-        if (hDevice == INVALID_HANDLE_VALUE) {
-            DWORD err = ::GetLastError();
-            spdlog::warn("[MagicAAPWinRT] CreateFile failed: {} (error {})", pathStr, err);
-            continue;
-        }
-
-        spdlog::info("[MagicAAPWinRT] Successfully opened device!");
-
-        _deviceHandle = hDevice;
-        _usingDeviceInterface = true;
-        _connected.store(true);
-        _stopReceiver.store(false);
-
-        _receiverThread = std::thread(&MagicAAPWinRTClient::ReceiverLoop, this);
-
-        return true;
+    switch (outcome.status) {
+    case MagicAAPBindStatus::NoMatch:
+        SetError(L"No MagicAAP interface proves the bound Bluetooth address and ContainerId; "
+                 L"update the MagicAAP driver and reconnect");
+        break;
+    case MagicAAPBindStatus::OpenFailed:
+        SetError(
+            L"The exact MagicAAP target interface could not be opened (Win32 error " +
+            std::to_wstring(openError) + L"); no other device was selected");
+        break;
+    case MagicAAPBindStatus::Cancelled:
+        SetError(L"Connection cancelled");
+        break;
+    case MagicAAPBindStatus::Connected:
+        break;
+    default:
+        SetError(L"MagicAAP transport error");
+        break;
     }
 
-    SetError(L"Failed to open any MagicAAP device interface");
-    return false;
+    if (outcome.status != MagicAAPBindStatus::Connected) {
+        return outcome.status;
+    }
+    if (stop.stop_requested()) {
+        CloseHandle(static_cast<HANDLE>(outcome.handle));
+        SetError(L"Connection cancelled");
+        return MagicAAPBindStatus::Cancelled;
+    }
+
+    _deviceHandle = outcome.handle;
+    _usingDeviceInterface = true;
+    _connected.store(true);
+    _stopReceiver.store(false);
+    auto snapshot = StartSession();
+    try {
+        _receiverThread = std::thread(&MagicAAPWinRTClient::ReceiverLoop, this, snapshot);
+    }
+    catch (const std::exception &error) {
+        spdlog::error("[MagicAAPWinRT] Receiver thread creation failed: {}", error.what());
+        _sessions.Close();
+        CleanupDeviceHandle();
+        _connected.store(false);
+        SetError(L"MagicAAP receiver thread could not be started");
+        return MagicAAPBindStatus::TransportError;
+    }
+
+    spdlog::info(
+        "[MagicAAPWinRT] Bound exact target device ({} candidate path(s), {} open attempt(s))",
+        outcome.candidateCount, outcome.openAttempts);
+    return MagicAAPBindStatus::Connected;
 }
 
 void MagicAAPWinRTClient::CleanupDeviceHandle()

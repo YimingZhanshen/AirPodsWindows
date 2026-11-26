@@ -16,10 +16,13 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 
-// MagicAAP WinRT Client - Uses Windows.Devices.Bluetooth.Rfcomm API
-// This requires MagicAAP driver to be installed
+// MagicAAP WinRT Client - Uses MagicAAP driver device interfaces, with the
+// Windows.Devices.Bluetooth.Rfcomm API kept for the legacy service path.
+// This requires the MagicAAP driver to be installed.
 
 #pragma once
+
+#include "MagicAAPDeviceBinding.h"
 
 #include <cstdint>
 #include <string>
@@ -28,8 +31,11 @@
 #include <optional>
 #include <atomic>
 #include <mutex>
+#include <stop_token>
 #include <thread>
 #include <memory>
+
+class MagicAAPTests;
 
 namespace Core::MagicAAPWinRT {
 
@@ -55,17 +61,21 @@ public:
     // Find devices with AAP service (requires MagicAAP driver)
     static std::vector<std::pair<std::wstring, uint64_t>> EnumerateAAPDevices();
 
+    // Every device interface the driver publishes, together with the identity
+    // Windows can prove for it. Selection and opening live in BindToTargetInterface.
+    static std::vector<MagicAAPDeviceInterface> EnumerateInterfaces();
+
     // Connect to device by Bluetooth address
     bool Connect(uint64_t bluetoothAddress);
 
     // Connect to device by device ID
     bool ConnectById(const std::wstring &deviceId);
 
-    // Connect via MagicAAP device interface (direct file I/O)
-    bool ConnectViaDeviceInterface(uint64_t bluetoothAddress);
-
-    // Enumerate MagicAAP device interfaces
-    static std::vector<std::wstring> EnumerateMagicAAPDevices();
+    // Opens only the device interface that proves `bluetoothAddress`. An
+    // interface whose identity cannot be proven is reported, never opened, and a
+    // failed open on the matching device is not retried against another one.
+    MagicAAPBindStatus
+    ConnectViaDeviceInterface(uint64_t bluetoothAddress, std::stop_token stop = {});
 
     // Disconnect
     void Disconnect();
@@ -82,24 +92,42 @@ public:
 
     // Callbacks. In device-interface mode each data callback is exactly one
     // successful ReadFile completion; P1 performs no stream reassembly.
+    //
+    // The receiver thread is handed an immutable snapshot of both callbacks plus
+    // the session that started it, so these members are only ever read or written
+    // under `_mutex` and a retired session can never signal a newer one.
     using OnDataReceivedCallback = std::function<void(const std::vector<uint8_t> &)>;
     using OnDisconnectedCallback = std::function<void()>;
 
     void SetOnDataReceived(OnDataReceivedCallback callback);
     void SetOnDisconnected(OnDisconnectedCallback callback);
 
-    // Get last error message
+    // Last failure, already redacted: counts and masked addresses only.
     std::wstring GetLastError() const
     {
+        std::lock_guard<std::mutex> lock(_mutex);
         return _lastError;
     }
 
 private:
+    friend class ::MagicAAPTests;
+
+    // Immutable state for exactly one receiver thread.
+    struct ReceiverSnapshot {
+        uint64_t session{0};
+        void *deviceHandle{nullptr};
+        void *impl{nullptr};
+        bool usingDeviceInterface{false};
+        OnDataReceivedCallback onDataReceived;
+        OnDisconnectedCallback onDisconnected;
+    };
+
     std::atomic<bool> _connected{false};
     std::atomic<bool> _stopReceiver{false};
     std::thread _receiverThread;
     mutable std::mutex _mutex;
     std::wstring _lastError;
+    MagicAAPCallbackSession _sessions;
 
     OnDataReceivedCallback _onDataReceived;
     OnDisconnectedCallback _onDisconnected;
@@ -111,7 +139,9 @@ private:
     void *_deviceHandle{nullptr};
     bool _usingDeviceInterface{false};
 
-    void ReceiverLoop();
+    // Copies the callbacks and publishes a new session. `_mutex` must be held.
+    ReceiverSnapshot StartSession();
+    void ReceiverLoop(ReceiverSnapshot snapshot);
     void SetError(const std::wstring &error);
     void CleanupWinRTObjects();
     void CleanupDeviceHandle();

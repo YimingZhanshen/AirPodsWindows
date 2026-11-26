@@ -378,6 +378,7 @@ MagicAAPTransport::~MagicAAPTransport()
 bool MagicAAPTransport::Connect(uint64_t address, std::stop_token stop)
 {
     if (stop.stop_requested()) {
+        _lastBindStatus.store(Core::MagicAAPWinRT::MagicAAPBindStatus::Cancelled);
         return false;
     }
 
@@ -393,7 +394,10 @@ bool MagicAAPTransport::Connect(uint64_t address, std::stop_token stop)
     _client = std::make_unique<MagicAAPWinRT::MagicAAPWinRTClient>();
     _client->SetOnDataReceived([this](const std::vector<uint8_t> &record) { Enqueue(record); });
     _client->SetOnDisconnected([this] { SignalEof(); });
-    if (!_client->ConnectViaDeviceInterface(address)) {
+    _lastBindStatus.store(Core::MagicAAPWinRT::MagicAAPBindStatus::Cancelled);
+    const auto bindStatus = _client->ConnectViaDeviceInterface(address, stop);
+    _lastBindStatus.store(bindStatus);
+    if (bindStatus != Core::MagicAAPWinRT::MagicAAPBindStatus::Connected) {
         const std::wstring error = _client->GetLastError();
         spdlog::error(
             "[AAPTransport] MagicAAP device-interface connection failed: {}",

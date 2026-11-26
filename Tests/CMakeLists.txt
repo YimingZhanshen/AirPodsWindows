@@ -51,6 +51,22 @@ target_include_directories(AAPProtocolTests PRIVATE "${CMAKE_SOURCE_DIR}")
 
 add_test(NAME AAPProtocolTests COMMAND AAPProtocolTests)
 
+add_executable(MagicAAPTests MagicAAPTests.cpp)
+
+target_link_libraries(
+    MagicAAPTests
+
+    PRIVATE
+    apd_core
+    Qt6::Test
+    windowsapp.lib
+    runtimeobject.lib
+)
+
+target_include_directories(MagicAAPTests PRIVATE "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME MagicAAPTests COMMAND MagicAAPTests)
+
 add_executable(AAPConnectionStateMachineTests AAPConnectionStateMachineTests.cpp)
 
 target_link_libraries(
@@ -154,7 +170,7 @@ foreach(scale_factor 1 1.25 1.5 2)
     )
 endforeach()
 
-foreach(test_target AirPodsDomainTests QuickConnectTests AAPProtocolTests AAPConnectionStateMachineTests AAPTransportTests AnimationViewTests UiRenderingTests)
+foreach(test_target AirPodsDomainTests QuickConnectTests AAPProtocolTests MagicAAPTests AAPConnectionStateMachineTests AAPTransportTests AnimationViewTests UiRenderingTests)
     add_custom_command(
         TARGET ${test_target}
         POST_BUILD

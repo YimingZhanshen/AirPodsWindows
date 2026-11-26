@@ -58,6 +58,8 @@ enum class ConnectFailure : uint8_t {
     ServiceUnavailable, // device reachable but does not expose the AAP service
     TransportError,     // socket/driver transport could not be created or failed
     HandshakeFailure,   // transport up, but the AAP handshake did not complete
+    NoMatch,            // no MagicAAP interface proves the bound address/container
+    OpenFailed,         // the exact target interface exists but could not be opened
 };
 
 //////////////////////////////////////////////////

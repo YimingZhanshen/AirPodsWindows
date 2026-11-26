@@ -18,6 +18,8 @@
 
 #pragma once
 
+#include "MagicAAPDeviceBinding.h"
+
 #include <atomic>
 #include <cstdint>
 #include <condition_variable>
@@ -111,12 +113,19 @@ public:
         return AAPTransportKind::MagicAAP;
     }
 
+    Core::MagicAAPWinRT::MagicAAPBindStatus LastBindStatus() const
+    {
+        return _lastBindStatus.load();
+    }
+
 private:
     void Enqueue(std::vector<uint8_t> record);
     void SignalEof();
 
     mutable std::mutex _clientMutex;
     std::unique_ptr<Core::MagicAAPWinRT::MagicAAPWinRTClient> _client;
+    std::atomic<Core::MagicAAPWinRT::MagicAAPBindStatus> _lastBindStatus{
+        Core::MagicAAPWinRT::MagicAAPBindStatus::NoMatch};
     std::mutex _queueMutex;
     std::condition_variable_any _queueCondition;
     std::deque<std::vector<uint8_t>> _records;

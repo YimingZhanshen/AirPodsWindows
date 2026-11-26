@@ -250,7 +250,26 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
         return magicAAP;
     }
     magicAAP->Close();
-    failure = ConnectFailure::TransportError;
+    const auto bindStatus = static_cast<MagicAAPTransport *>(magicAAP.get())->LastBindStatus();
+    switch (bindStatus) {
+    case MagicAAPWinRT::MagicAAPBindStatus::NoMatch:
+        failure = ConnectFailure::NoMatch;
+        Diagnostics::Recorder::Instance().Record(
+            Diagnostics::Step::DriverOpen, false,
+            "no interface proves the bound address and ContainerId");
+        break;
+    case MagicAAPWinRT::MagicAAPBindStatus::OpenFailed:
+        failure = ConnectFailure::OpenFailed;
+        Diagnostics::Recorder::Instance().Record(
+            Diagnostics::Step::DriverOpen, false, "exact target interface open failed");
+        break;
+    case MagicAAPWinRT::MagicAAPBindStatus::DriverMissing:
+        failure = ConnectFailure::DriverMissing;
+        break;
+    default:
+        failure = ConnectFailure::TransportError;
+        break;
+    }
     return nullptr;
 }
 
