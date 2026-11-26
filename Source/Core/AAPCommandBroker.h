@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <stop_token>
@@ -194,9 +195,10 @@ public:
     // still recorded for the next replay and the result says TransportClosed.
     AAPCommandResult Submit(AAPCommand command, std::stop_token stop = {});
 
-    // Records desired state without queueing a wire write. Used by mode-gated settings: the
-    // value survives reconnect, but no rejection/timeout is manufactured while the feature is not
-    // applicable. If the kind is already queued, its coalesced slot is updated to this value.
+    // Records a disconnected caller's latest desire without queueing or sending it. Any older
+    // queued value for the same kind is cancelled and eligible in-flight work is superseded, so
+    // a reconnect replay cannot emit a stale value. The next ReplayDesiredState applies the new
+    // desire. This keeps offline settings writes safe while a transport owner opens a replay.
     AAPCommandResult RecordDesired(AAPCommand command);
 
     // Evidence that the device holds `command`. Only a kind + value + generation match confirms
@@ -275,9 +277,14 @@ private:
         bool evidence{false};
         bool capabilityWithdrawn{false};
         bool cancelled{false};
+        // Supersession wakes a sender already inside a stop-aware transport write.
+        std::shared_ptr<std::stop_source> stopSource;
     };
 
     void WorkerLoop(std::stop_token stopToken);
+    // Caller must hold _mutex. Atomically replaces same-kind desired/pending work, optionally
+    // queueing the new value for an open session. Disconnected callers never queue wire work.
+    void RecordDesiredLocked(AAPCommand command, std::stop_token stop, bool queueWhenOpen);
     // Caller must hold _mutex. Retires queued/in-flight work but preserves desired values.
     void CloseSessionLocked(std::vector<AAPCommandOutcome> &outcomes);
     void SettleLocked(Flight &flight, bool sent, std::vector<AAPCommandOutcome> &outcomes);

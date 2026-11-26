@@ -1166,8 +1166,8 @@ bool Manager::SetHeadTrackingDesired(bool enabled)
     {
         std::lock_guard<std::mutex> lock{_headTrackingMutex};
         _headTrackingIntent.SetEnabled(enabled);
+        _headTrackingEnabled = enabled;
     }
-    _headTrackingEnabled = enabled;
     return FlushHeadTracking();
 }
 

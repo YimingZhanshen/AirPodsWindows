@@ -91,61 +91,13 @@ AAPCommandResult AAPCommandBroker::Submit(AAPCommand command, std::stop_token st
         return {false, false, AAPCommandFailure::Rejected, 0};
     }
     command.requestId = _nextRequestId++;
-    auto &state = _kinds[kKindIndex(command.kind)];
-    // The user's intent survives transport failure so a reconnect can replay it.
-    state.desired = command.value;
-    state.desiredRequestId = command.requestId;
+    // Replace desired and pending work under one lock, including when this Submit is about to
+    // discover that the session is already offline.
+    RecordDesiredLocked(command, stop, true);
     if (!_sessionOpen || _generation == 0) {
         return {false, false, AAPCommandFailure::TransportClosed, command.requestId};
     }
 
-    if (state.desired == command.value && state.confirmed == command.value) {
-        // Confirmation and the manager's cached display update are separate publications. A
-        // notification between them still carries the same desired/confirmed value, not new work.
-        return {true, false, std::nullopt};
-    }
-    const bool sameFlight = _flight && _flight->generation == _generation &&
-                            _flight->command.kind == command.kind &&
-                            _flight->command.value == command.value;
-    if (sameFlight) {
-        // A repeated notification is evidence of interest, not a new user value. Keep the original
-        // flight and its echo window instead of superseding it and submitting a duplicate write.
-        return {true, false, std::nullopt};
-    }
-    if (state.queued == command.value) {
-        state.queuedStop = stop;
-        return {true, false, std::nullopt};
-    }
-
-    // Same-kind supersede: the in-flight wait ends now instead of burning the whole window,
-    // and the queued slot is a single value, so a slider burst collapses to the last one.
-    // Re-submitting the head-tracking value already queued/in flight is idempotent; reconnect
-    // replay and the head-tracking intent can converge without replacing a live command with
-    // itself. Other C7 command kinds retain their existing supersede behavior.
-    if (command.kind == AAPCommandKind::SetHeadTracking &&
-        ((state.queued && *state.queued == command.value) ||
-         (_flight && _flight->generation == _generation && !_flight->superseded &&
-          !_flight->sessionLost && _flight->command.kind == command.kind &&
-          _flight->command.value == command.value)))
-    {
-        state.queuedStop = stop;
-        return {true, false, std::nullopt};
-    }
-    if (_flight && _flight->generation == _generation && _flight->command.kind == command.kind) {
-        _flight->superseded = true;
-    }
-    if (state.queued) {
-        *state.queued = command.value;
-    }
-    else {
-        state.queued = command.value;
-        _queue.push_back(command.kind);
-    }
-    state.queuedRequestId = command.requestId;
-    state.queuedStop = stop;
-
-    _workCondition.notify_all();
-    _settleCondition.notify_all();
     return {true, false, std::nullopt, command.requestId};
 }
 
@@ -154,16 +106,69 @@ AAPCommandResult AAPCommandBroker::RecordDesired(AAPCommand command)
     if (static_cast<size_t>(command.kind) >= kAAPCommandKindCount || command.value > 0xFF) {
         return {false, false, AAPCommandFailure::Rejected};
     }
-    std::lock_guard lock{_mutex};
-    if (_stopping) {
-        return {false, false, AAPCommandFailure::Rejected};
-    }
+    command.requestId = _nextRequestId++;
+    RecordDesiredLocked(command, {}, false);
+    return {false, false, AAPCommandFailure::TransportClosed, command.requestId};
+}
+
+void AAPCommandBroker::RecordDesiredLocked(
+    AAPCommand command, std::stop_token stop, bool queueWhenOpen)
+{
     auto &state = _kinds[kKindIndex(command.kind)];
+    // The user's intent survives transport failure so a reconnect can replay it. The request id
+    // travels with the desire so a replay can correlate its eventual outcome with this caller.
     state.desired = command.value;
+    state.desiredRequestId = command.requestId;
+
+    const bool sameQueued = state.queued && *state.queued == command.value;
+    const bool sameFlight = _flight && !_flight->superseded && !_flight->sessionLost &&
+                            _flight->generation == _generation &&
+                            _flight->command.kind == command.kind &&
+                            _flight->command.value == command.value;
+    bool replacedQueued = false;
     if (state.queued) {
-        *state.queued = command.value;
+        if (queueWhenOpen && !sameFlight) {
+            if (sameQueued) {
+                state.queuedStop = stop;
+            }
+            else {
+                // Preserve the queued kind's position for ordinary online slider replacement.
+                *state.queued = command.value;
+                state.queuedRequestId = command.requestId;
+                state.queuedStop = stop;
+                replacedQueued = true;
+            }
+        }
+        else {
+            // Offline submissions cancel stale wire work even when the value is unchanged, so a
+            // later replay cannot resurrect a request the disconnected caller just superseded.
+            std::erase(_queue, command.kind);
+            state.queued.reset();
+            state.queuedRequestId = 0;
+            state.queuedStop = {};
+        }
     }
-    return {true, false, std::nullopt};
+    if (_flight && !_flight->superseded && !_flight->sessionLost &&
+        _flight->generation == _generation && _flight->command.kind == command.kind && !sameFlight)
+    {
+        _flight->superseded = true;
+        if (_flight->stopSource) {
+            _flight->stopSource->request_stop();
+        }
+        _settleCondition.notify_all();
+    }
+
+    // A value the device already holds needs no write; the replay path applies desires that
+    // differ from the confirmed baseline, so a redundant queue entry can never be useful.
+    if (!sameFlight && !replacedQueued && queueWhenOpen && _sessionOpen && _generation != 0 &&
+        !state.queued && state.confirmed != command.value)
+    {
+        state.queued = command.value;
+        state.queuedRequestId = command.requestId;
+        state.queuedStop = stop;
+        _queue.push_back(command.kind);
+        _workCondition.notify_all();
+    }
 }
 
 void AAPCommandBroker::OnEcho(AAPCommand command, uint64_t generation)
@@ -511,6 +516,7 @@ void AAPCommandBroker::WorkerLoop(std::stop_token stopToken)
         flight.generation = _generation;
         flight.mode = ModeLocked(kind, value);
         flight.cancelled = queuedStop.stop_requested();
+        flight.stopSource = std::make_shared<std::stop_source>();
         _flight = flight;
         // The reference stays valid because only this thread clears the slot; EndSession only
         // flags it, which keeps the wait predicate below from dangling.
@@ -521,18 +527,20 @@ void AAPCommandBroker::WorkerLoop(std::stop_token stopToken)
         lock.unlock();
         // Forward both the caller's cancellation and broker shutdown into the one token passed to
         // the wire. The callbacks live through the echo window, so cancellation also wakes a wait.
-        std::stop_source flightStop;
-        std::stop_callback workerStop{stopToken, [&flightStop] { flightStop.request_stop(); }};
-        std::stop_callback callerStop{queuedStop, [this, &flightStop] {
-                                          std::lock_guard lock{_mutex};
-                                          flightStop.request_stop();
+        auto flightStop = live->stopSource;
+        std::stop_callback workerStop{stopToken, [flightStop] { flightStop->request_stop(); }};
+        std::stop_callback callerStop{queuedStop, [this, flightStop] {
+                                          flightStop->request_stop();
                                           _settleCondition.notify_all();
                                       }};
         bool sent = false;
         const unsigned attempts =
             kind == AAPCommandKind::SetHeadTracking ? kHeadTrackingSendAttempts : 1;
         for (unsigned attempt = 0; attempt < attempts && send; ++attempt) {
-            sent = _sender ? _sender(flight.command, flight.generation, flightStop.get_token())
+            if (flightStop->stop_requested()) {
+                break;
+            }
+            sent = _sender ? _sender(flight.command, flight.generation, flightStop->get_token())
                            : false;
             lock.lock();
             live->cancelled = live->cancelled || queuedStop.stop_requested();

@@ -607,18 +607,26 @@ private slots:
         manager._connected = true;
         manager._headTrackingActive = true;
 
-        // The parser only needs 56 bytes, but the documented sensor record is at
-        // least 70 bytes. The callback witnesses rejection before parsing.
-        std::vector<uint8_t> truncatedSensor(69, 0x00);
-        truncatedSensor[0] = 0x04;
-        truncatedSensor[2] = 0x04;
-        truncatedSensor[4] = 0x17;
-        truncatedSensor[10] = 0x44;
+        // Use the shared classifier's documented prefix. The parser only needs 56 bytes, but
+        // the documented sensor record is at least 70 bytes; the callback witnesses rejection
+        // before parsing. A bad prefix must remain rejected even at the full documented length.
+        std::vector<uint8_t> sensor(70, 0x00);
+        sensor[0] = 0x04;
+        sensor[2] = 0x04;
+        sensor[4] = 0x17;
+        sensor[8] = 0x10;
+        sensor[10] = 0x44;
+
+        auto malformedPrefix = sensor;
+        malformedPrefix[8] = 0x00;
+        manager.ProcessPacket(malformedPrefix);
+        QCOMPARE(trackingCallbacks, 0);
+
+        auto truncatedSensor = sensor;
+        truncatedSensor.resize(69);
         manager.ProcessPacket(truncatedSensor);
         QCOMPARE(trackingCallbacks, 0);
 
-        std::vector<uint8_t> sensor = truncatedSensor;
-        sensor.resize(70);
         manager.ProcessPacket(sensor);
         QCOMPARE(trackingCallbacks, 1);
     }
@@ -961,7 +969,10 @@ private slots:
         manager._adaptiveNoiseLevel = 60;
         manager._commandBroker->BeginSession(manager._attempt.generation);
         const AAPCommand initial{AAPCommandKind::SetAdaptiveNoiseLevel, 60};
-        QVERIFY(manager._commandBroker->RecordDesired(initial).accepted);
+        QVERIFY(!manager._commandBroker->RecordDesired(initial).accepted);
+        QCOMPARE(
+            manager._commandBroker->Desired(AAPCommandKind::SetAdaptiveNoiseLevel),
+            std::optional<uint32_t>{60});
         manager._commandBroker->OnEcho(initial, manager._attempt.generation);
         transport->SetBlockSend(true);
 
@@ -1439,6 +1450,67 @@ private slots:
         QCOMPARE(outcome.settlement, AAPCommandSettlement::Confirmed);
         QVERIFY(manager.IsHeadTrackingActive());
         QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
+    }
+
+    void OfflineStopCancelsStartQueuedByReconnectReplay()
+    {
+        using namespace Core::AAP;
+        Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        transport->SetBlockSend(true);
+        manager._transport.store(transport);
+        manager._commandBroker->SetConfirmMode(
+            AAPCommandKind::SetHeadTracking, AAPConfirmMode::Unverifiable);
+
+        const auto offlineStart = manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x01});
+        QVERIFY(!offlineStart.accepted);
+        manager._attempt = AAPAttempt{1, 21};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(21);
+        QVERIFY(manager.SubmitCommand({AAPCommandKind::SetNoiseControl, 0x01}).accepted);
+        manager._commandBroker->ReplayDesiredState(21);
+        QVERIFY(transport->WaitForSendWaiter(std::chrono::seconds{1}));
+
+        // Replay opens generation 22 before the transport owner has retired the old attempt.
+        // During this window the head-tracking intent still takes its offline submission path.
+        {
+            std::lock_guard lock{manager._mutex};
+            manager._attempt = AAPAttempt{1, 22};
+        }
+        manager._commandBroker->ReplayDesiredState(22);
+        QCOMPARE(manager._commandBroker->QueuedCount(), size_t{2});
+        {
+            std::lock_guard lock{manager._mutex};
+            manager._connected = false;
+        }
+        const auto offlineStop = manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x00});
+        QVERIFY(!offlineStop.accepted);
+        QCOMPARE(offlineStop.failure, std::optional(AAPCommandFailure::TransportClosed));
+        QCOMPARE(manager._commandBroker->QueuedCount(), size_t{1});
+
+        transport->SetBlockSend(false);
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        manager._transport.store(transport);
+        manager._attempt = AAPAttempt{1, 23};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(23);
+        manager._commandBroker->ReplayDesiredState(23);
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+
+        size_t headTrackingRecords = 0;
+        for (const auto &record : transport->SentRecords()) {
+            if (record == Packets::StartHeadTracking || record == Packets::StopHeadTracking) {
+                ++headTrackingRecords;
+                QCOMPARE(record, Packets::StopHeadTracking);
+            }
+        }
+        QCOMPARE(headTrackingRecords, size_t{1});
+        QCOMPARE(
+            manager.DesiredCommand(AAPCommandKind::SetHeadTracking), std::optional<uint32_t>{0});
         manager._connected = false;
         manager._transport.store(nullptr);
         manager._commandBroker->EndSession();

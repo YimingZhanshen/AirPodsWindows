@@ -520,7 +520,8 @@ bool Manager::IsHeadTrackingActive() const
 AAPCommandResult Manager::SubmitCommand(AAPCommand command, std::stop_token stopToken)
 {
     // A disconnected submit is desired-state bookkeeping, never a late write on a retiring
-    // session. RecordDesired does not publish outcomes, so callers may hold their intent lock.
+    // session. RecordDesired cancels stale pending work without synchronously publishing a
+    // session-close outcome, so callers may hold their intent lock.
     if (!_connected) {
         if (stopToken.stop_requested()) {
             return {false, false, AAPCommandFailure::Rejected};
