@@ -26,6 +26,7 @@
 #include "Base.h"
 #include "../Helper.h"
 #include "../Logger.h"
+#include "PpeCapLevel.h"
 
 // AAP = Apple Audio Protocol
 // Protocol runs on top of L2CAP with PSM 0x1001 (4097)
@@ -90,10 +91,10 @@ enum class LoudSoundReductionState : uint8_t {
 };
 
 //////////////////////////////////////////////////
-// Adaptive Transparency Level (only in Adaptive mode)
+// PPE Cap Level (hearing protection, control 0x38; range 0-100)
 //
 
-struct AdaptiveTransparencyLevel {
+struct PpeCapLevel {
     uint8_t level; // 0-100
 };
 
@@ -251,8 +252,9 @@ inline std::vector<uint8_t> BuildAutomaticEarDetectionPacket(bool enable) {
 
 // Hearing-protection (PPE) cap level packet builder (0-100)
 // Control command 0x38 = PPE Cap Level (a hearing-protection cap, not a transparency control;
-// the reference capture uses 0x52 = 82, so the range is 0-100). The UI still labels this
-// "Adaptive transparency level (0-50)" — that label is corrected in the terminology sweep.
+// the reference capture uses 0x52 = 82, so the range is 0-100). The retired P5 UI once
+// labelled this "adaptive transparency (0-50)"; the label, naming, and slider range were
+// corrected in P5 while this wire encoding stayed per spec.
 inline std::vector<uint8_t> BuildPpeCapLevelPacket(uint8_t level) {
     return {
         0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38,
@@ -418,9 +420,10 @@ inline std::optional<LoudSoundReductionState> ParseLoudSoundReductionState(const
     }
 }
 
-// Parse adaptive transparency level
+// Parse PPE cap level (the retired "adaptive transparency" naming was a mislabel: control
+// 0x38 caps output loudness for hearing protection)
 // Packet format: 04 00 04 00 09 00 38 [level] 00 00 00
-inline std::optional<uint8_t> ParseAdaptiveTransparencyLevel(const std::vector<uint8_t>& data) {
+inline std::optional<uint8_t> ParsePpeCapLevel(const std::vector<uint8_t>& data) {
     if (data.size() < 8) {
         return std::nullopt;
     }
@@ -517,7 +520,7 @@ inline bool IsLoudSoundReductionNotification(const std::vector<uint8_t>& data) {
            data[4] == 0x09 && data[5] == 0x00 && data[6] == 0x25;
 }
 
-inline bool IsAdaptiveTransparencyLevelNotification(const std::vector<uint8_t>& data) {
+inline bool IsPpeCapLevelNotification(const std::vector<uint8_t>& data) {
     return data.size() >= 7 &&
            data[0] == 0x04 && data[1] == 0x00 && data[2] == 0x04 && data[3] == 0x00 &&
            data[4] == 0x09 && data[5] == 0x00 && data[6] == 0x38;

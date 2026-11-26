@@ -76,7 +76,7 @@ struct Callbacks {
     using FnOnPersonalizedVolumeChangedT = std::function<void(PersonalizedVolumeState, AAPAttempt)>;
     using FnOnLoudSoundReductionChangedT = std::function<void(LoudSoundReductionState, AAPAttempt)>;
     using FnOnAutomaticEarDetectionChangedT = std::function<void(bool, AAPAttempt)>;
-    using FnOnAdaptiveTransparencyLevelChangedT = std::function<void(uint8_t, AAPAttempt)>;
+    using FnOnPpeCapLevelChangedT = std::function<void(uint8_t, AAPAttempt)>;
     using FnOnConnectedT = std::function<void(AAPAttempt)>;
     using FnOnDisconnectedT = std::function<void(AAPAttempt)>;
     using FnOnAttProbeResultT = std::function<void(AttPathState, AAPAttempt)>;
@@ -89,7 +89,7 @@ struct Callbacks {
     FnOnPersonalizedVolumeChangedT onPersonalizedVolumeChanged;
     FnOnLoudSoundReductionChangedT onLoudSoundReductionChanged;
     FnOnAutomaticEarDetectionChangedT onAutomaticEarDetectionChanged;
-    FnOnAdaptiveTransparencyLevelChangedT onAdaptiveTransparencyLevelChanged;
+    FnOnPpeCapLevelChangedT onPpeCapLevelChanged;
     FnOnConnectedT onConnected;
     FnOnDisconnectedT onDisconnected;
     FnOnAttProbeResultT onAttProbeResult;
@@ -132,9 +132,9 @@ public:
     bool SetLoudSoundReduction(bool enable);
     std::optional<LoudSoundReductionState> GetLoudSoundReductionState() const;
 
-    // Adaptive transparency level (0-50, only effective when noise control is Adaptive)
-    bool SetAdaptiveTransparencyLevel(uint8_t level);
-    std::optional<uint8_t> GetAdaptiveTransparencyLevel() const;
+    // PPE cap level (hearing protection, AAP control 0x38, range 0-100)
+    bool SetPpeCapLevel(uint8_t level);
+    std::optional<uint8_t> GetPpeCapLevel() const;
 
     // Adaptive noise level (0-100, only effective when noise control is Adaptive)
     bool SetAdaptiveNoiseLevel(uint8_t level);
@@ -188,7 +188,7 @@ private:
     std::optional<PersonalizedVolumeState> _personalizedVolumeState;
     std::optional<bool> _automaticEarDetectionState;
     std::optional<LoudSoundReductionState> _loudSoundReductionState;
-    std::optional<uint8_t> _adaptiveTransparencyLevel;
+    std::optional<uint8_t> _ppeCapLevel;
 
     // ATT path probe (blueprint 0.3): deadline in steady_clock milliseconds,
     // 0 when no probe is outstanding. GetAttPathState flips Pending to

@@ -118,7 +118,7 @@ private:
     void OnConversationalAwarenessVolumePercentChanged(uint8_t percent) override;
     void OnPersonalizedVolumeChanged(bool enable) override;
     void OnLoudSoundReductionChanged(bool enable) override;
-    void OnAdaptiveTransparencyLevelChanged(uint8_t level) override;
+    void OnPpeCapLevelChanged(uint8_t level) override;
     void OnNoiseControlModeChanged(uint32_t mode) override;
     void OnRssiMinChanged(int16_t rssiMin) override;
     void OnDeviceAddressChanged(uint64_t address) override;

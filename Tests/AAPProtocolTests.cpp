@@ -155,6 +155,20 @@ private slots:
             Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38, 100, 0x00, 0x00, 0x00}));
     }
 
+    // P5: the domain boundary clamps into 0-100 before the value is cached or put on the
+    // wire; stale uint8 values above 100 (old 0-50 UI era included) never leak through.
+    void PpeCapNormalizeClampsToZeroThroughHundred()
+    {
+        QCOMPARE(NormalizePpeCapLevel(0), uint8_t{0});
+        QCOMPARE(NormalizePpeCapLevel(25), uint8_t{25});
+        QCOMPARE(NormalizePpeCapLevel(50), uint8_t{50});
+        QCOMPARE(NormalizePpeCapLevel(100), uint8_t{100});
+        QCOMPARE(NormalizePpeCapLevel(101), uint8_t{100});
+        QCOMPARE(NormalizePpeCapLevel(255), uint8_t{100});
+        QCOMPARE(kPpeCapLevelDefault, uint8_t{25});
+        QCOMPARE(kPpeCapLevelMax, uint8_t{100});
+    }
+
     // Blueprint 0.1/0.3: loud sound reduction is an ATT Write Command to handle 0x1B
     // and alone uses the 0x01/0x00 (not 0x01/0x02) value convention.
     void LoudSoundReductionPacketIsAttWriteToHandle0x1B()
@@ -292,11 +306,9 @@ private slots:
     void PpeCapLevelParserReadsLevel()
     {
         QCOMPARE(
-            ParseAdaptiveTransparencyLevel(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38, 82})),
+            ParsePpeCapLevel(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38, 82})),
             std::optional<uint8_t>(82));
-        QVERIFY(!ParseAdaptiveTransparencyLevel(
-                     Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 82}))
+        QVERIFY(!ParsePpeCapLevel(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 82}))
                      .has_value());
     }
 
@@ -358,6 +370,8 @@ private slots:
             Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x26, 0x01})));
         QVERIFY(IsAutomaticEarDetectionNotification(
             Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0A, 0x01})));
+        QVERIFY(IsPpeCapLevelNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38, 0x19})));
+        QVERIFY(!IsPpeCapLevelNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 0x19})));
         QVERIFY(IsSettingsNotification(
             Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38, 0x10})));
         QCOMPARE(
@@ -389,6 +403,8 @@ private slots:
         QVERIFY(!ParseSpeakingLevel(
                      Hex({0x04, 0x00, 0x04, 0x00, 0x4B, 0x00, 0x02, 0x00, 0x01}))
                      .has_value());
+        QVERIFY(!ParsePpeCapLevel(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38})).has_value());
+        QVERIFY(!IsPpeCapLevelNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09})));
     }
 
     //////////////////////////////////////////////////

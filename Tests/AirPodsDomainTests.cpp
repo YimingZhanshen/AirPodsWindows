@@ -68,9 +68,9 @@ public:
     {
         loudSoundReduction = enable;
     }
-    void OnAdaptiveTransparencyLevelChanged(uint8_t level) override
+    void OnPpeCapLevelChanged(uint8_t level) override
     {
-        adaptiveTransparencyLevel = level;
+        ppeCapLevel = level;
     }
     void OnNoiseControlModeChanged(uint32_t mode) override
     {
@@ -101,7 +101,7 @@ public:
     uint8_t conversationalAwarenessVolumePercent{};
     bool personalizedVolume{false};
     bool loudSoundReduction{false};
-    uint8_t adaptiveTransparencyLevel{};
+    uint8_t ppeCapLevel{};
     uint32_t noiseControlMode{};
     bool audioAutoConnectEnabled{false};
     int audioAutoConnectChanges{0};
@@ -241,6 +241,8 @@ private Q_SLOTS:
     void RollsBackFailedSettingsMigration();
     void PropagatesQuickConnectSettings();
     void PreservesForkSettingsAndAddsPlaybackAutoConnect();
+    void KeepsPpeCapIndependentFromLegacyAdaptiveTransparency();
+    void PersistsPpeCapLevelRoundTrip();
     void RejectsNullSettingsRepository();
     void ParsesUpdateVersions();
     void ParsesGitHubReleaseMetadata();
@@ -793,6 +795,8 @@ void AirPodsDomainTests::PreservesForkSettingsAndAddsPlaybackAutoConnect()
     repository->Write("conversational_awareness_volume_percent", uint8_t{55});
     repository->Write("personalized_volume", true);
     repository->Write("loud_sound_reduction", true);
+    // Retired key: P5 keeps the field in SETTINGS_FIELDS as Impl::Deprecated() so loading an
+    // old file stays Successful, but the value must never drive the new PPE cap.
     repository->Write("adaptive_transparency_level", uint8_t{35});
     repository->Write("noise_control_mode", uint32_t{3});
     repository->Write("tray_quick_connect_enabled", true);
@@ -809,7 +813,7 @@ void AirPodsDomainTests::PreservesForkSettingsAndAddsPlaybackAutoConnect()
     QCOMPARE(observer.conversationalAwarenessVolumePercent, uint8_t{55});
     QVERIFY(observer.personalizedVolume);
     QVERIFY(observer.loudSoundReduction);
-    QCOMPARE(observer.adaptiveTransparencyLevel, uint8_t{35});
+    QCOMPARE(observer.ppeCapLevel, uint8_t{25});
     QCOMPARE(observer.noiseControlMode, uint32_t{3});
     QVERIFY(observer.quickConnectEnabled);
     QVERIFY(observer.audioAutoConnectEnabled);
@@ -817,7 +821,8 @@ void AirPodsDomainTests::PreservesForkSettingsAndAddsPlaybackAutoConnect()
     QVERIFY(Core::Settings::GetCurrent().popup_on_lid_open);
     Core::Settings::SetApplyObserver(nullptr);
 
-    // Saving must retain every pre-U2 key and add both upstream keys, without an ABI bump.
+    // Saving must retain every pre-U2 key (except the retired PPE predecessor, which is
+    // dropped on the next save), add both upstream keys plus ppe_cap_level, without an ABI bump.
     QCOMPARE(Core::Settings::kFieldsAbiVersion, uint32_t{1});
     Core::Settings::Save(Core::Settings::GetCurrent());
     const auto keys = memoryRepository->Keys();
@@ -831,7 +836,7 @@ void AirPodsDomainTests::PreservesForkSettingsAndAddsPlaybackAutoConnect()
           "conversational_awareness_volume_percent",
           "personalized_volume",
           "loud_sound_reduction",
-          "adaptive_transparency_level",
+          "ppe_cap_level",
           "noise_control_mode",
           "skipped_version",
           "rssi_min",
@@ -845,6 +850,80 @@ void AirPodsDomainTests::PreservesForkSettingsAndAddsPlaybackAutoConnect()
     {
         QVERIFY2(keys.contains(key), key);
     }
+    // The deprecated key is removed on save and never rewritten under the old name.
+    QVERIFY(!keys.contains("adaptive_transparency_level"));
+    QCOMPARE(memoryRepository->Read("ppe_cap_level").toUInt(), uint32_t{25});
+    Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
+}
+
+void AirPodsDomainTests::KeepsPpeCapIndependentFromLegacyAdaptiveTransparency()
+{
+    // Whatever an old build persisted under adaptive_transparency_level (including the
+    // 0-50 values its slider allowed), the new ppe_cap_level must start from its fixed
+    // default 25: no migration, no scaling, no silent reuse.
+    for (const uint8_t legacy :
+         {uint8_t{0}, uint8_t{25}, uint8_t{50}, uint8_t{51}, uint8_t{100}, uint8_t{255}})
+    {
+        auto repository = std::make_unique<Core::Settings::MemoryRepository>();
+        repository->Write("abi_version", Core::Settings::kFieldsAbiVersion);
+        repository->Write("adaptive_transparency_level", legacy);
+        auto *memory = repository.get();
+        Core::Settings::SetRepository(std::move(repository));
+
+        // ABI stays 1: the old key is deprecated, not renamed or retyped, so old files load.
+        QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+        // Repeated loading is idempotent and never inherits the legacy value.
+        QCOMPARE(Core::Settings::GetCurrent().ppe_cap_level, uint8_t{25});
+        QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+        QCOMPARE(Core::Settings::GetCurrent().ppe_cap_level, uint8_t{25});
+
+        RecordingSettingsObserver observer;
+        Core::Settings::SetApplyObserver(&observer);
+        Core::Settings::Apply();
+        Core::Settings::SetApplyObserver(nullptr);
+        QCOMPARE(observer.ppeCapLevel, uint8_t{25});
+
+        // Saving retires the legacy key instead of reinterpreting it as the new cap.
+        Core::Settings::Save(Core::Settings::GetCurrent());
+        QVERIFY(!memory->Keys().contains("adaptive_transparency_level"));
+        QCOMPARE(memory->Read("ppe_cap_level").toUInt(), uint32_t{25});
+    }
+    Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
+}
+
+void AirPodsDomainTests::PersistsPpeCapLevelRoundTrip()
+{
+    auto repository = std::make_unique<Core::Settings::MemoryRepository>();
+    repository->Write("abi_version", Core::Settings::kFieldsAbiVersion);
+    auto *memory = repository.get();
+    Core::Settings::SetRepository(std::move(repository));
+
+    // Missing key means the fixed default, never a value borrowed from the legacy key.
+    QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+    QCOMPARE(Core::Settings::GetDefault().ppe_cap_level, uint8_t{25});
+    QCOMPARE(Core::Settings::GetCurrent().ppe_cap_level, uint8_t{25});
+
+    RecordingSettingsObserver observer;
+    Core::Settings::SetApplyObserver(&observer);
+    {
+        auto access = Core::Settings::ModifiableAccess();
+        access->ppe_cap_level = 80;
+    } // destructor persists and applies the changed field only
+    Core::Settings::SetApplyObserver(nullptr);
+    QCOMPARE(memory->Read("ppe_cap_level").toUInt(), uint32_t{80});
+    QCOMPARE(observer.ppeCapLevel, uint8_t{80});
+
+    // Reload round-trip: the persisted value survives, the legacy key stays gone.
+    QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+    QCOMPARE(Core::Settings::GetCurrent().ppe_cap_level, uint8_t{80});
+    QVERIFY(!memory->Keys().contains("adaptive_transparency_level"));
+
+    // And it is forwarded to observers as-is on apply.
+    Core::Settings::SetApplyObserver(&observer);
+    Core::Settings::Apply();
+    Core::Settings::SetApplyObserver(nullptr);
+    QCOMPARE(observer.ppeCapLevel, uint8_t{80});
+
     Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
 }
 

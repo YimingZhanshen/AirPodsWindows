@@ -24,6 +24,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QSlider>
 #include <QStyleOptionComboBox>
 #include <QTextLayout>
 #include <QThread>
@@ -246,7 +247,7 @@ private Q_SLOTS:
         QVERIFY(driverCard->isHidden());
         for (const auto *name :
              {"cbConversationalAwareness", "cbPersonalizedVolume", "cbLoudSoundReduction",
-              "cbNoiseControlMode", "hsAdaptiveTransparencyLevel"})
+              "cbNoiseControlMode", "hsPpeCapLevel"})
         {
             QVERIFY2(settings.findChild<QWidget *>(name) != nullptr, name);
         }
@@ -256,6 +257,36 @@ private Q_SLOTS:
         QVERIFY(!tray->isChecked());
         QVERIFY(Core::Settings::GetCurrent().audio_auto_connect_enabled);
         automatic->setChecked(false);
+    }
+
+    // P5: the PPE cap control must span the full 0-100 wire range (the retired adaptive
+    // transparency slider was capped at 50), surface its current value, and restore to 25.
+    void PpeCapSliderSpansFullRangeAndRestoresDefault()
+    {
+        Core::QuickConnect::Controller quickConnect{
+            std::make_shared<Core::QuickConnect::NullBackend>()};
+        Gui::SettingsWindow settings{[] { return 0; }, quickConnect};
+
+        auto *slider = settings.findChild<QSlider *>("hsPpeCapLevel");
+        QVERIFY2(slider != nullptr, "Settings must expose the PPE cap slider");
+        QCOMPARE(slider->minimum(), 0);
+        QVERIFY2(slider->maximum() == 100, "The PPE cap slider must allow the full 0-100 range");
+        QCOMPARE(slider->value(), 25);
+
+        auto *valueLabel = settings.findChild<QLabel *>("lblPpeCapLevelValue");
+        QVERIFY(valueLabel != nullptr);
+        QCOMPARE(valueLabel->text(), QString{"25"});
+
+        slider->setValue(75);
+        QCOMPARE(valueLabel->text(), QString{"75"});
+        QCOMPARE(Core::Settings::GetCurrent().ppe_cap_level, uint8_t{75});
+
+        auto *buttonBox = settings.findChild<QDialogButtonBox *>("buttonBox");
+        QVERIFY(buttonBox != nullptr);
+        buttonBox->button(QDialogButtonBox::RestoreDefaults)->click();
+        QCOMPARE(slider->value(), 25);
+        QCOMPARE(valueLabel->text(), QString{"25"});
+        QCOMPARE(Core::Settings::GetCurrent().ppe_cap_level, uint8_t{25});
     }
 
     void ConnectionSuccessOpensBatteryWindowAndDismissesNotification()

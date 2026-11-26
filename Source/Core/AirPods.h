@@ -89,7 +89,7 @@ struct State {
     std::optional<AAP::PersonalizedVolumeState> personalizedVolume;
     std::optional<AAP::LoudSoundReductionState> loudSoundReduction;
     std::optional<bool> automaticEarDetectionEnabled;
-    std::optional<uint8_t> adaptiveTransparencyLevel;
+    std::optional<uint8_t> ppeCapLevel;
 
     bool operator==(const State &rhs) const = default;
 };
@@ -233,7 +233,7 @@ public:
     void OnConversationalAwarenessVolumePercentChanged(uint8_t percent);
     void OnPersonalizedVolumeChanged(bool enable);
     void OnLoudSoundReductionChanged(bool enable);
-    void OnAdaptiveTransparencyLevelChanged(uint8_t level);
+    void OnPpeCapLevelChanged(uint8_t level);
     void OnNoiseControlModeChanged(AAP::NoiseControlMode mode);
 
     // AAP Protocol features
@@ -245,8 +245,8 @@ public:
     std::optional<AAP::PersonalizedVolumeState> GetPersonalizedVolumeState() const;
     bool SetLoudSoundReduction(bool enable);
     std::optional<AAP::LoudSoundReductionState> GetLoudSoundReductionState() const;
-    bool SetAdaptiveTransparencyLevel(uint8_t level);
-    std::optional<uint8_t> GetAdaptiveTransparencyLevel() const;
+    bool SetPpeCapLevel(uint8_t level);
+    std::optional<uint8_t> GetPpeCapLevel() const;
     bool SetAdaptiveNoiseLevel(uint8_t level);
     bool IsAAPConnected() const;
 
@@ -281,7 +281,7 @@ private:
     std::atomic<uint8_t> _conversationalAwarenessVolumePercent{40};
     std::atomic<bool> _personalizedVolumeEnabled{false};
     std::atomic<bool> _loudSoundReductionEnabled{false};
-    std::atomic<uint8_t> _adaptiveTransparencyLevel{25};
+    std::atomic<uint8_t> _ppeCapLevel{AAP::kPpeCapLevelDefault};
     std::atomic<int> _currentNoiseControlMode{-1};
     uint64_t _requestedDeviceAddress{0};
     std::jthread _deviceLookupThread;
@@ -328,7 +328,7 @@ private:
     void
     OnLoudSoundReductionStateChanged(AAP::LoudSoundReductionState state, AAP::AAPAttempt attempt);
     void OnAutomaticEarDetectionNotification(bool enabled, AAP::AAPAttempt attempt);
-    void OnAdaptiveTransparencyLevelNotification(uint8_t level, AAP::AAPAttempt attempt);
+    void OnPpeCapLevelNotification(uint8_t level, AAP::AAPAttempt attempt);
     void OnSpeakingLevelChanged(AAP::SpeakingLevel level, AAP::AAPAttempt attempt);
     void OnEarDetectionChanged(
         AAP::EarStatus primary, AAP::EarStatus secondary, AAP::AAPAttempt attempt);

@@ -145,13 +145,12 @@ void OnApply_loud_sound_reduction(const Fields &newFields)
     });
 }
 
-void OnApply_adaptive_transparency_level(const Fields &newFields)
+void OnApply_ppe_cap_level(const Fields &newFields)
 {
-    LOG(Info, "OnApply_adaptive_transparency_level: {}", newFields.adaptive_transparency_level);
+    LOG(Info, "OnApply_ppe_cap_level: {}", newFields.ppe_cap_level);
 
-    Impl::NotifyApplyObserver([&](ApplyObserver &observer) {
-        observer.OnAdaptiveTransparencyLevelChanged(newFields.adaptive_transparency_level);
-    });
+    Impl::NotifyApplyObserver(
+        [&](ApplyObserver &observer) { observer.OnPpeCapLevelChanged(newFields.ppe_cap_level); });
 }
 
 void OnApply_noise_control_mode(const Fields &newFields)

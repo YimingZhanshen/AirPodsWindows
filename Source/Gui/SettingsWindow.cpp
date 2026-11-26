@@ -297,9 +297,9 @@ SettingsWindow::SettingsWindow(
             }
         });
 
-    connect(_ui.hsAdaptiveTransparencyLevel, &QSlider::valueChanged, this, [this](int value) {
+    connect(_ui.hsPpeCapLevel, &QSlider::valueChanged, this, [this](int value) {
         if (_trigger) {
-            On_hsAdaptiveTransparencyLevel_valueChanged(value);
+            On_hsPpeCapLevel_valueChanged(value);
         }
     });
 
@@ -409,8 +409,7 @@ void SettingsWindow::UpdateDescriptions()
         constMetaFields.conversational_awareness.Description());
     _ui.lbDescPersonalizedVolume->setText(constMetaFields.personalized_volume.Description());
     _ui.lbDescLoudSoundReduction->setText(constMetaFields.loud_sound_reduction.Description());
-    _ui.lbDescAdaptiveTransparencyLevel->setText(
-        constMetaFields.adaptive_transparency_level.Description());
+    _ui.lbDescPpeCapLevel->setText(constMetaFields.ppe_cap_level.Description());
 
     // The About text carries a hard-coded link colour inside the (translated) HTML; swap it
     // for the theme accent so it stays readable in dark mode.
@@ -616,7 +615,8 @@ void SettingsWindow::Update(const Fields &fields, bool trigger)
         _ui.cbNoiseControlMode->setCurrentIndex(noiseControlIndex);
     }
 
-    _ui.hsAdaptiveTransparencyLevel->setValue(fields.adaptive_transparency_level);
+    _ui.hsPpeCapLevel->setValue(fields.ppe_cap_level);
+    _ui.lblPpeCapLevelValue->setText(QString::number(fields.ppe_cap_level));
 
     _ui.hsMaxReceivingRange->setValue(-fields.rssi_min);
 
@@ -828,9 +828,10 @@ void SettingsWindow::On_cbNoiseControlMode_currentIndexChanged(int index)
     ModifiableAccess()->noise_control_mode = static_cast<uint32_t>(index + 1);
 }
 
-void SettingsWindow::On_hsAdaptiveTransparencyLevel_valueChanged(int value)
+void SettingsWindow::On_hsPpeCapLevel_valueChanged(int value)
 {
-    ModifiableAccess()->adaptive_transparency_level = value;
+    _ui.lblPpeCapLevelValue->setText(QString::number(value));
+    ModifiableAccess()->ppe_cap_level = static_cast<uint8_t>(value);
 }
 
 void SettingsWindow::On_hsMaxReceivingRange_valueChanged(int value)

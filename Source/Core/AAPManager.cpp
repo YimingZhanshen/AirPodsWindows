@@ -438,33 +438,31 @@ std::optional<LoudSoundReductionState> Manager::GetLoudSoundReductionState() con
     return _loudSoundReductionState;
 }
 
-bool Manager::SetAdaptiveTransparencyLevel(uint8_t level)
+bool Manager::SetPpeCapLevel(uint8_t level)
 {
     if (!_connected) {
-        LOG(Warn, "AAP: Cannot set adaptive transparency level - not connected");
+        LOG(Warn, "AAP: Cannot set PPE cap level - not connected");
         return false;
     }
 
     // Control command 0x38 is PPE (hearing-protection) cap level, range 0-100 per
-    // Docs/AAP-Protocol-Spec.md §7. The name and the UI label ("adaptive transparency") are
-    // corrected in the terminology sweep; the wire format here is already per spec.
-    if (level > 100) {
-        level = 100;
-    }
+    // Docs/AAP-Protocol-Spec.md §7. Values outside the documented range (including stale
+    // pre-P5 inputs from the old 0-50 adaptive-transparency UI) clamp at the domain edge.
+    level = NormalizePpeCapLevel(level);
 
     auto packet = Packets::BuildPpeCapLevelPacket(level);
     if (!SendPacket(packet)) {
         return false;
     }
 
-    LOG(Info, "AAP: Set PPE cap level (UI: adaptive transparency) to {}", level);
+    LOG(Info, "AAP: Set PPE cap level to {}", level);
     return true;
 }
 
-std::optional<uint8_t> Manager::GetAdaptiveTransparencyLevel() const
+std::optional<uint8_t> Manager::GetPpeCapLevel() const
 {
     std::lock_guard<std::mutex> lock{_mutex};
-    return _adaptiveTransparencyLevel;
+    return _ppeCapLevel;
 }
 
 bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
@@ -806,17 +804,17 @@ void Manager::ProcessPacket(
         return;
     }
 
-    // Adaptive transparency level notification
-    if (IsAdaptiveTransparencyLevelNotification(packet)) {
-        auto level = ParseAdaptiveTransparencyLevel(packet);
+    // PPE cap level notification (control 0x38)
+    if (IsPpeCapLevelNotification(packet)) {
+        auto level = ParsePpeCapLevel(packet);
         if (level.has_value()) {
             {
                 std::lock_guard<std::mutex> lock{_mutex};
-                _adaptiveTransparencyLevel = level;
+                _ppeCapLevel = level;
             }
-            LOG(Info, "AAP: Adaptive transparency level: {}", level.value());
-            if (callbacks.onAdaptiveTransparencyLevelChanged) {
-                callbacks.onAdaptiveTransparencyLevelChanged(level.value(), attempt);
+            LOG(Info, "AAP: PPE cap level: {}", level.value());
+            if (callbacks.onPpeCapLevelChanged) {
+                callbacks.onPpeCapLevelChanged(level.value(), attempt);
             }
         }
         return;

@@ -470,9 +470,9 @@ void ApdApplication::OnLoudSoundReductionChanged(bool enable)
     _airPodsManager->OnLoudSoundReductionChanged(enable);
 }
 
-void ApdApplication::OnAdaptiveTransparencyLevelChanged(uint8_t level)
+void ApdApplication::OnPpeCapLevelChanged(uint8_t level)
 {
-    _airPodsManager->OnAdaptiveTransparencyLevelChanged(level);
+    _airPodsManager->OnPpeCapLevelChanged(level);
 }
 
 void ApdApplication::OnNoiseControlModeChanged(uint32_t mode)

@@ -53,7 +53,7 @@ public:
     virtual void OnConversationalAwarenessVolumePercentChanged(uint8_t percent) = 0;
     virtual void OnPersonalizedVolumeChanged(bool enable) = 0;
     virtual void OnLoudSoundReductionChanged(bool enable) = 0;
-    virtual void OnAdaptiveTransparencyLevelChanged(uint8_t level) = 0;
+    virtual void OnPpeCapLevelChanged(uint8_t level) = 0;
     virtual void OnNoiseControlModeChanged(uint32_t mode) = 0;
     virtual void OnRssiMinChanged(int16_t rssiMin) = 0;
     virtual void OnDeviceAddressChanged(uint64_t address) = 0;
@@ -71,6 +71,13 @@ void SetRepository(std::unique_ptr<Repository> repository);
 // TODO: in [v1.0.0] [kFieldsAbiVersion = 2]
 //        - Rename `tray_icon_battery` to `battery_on_tray_icon`
 
+// P5: `adaptive_transparency_level` is retired. Its UI once exposed a 0-50 "adaptive
+// transparency" scale, but AAP wire control 0x38 is a PPE (hearing-protection) cap, 0-100.
+// The old key is never migrated, scaled, or reused as the new cap: `Impl::Deprecated()`
+// drops the OnApply hook so any stored legacy value stays inert, and the next Save()
+// removes the key (same lifecycle as `reduce_loud_sounds`). Only-append field list plus
+// name-based repository keys => old files keep loading under `kFieldsAbiVersion` 1.
+//
 // clang-format off
 #define SETTINGS_FIELDS(callback)                                                                  \
     callback(QString, language_locale, {}, Impl::OnApply(&OnApply_language_locale))                \
@@ -95,8 +102,9 @@ void SetRepository(std::unique_ptr<Repository> repository);
     callback(bool, loud_sound_reduction, {false},                                                  \
         Impl::OnApply(&OnApply_loud_sound_reduction),                                              \
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Protects your hearing by reducing loud sounds.")})                 \
-    callback(uint8_t, adaptive_transparency_level, {25},                                           \
-        Impl::OnApply(&OnApply_adaptive_transparency_level),                                       \
+    callback(uint8_t, adaptive_transparency_level, {25}, Impl::Deprecated())                       \
+    callback(uint8_t, ppe_cap_level, {25},                                                         \
+        Impl::OnApply(&OnApply_ppe_cap_level),                                                     \
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Caps how loud loud sounds get, for hearing protection (0-100).")}) \
     callback(uint32_t, noise_control_mode, {1},                                                    \
         Impl::OnApply(&OnApply_noise_control_mode),                                                \
@@ -287,7 +295,7 @@ void OnApply_conversational_awareness(const Fields &newFields);
 void OnApply_conversational_awareness_volume_percent(const Fields &newFields);
 void OnApply_personalized_volume(const Fields &newFields);
 void OnApply_loud_sound_reduction(const Fields &newFields);
-void OnApply_adaptive_transparency_level(const Fields &newFields);
+void OnApply_ppe_cap_level(const Fields &newFields);
 void OnApply_noise_control_mode(const Fields &newFields);
 void OnApply_rssi_min(const Fields &newFields);
 void OnApply_device_address(const Fields &newFields);

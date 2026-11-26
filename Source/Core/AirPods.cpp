@@ -154,8 +154,8 @@ void Manager::SetupAAPCallbacks()
         OnAutomaticEarDetectionNotification(enabled, attempt);
     };
 
-    callbacks.onAdaptiveTransparencyLevelChanged = [this](uint8_t level, AAP::AAPAttempt attempt) {
-        OnAdaptiveTransparencyLevelNotification(level, attempt);
+    callbacks.onPpeCapLevelChanged = [this](uint8_t level, AAP::AAPAttempt attempt) {
+        OnPpeCapLevelNotification(level, attempt);
     };
 
     callbacks.onSpeakingLevelChanged = [this](AAP::SpeakingLevel level, AAP::AAPAttempt attempt) {
@@ -823,14 +823,14 @@ std::optional<AAP::LoudSoundReductionState> Manager::GetLoudSoundReductionState(
     return _aapMgr.GetLoudSoundReductionState();
 }
 
-bool Manager::SetAdaptiveTransparencyLevel(uint8_t level)
+bool Manager::SetPpeCapLevel(uint8_t level)
 {
-    return _aapMgr.SetAdaptiveTransparencyLevel(level);
+    return _aapMgr.SetPpeCapLevel(level);
 }
 
-std::optional<uint8_t> Manager::GetAdaptiveTransparencyLevel() const
+std::optional<uint8_t> Manager::GetPpeCapLevel() const
 {
-    return _aapMgr.GetAdaptiveTransparencyLevel();
+    return _aapMgr.GetPpeCapLevel();
 }
 
 bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
@@ -912,13 +912,15 @@ void Manager::OnLoudSoundReductionChanged(bool enable)
     }
 }
 
-void Manager::OnAdaptiveTransparencyLevelChanged(uint8_t level)
+void Manager::OnPpeCapLevelChanged(uint8_t level)
 {
     std::lock_guard<std::mutex> lock{_mutex};
-    _adaptiveTransparencyLevel = level;
+    // Clamp at the domain boundary so a non-UI caller cannot bypass the 0-100 range.
+    const auto normalized = AAP::NormalizePpeCapLevel(level);
+    _ppeCapLevel = normalized;
 
     if (_aapMgr.IsConnected()) {
-        _aapMgr.SetAdaptiveTransparencyLevel(level);
+        _aapMgr.SetPpeCapLevel(normalized);
     }
 }
 
@@ -980,12 +982,12 @@ void Manager::OnAutomaticEarDetectionNotification(bool enabled, AAP::AAPAttempt 
     LOG(Info, "Automatic ear detection notification: {}", enabled ? "enabled" : "disabled");
 }
 
-void Manager::OnAdaptiveTransparencyLevelNotification(uint8_t level, AAP::AAPAttempt attempt)
+void Manager::OnPpeCapLevelNotification(uint8_t level, AAP::AAPAttempt attempt)
 {
     if (!IsCurrentAAPAttempt(attempt)) {
         return;
     }
-    LOG(Info, "Adaptive transparency level changed to: {}", level);
+    LOG(Info, "PPE cap level notification: {}", level);
 }
 
 void Manager::OnAttProbeResult(AAP::AttPathState state, AAP::AAPAttempt attempt)
