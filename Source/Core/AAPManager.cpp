@@ -31,7 +31,68 @@
 
 namespace Core::AAP {
 
-Manager::Manager() = default;
+namespace {
+
+// Blueprint 0.3: how long a single ATT read may stay outstanding. The boundary is
+// half-open on purpose (Att::PendingReadTracker::WindowElapsed): a frame that arrives at
+// t0+499 still answers the request, one at t0+500 or later belongs to no live request.
+// The lazy resolution in GetAttPathState() and the reader path share that one rule.
+constexpr int64_t kAttProbeWindowMs = 500;
+
+const char *DescribeFailure(ConnectFailure failure)
+{
+    switch (failure) {
+    case ConnectFailure::None:
+        return "no failure recorded";
+    case ConnectFailure::DriverMissing:
+        return "MagicAAP driver unavailable";
+    case ConnectFailure::ServiceUnavailable:
+        return "device does not expose the AAP service";
+    case ConnectFailure::TransportError:
+        return "transport could not be established";
+    case ConnectFailure::HandshakeFailure:
+        return "AAP handshake did not complete";
+    }
+    return "unknown failure";
+}
+
+// Returns the diagnostics recorder to the preconnect phase when a Connect call ends
+// without an established session; Disconnect() and the reader's unexpected end are the
+// matching end points for a live one. Without it the next advertisement match would be
+// attributed to the attempt that already failed, and the report would lose the evidence
+// that the device was seen again.
+class AttemptPhaseGuard
+{
+public:
+    explicit AttemptPhaseGuard(AAPAttempt attempt) : _attempt(attempt) {}
+
+    void Succeeded() noexcept
+    {
+        _live = true;
+    }
+
+    ~AttemptPhaseGuard()
+    {
+        if (!_live) {
+            Diagnostics::Recorder::Instance().EndAttempt(_attempt.generation);
+        }
+    }
+
+private:
+    AAPAttempt _attempt;
+    bool _live{false};
+};
+
+} // namespace
+
+Manager::Manager()
+    : _steadyMillis{[] {
+          return std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now().time_since_epoch())
+              .count();
+      }}
+{
+}
 
 Manager::~Manager()
 {
@@ -91,6 +152,14 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         _connectStop = std::stop_source{};
         callbacks = _callbacks;
 
+        // Every session starts with its own ATT reservation slot and its own acknowledgement
+        // bookkeeping; nothing carried over from a retired generation may survive into it.
+        _attPathState = AttPathState::Unknown;
+        _attPendingRead.Clear();
+        _handshakeAckObserved = false;
+        _featureFlagsAckObserved = false;
+        _featureFlagsEnabled = false;
+
         // A natural EOF intentionally leaves its reader joinable. Retire it before creating the
         // replacement so assignment can never destroy a live thread.
         _readerStop.request_stop();
@@ -114,9 +183,13 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         return false;
     }
 
-    Diagnostics::Recorder::Instance().Reset();
-    Diagnostics::Recorder::Instance().Record(
-        Diagnostics::Step::TransportConnect, true, "connect attempt started");
+    // BeginAttempt resets the recorder before this generation opens. AdvertisementMatched is
+    // recorded afterwards so it cannot be erased by that reset or attributed to an old session.
+    Diagnostics::Recorder::Instance().BeginAttempt(attempt.generation);
+    Diagnostics::Recorder::Instance().RecordForAttempt(
+        attempt.generation, Diagnostics::Step::AdvertisementMatched, true,
+        "address=" + Diagnostics::Recorder::MaskAddress(attempt.address));
+    AttemptPhaseGuard attemptPhase{attempt};
 
     ConnectFailure failure = ConnectFailure::None;
     auto transport = ConnectTransport(attempt, stopToken, failure);
@@ -130,10 +203,17 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         }
     }
     if (!transport) {
-        std::lock_guard lock{_mutex};
-        if (_connecting) {
-            _connecting = false;
+        {
+            std::lock_guard lock{_mutex};
+            if (_connecting) {
+                _connecting = false;
+            }
         }
+        // Only a transport that really came up is recorded as connected; the reason is the
+        // one ConnectTransport determined, never a generic "started".
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::TransportConnect, false,
+            DescribeFailure(failure));
         LOG(Error, "AAP: All supported transport methods failed");
         return false;
     }
@@ -143,9 +223,13 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         _transport.store(transport);
         _usingMagicAAP = transport->Kind() == AAPTransportKind::MagicAAP;
     }
+    Diagnostics::Recorder::Instance().RecordForAttempt(
+        attempt.generation, Diagnostics::Step::TransportConnect, true,
+        transport->Kind() == AAPTransportKind::MagicAAP ? "MagicAAP device interface established"
+                                                        : "L2CAP SEQPACKET link established");
     LOG(Info, "AAP: Transport connected; starting handshake");
 
-    const bool initialized = InitializeConnection(transport, stopToken);
+    const bool initialized = InitializeConnection(attempt, stopToken);
     const bool connectionCancelled = cancelled();
     if (!initialized || connectionCancelled) {
         transport->Close();
@@ -181,6 +265,9 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
     if (callbacks.onConnected) {
         callbacks.onConnected(attempt);
     }
+    // The session is live: Disconnect() (or the reader noticing EOF) now owns the end of the
+    // diagnostic sequence, not this guard.
+    attemptPhase.Succeeded();
     return true;
 }
 
@@ -226,18 +313,19 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
     if (!MagicAAPWinRT::MagicAAPWinRTClient::IsDriverInstalled()) {
         LOG(Info, "AAP: MagicAAP driver not installed");
         failure = ConnectFailure::DriverMissing;
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::DriverOpen, false, "driver not installed");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::DriverOpen, false, "driver not installed");
         return nullptr;
     }
     if (!MagicAAPWinRT::MagicAAPWinRTClient::IsDriverRunning()) {
         LOG(Warn, "AAP: MagicAAP driver installed but not running");
         failure = ConnectFailure::DriverMissing;
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::DriverOpen, false, "driver not running");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::DriverOpen, false, "driver not running");
         return nullptr;
     }
-    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::DriverOpen, true);
+    Diagnostics::Recorder::Instance().RecordForAttempt(
+        attempt.generation, Diagnostics::Step::DriverOpen, true, "driver installed and running");
 
     auto magicAAP = _transportFactory
                         ? _transportFactory(AAPTransportKind::MagicAAP)
@@ -249,6 +337,13 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
         failure = ConnectFailure::None;
         return magicAAP;
     }
+    // The step is named DriverOpen, so it is only satisfied once the device interface was
+    // actually handed to us; a rejected open must not look like a successful one.
+    Diagnostics::Recorder::Instance().RecordForAttempt(
+        attempt.generation, Diagnostics::Step::DriverOpen, false,
+        stopToken.stop_requested() || _connectStop.get_token().stop_requested()
+            ? "device interface open cancelled"
+            : "device interface open rejected");
     magicAAP->Close();
     failure = ConnectFailure::TransportError;
     return nullptr;
@@ -291,12 +386,19 @@ void Manager::Disconnect()
         _noiseControlMode.reset();
         _conversationalAwarenessState.reset();
         _loudSoundReductionState.reset();
-        _attPathState.store(AttPathState::Unknown);
-        _attProbeDeadlineMs.store(0);
+        _attPathState = AttPathState::Unknown;
+        _attPendingRead.Clear();
+        _handshakeAckObserved = false;
+        _featureFlagsAckObserved = false;
+        _featureFlagsEnabled = false;
     }
 
     LOG(Info, "AAP: Disconnected");
-    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::Disconnect, true);
+    Diagnostics::Recorder::Instance().RecordForAttempt(
+        attempt.generation, Diagnostics::Step::Disconnect, true);
+    // The attempt is over: the next scanner/advertisement events belong to the following
+    // generation, and this one stays in the report as the most recent attempt.
+    Diagnostics::Recorder::Instance().EndAttempt(attempt.generation);
     if (callback) {
         callback(attempt);
     }
@@ -316,6 +418,13 @@ AAPAttempt Manager::GetLastAttempt() const
 bool Manager::IsCurrentAttempt(AAPAttempt attempt) const
 {
     std::lock_guard lock{_mutex};
+    return IsCurrentAttemptLocked(attempt);
+}
+
+bool Manager::IsCurrentAttemptLocked(AAPAttempt attempt) const
+{
+    // Both halves of the session identity have to agree: the same generation number reused
+    // for another device is not the same session.
     return attempt.generation != 0 && _connected && _attempt.address == attempt.address &&
            _attempt.generation == attempt.generation;
 }
@@ -347,6 +456,13 @@ bool Manager::SetConversationalAwareness(bool enable)
     if (!_connected) {
         LOG(Warn, "AAP: Cannot set conversational awareness - not connected");
         return false;
+    }
+    {
+        std::lock_guard lock{_mutex};
+        if (!_featureFlagsEnabled) {
+            LOG(Warn, "AAP: Conversational awareness unavailable, feature flags were not sent");
+            return false;
+        }
     }
 
     auto packet = Packets::BuildConversationalAwarenessPacket(enable);
@@ -420,12 +536,12 @@ bool Manager::SetLoudSoundReduction(bool enable)
         return false;
     }
 
-    // Optimistic local echo: the CCCD (0x1C) does not work, so the firmware
-    // state can only be read back. Follow the write with a read request — when
-    // the ATT path is confirmed the response refreshes the cached state; when
-    // it is not, this frame is simply ignored by the firmware.
+    // The CCCD (0x1C) does not work, so the firmware state can only be read back. The
+    // read-back uses the same single-outstanding reservation as the probe: while a read is
+    // still in flight no second frame is put on the wire, and an unconfirmed ATT path never
+    // gets speculative traffic.
     if (GetAttPathState() == AttPathState::Confirmed) {
-        SendPacket(Att::BuildReadRequest(Att::kLoudSoundReductionHandle));
+        RequestAttRead(GetLastAttempt(), Att::kLoudSoundReductionHandle);
     }
 
     LOG(Info, "AAP: Set loud sound reduction to {}", enable ? "enabled" : "disabled");
@@ -443,6 +559,13 @@ bool Manager::SetPpeCapLevel(uint8_t level)
     if (!_connected) {
         LOG(Warn, "AAP: Cannot set PPE cap level - not connected");
         return false;
+    }
+    {
+        std::lock_guard lock{_mutex};
+        if (!_featureFlagsEnabled) {
+            LOG(Warn, "AAP: PPE/adaptive controls unavailable, feature flags were not sent");
+            return false;
+        }
     }
 
     // Control command 0x38 is PPE (hearing-protection) cap level, range 0-100 per
@@ -470,6 +593,13 @@ bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
     if (!_connected) {
         LOG(Warn, "AAP: Cannot set adaptive noise level - not connected");
         return false;
+    }
+    {
+        std::lock_guard lock{_mutex};
+        if (!_featureFlagsEnabled) {
+            LOG(Warn, "AAP: Adaptive noise unavailable, feature flags were not sent");
+            return false;
+        }
     }
 
     if (level > 100) {
@@ -537,138 +667,277 @@ void Manager::SetCallbacks(Callbacks callbacks)
 }
 
 //////////////////////////////////////////////////
-// ATT path probe (blueprint 0.3)
+// ATT path probe (blueprint 0.3 / P3)
 //
 
 AttPathState Manager::GetAttPathState() const
 {
-    auto state = _attPathState.load();
-    if (state == AttPathState::Pending) {
-        // Lazily resolve the probe outcome once its 500ms window has passed;
-        // no probe thread, no timers — whoever asks gets the final answer.
-        auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                         std::chrono::steady_clock::now().time_since_epoch())
-                         .count();
-        if (nowMs >= _attProbeDeadlineMs.load()) {
-            _attPathState.store(AttPathState::Unconfirmed);
-            Diagnostics::Recorder::Instance().Record(
-                Diagnostics::Step::AttProbe, false, "no ATT answer within 500ms");
+    bool windowElapsed = false;
+    AttPathState state = AttPathState::Unknown;
+    AAPAttempt attempt;
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        attempt = _attempt;
+        state = _attPathState;
+        // Lazily resolve a probe whose window has closed: whoever asks first gets the final
+        // answer, so no thread or timer is needed. ClearIfElapsed uses the same half-open
+        // rule as the reader path, and a confirmed path is never downgraded by a later
+        // read-back that happens to time out. A Pending state with no live reservation can
+        // only mean the window elapsed, so it cannot get stuck.
+        _attPendingRead.ClearIfElapsed(_steadyMillis());
+        if (state == AttPathState::Pending && !_attPendingRead.HasPending()) {
+            _attPathState = AttPathState::Unconfirmed;
             state = AttPathState::Unconfirmed;
+            windowElapsed = true;
         }
+    }
+    if (windowElapsed) {
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::AttProbe, false, "no ATT answer within 500ms");
     }
     return state;
 }
 
-void Manager::StartAttProbe(
-    const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken)
+bool Manager::MarkAttConfirmedLocked()
 {
-    // One-shot probe: ask for the loud-sound-reduction value. Any ATT answer
-    // (even an error response) proves the firmware accepts ATT on this pipe;
-    // no answer within the window marks the path unconfirmed. Never retried.
-    auto packet = Att::BuildReadRequest(Att::kLoudSoundReductionHandle);
-    if (!SendPacket(transport, packet, stopToken)) {
-        _attPathState.store(AttPathState::Unconfirmed);
-        Diagnostics::Recorder::Instance().Record(Diagnostics::Step::AttProbe, false, "send failed");
-        return;
+    // Only the first answer is an event the UI has to hear; a later read-back refreshes the
+    // cached value without re-announcing that the ATT path works.
+    const bool firstConfirmation = _attPathState != AttPathState::Confirmed;
+    _attPathState = AttPathState::Confirmed;
+    return firstConfirmation;
+}
+
+bool Manager::RequestAttRead(AAPAttempt attempt, uint16_t handle)
+{
+    const int64_t nowMs = _steadyMillis();
+    Att::PendingReadTracker::StartResult start = Att::PendingReadTracker::StartResult::Rejected;
+    bool announcesProbe = false;
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        if (!IsActiveAttemptLocked(attempt)) {
+            return false;
+        }
+        start = _attPendingRead.Start(attempt, handle, nowMs + kAttProbeWindowMs, nowMs);
+        if (start == Att::PendingReadTracker::StartResult::Started) {
+            // The reservation and the Pending state are installed in the same critical
+            // section, before the request is written. A device that answers immediately is
+            // therefore already attributable, and the observable state can never be written
+            // back to Pending after a response has confirmed it.
+            announcesProbe = _attPathState != AttPathState::Confirmed;
+            if (announcesProbe) {
+                _attPathState = AttPathState::Pending;
+            }
+        }
+    }
     }
 
-    auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                     std::chrono::steady_clock::now().time_since_epoch())
-                     .count();
-    _attProbeDeadlineMs.store(nowMs + 500);
-    _attPathState.store(AttPathState::Pending);
-    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::AttProbe, true, "probe sent");
-    LOG(Info, "AAP: Sent ATT probe (read handle 0x{:02X}), waiting up to 500ms",
-        Att::kLoudSoundReductionHandle);
+    if (start == Att::PendingReadTracker::StartResult::Rejected) {
+        LOG(Warn, "AAP: ATT read of handle 0x{:02X} deferred, another read is outstanding",
+            static_cast<int>(handle));
+        return false;
+    }
+    if (start == Att::PendingReadTracker::StartResult::AlreadyPending) {
+        // Idempotent repeat: the original request still owns the one window, so no second
+        // frame and no second deadline are added to the session.
+        LOG(Trace, "AAP: ATT read of handle 0x{:02X} already outstanding",
+            static_cast<int>(handle));
+        return true;
+    }
+
+    if (!SendPacket(Att::BuildReadRequest(handle), attempt)) {
+        bool reportSendFailure = false;
+        {
+            std::lock_guard<std::mutex> lock{_mutex};
+            // Release only the reservation this call made. A response that arrived in the
+            // meantime already consumed it and confirmed the path, which must survive a
+            // failed follow-up read.
+            if (_attPendingRead.ReleaseIf(attempt, handle) && announcesProbe) {
+                _attPathState = AttPathState::Unconfirmed;
+                reportSendFailure = true;
+            }
+        }
+        if (reportSendFailure) {
+            Diagnostics::Recorder::Instance().RecordForAttempt(
+                attempt.generation, Diagnostics::Step::AttProbe, false, "send failed");
+        }
+        LOG(Warn, "AAP: Failed to send ATT probe (read handle 0x{:02X})", static_cast<int>(handle));
+        return false;
+    }
+
+    if (announcesProbe && GetAttPathState() == AttPathState::Pending) {
+        // An immediate response may already have confirmed the path inside Send(). In that
+        // case no later "waiting" line is emitted after the confirmation.
+        Diagnostics::Recorder::Instance().RecordPendingForAttempt(
+            attempt.generation, Diagnostics::Step::AttProbe, "probe sent, waiting up to 500ms");
+        LOG(Info, "AAP: Sent ATT probe (read handle 0x{:02X}), waiting up to 500ms",
+            static_cast<int>(handle));
+    }
+    else {
+        LOG(Debug, "AAP: Read back ATT handle 0x{:02X}", static_cast<int>(handle));
+    }
+    return true;
+}
+
+void Manager::StartAttProbe(AAPAttempt attempt)
+{
+    // One-shot probe for the session: ask for the loud-sound-reduction value. Any ATT answer
+    // (even an error response) proves the firmware accepts ATT on this pipe; no answer inside
+    // the window marks the path unconfirmed, and the probe is never retried.
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        if (!IsActiveAttemptLocked(attempt) || _attPathState != AttPathState::Unknown ||
+            _attPendingRead.HasPending())
+        {
+            return;
+        }
+    }
+    RequestAttRead(attempt, Att::kLoudSoundReductionHandle);
 }
 
 void Manager::ProcessAttFrame(
     const std::vector<uint8_t> &packet, AAPAttempt attempt, const Callbacks &callbacks)
 {
-    if (!IsCurrentAttempt(attempt)) {
-        return;
-    }
+    const int64_t nowMs = _steadyMillis();
+    std::optional<AttPathState> probeEvent;
+    std::optional<LoudSoundReductionState> valueEvent;
+    const char *confirmReason = nullptr;
 
-    // Read response (0x0B): we only ever issue one kind of read — handle 0x1B —
-    // so the value belongs to loud sound reduction.
-    if (Att::IsReadResponse(packet)) {
-        auto previous = _attPathState.exchange(AttPathState::Confirmed);
-        if (previous != AttPathState::Confirmed && callbacks.onAttProbeResult) {
-            callbacks.onAttProbeResult(AttPathState::Confirmed, attempt);
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        // A frame from a retired session is dropped before it can touch anything: neither the
+        // probe state, the cached value, nor the diagnostic log may be written on behalf of
+        // an attempt that is no longer current.
+        if (!IsActiveAttemptLocked(attempt)) {
+            return;
         }
-        Diagnostics::Recorder::Instance().Record(Diagnostics::Step::AttProbe, true, "confirmed");
-        LOG(Info, "AAP: ATT path confirmed (read response, {} value bytes)", packet.size() - 1);
+        _attPendingRead.ClearIfElapsed(nowMs);
 
-        auto value = Att::ParseReadResponse(packet);
-        if (value.has_value() && !value->empty()) {
-            std::optional<LoudSoundReductionState> state;
-            if ((*value)[0] == 0x01) {
-                state = LoudSoundReductionState::Enabled;
+        if (Att::IsReadResponse(packet)) {
+            // The frame carries no handle, so it may only be attributed to the read this
+            // session still has outstanding. An unasked-for read response is not proof that
+            // ATT works and must never be read as the loud-sound-reduction value.
+            if (_attPendingRead.Match(attempt, std::nullopt, nowMs) !=
+                Att::PendingReadTracker::MatchResult::Matched)
+            {
+                LOG(Warn, "AAP: Dropped unattributed ATT read response ({} value bytes)",
+                    packet.size() - 1);
+                return;
             }
-            else if ((*value)[0] == 0x00) {
-                state = LoudSoundReductionState::Disabled;
+            const std::optional<uint16_t> requested = _attPendingRead.Handle();
+            _attPendingRead.Clear();
+            if (MarkAttConfirmedLocked()) {
+                probeEvent = AttPathState::Confirmed;
+                confirmReason = "confirmed by read response";
             }
-            if (state.has_value()) {
-                {
-                    std::lock_guard<std::mutex> lock{_mutex};
-                    _loudSoundReductionState = state;
-                }
-                if (callbacks.onLoudSoundReductionChanged) {
-                    callbacks.onLoudSoundReductionChanged(state.value(), attempt);
-                }
-            }
-        }
-        return;
-    }
+            LOG(Info, "AAP: ATT path confirmed (read response, {} value bytes)", packet.size() - 1);
 
-    // Error response (0x01): the ATT stack answered, so the path itself is
-    // alive even though the value is unavailable.
-    if (Att::IsErrorResponse(packet)) {
-        auto previous = _attPathState.exchange(AttPathState::Confirmed);
-        if (previous != AttPathState::Confirmed && callbacks.onAttProbeResult) {
-            callbacks.onAttProbeResult(AttPathState::Confirmed, attempt);
-        }
-        LOG(Info, "AAP: ATT path confirmed (error response, opcode 0x{:02X}, code 0x{:02X})",
-            packet.size() > 1 ? packet[1] : 0, packet.size() > 4 ? packet[4] : 0);
-        return;
-    }
-
-    // Handle Value Notification (0x1B) for the loud-sound-reduction handle.
-    if (Att::IsNotification(packet)) {
-        auto notification = Att::ParseNotification(packet);
-        if (notification.has_value() && notification->first == Att::kLoudSoundReductionHandle &&
-            !notification->second.empty())
-        {
-            std::optional<LoudSoundReductionState> state;
-            if (notification->second[0] == 0x01) {
-                state = LoudSoundReductionState::Enabled;
-            }
-            else if (notification->second[0] == 0x00) {
-                state = LoudSoundReductionState::Disabled;
-            }
-            if (state.has_value()) {
-                {
-                    std::lock_guard<std::mutex> lock{_mutex};
-                    _loudSoundReductionState = state;
+            // The handle comes from the reservation, never from the response.
+            if (requested.has_value() && *requested == Att::kLoudSoundReductionHandle) {
+                auto value = Att::ParseReadResponse(packet);
+                if (value.has_value() && !value->empty()) {
+                    if ((*value)[0] == 0x01) {
+                        valueEvent = LoudSoundReductionState::Enabled;
+                    }
+                    else if ((*value)[0] == 0x00) {
+                        valueEvent = LoudSoundReductionState::Disabled;
+                    }
                 }
-                LOG(Info, "AAP: Loud sound reduction (ATT notify): {}",
-                    static_cast<int>(state.value()));
-                if (callbacks.onLoudSoundReductionChanged) {
-                    callbacks.onLoudSoundReductionChanged(state.value(), attempt);
+                if (valueEvent.has_value()) {
+                    _loudSoundReductionState = valueEvent;
                 }
             }
+            else {
+                LOG(Warn, "AAP: ATT read response answers handle 0x{:02X}, ignored",
+                    requested.has_value() ? static_cast<int>(*requested) : 0);
+            }
         }
-        return;
+        else if (Att::IsErrorResponse(packet)) {
+            const auto error = Att::ParseErrorResponse(packet);
+            if (!error || error->requestOpcode != Att::kOpcodeReadRequest) {
+                return;
+            }
+            // The error names the request it answers, so it only counts when that handle is
+            // the outstanding read of this session. It proves the ATT stack is reachable but
+            // carries no attribute value: loud sound reduction keeps whatever the last
+            // successful read reported.
+            if (_attPendingRead.Match(attempt, error->handle, nowMs) !=
+                Att::PendingReadTracker::MatchResult::Matched)
+            {
+                LOG(Warn, "AAP: Dropped unattributed ATT error response (handle 0x{:02X})",
+                    static_cast<int>(error->handle));
+                return;
+            }
+            _attPendingRead.Clear();
+            if (MarkAttConfirmedLocked()) {
+                probeEvent = AttPathState::Confirmed;
+                confirmReason = "confirmed by error response";
+            }
+            LOG(Info, "AAP: ATT path confirmed (error response, opcode 0x{:02X}, code 0x{:02X})",
+                error->requestOpcode, error->error);
+        }
+        else if (Att::IsNotification(packet)) {
+            // A notification answers no request, so the only attribution available is the
+            // handle it carries: anything other than the loud-sound-reduction handle belongs
+            // to another attribute and is ignored.
+            const auto notification = Att::ParseNotification(packet);
+            if (!notification || notification->first != Att::kLoudSoundReductionHandle ||
+                notification->second.empty())
+            {
+                return;
+            }
+            const uint8_t raw = notification->second[0];
+            if (raw == 0x01) {
+                valueEvent = LoudSoundReductionState::Enabled;
+            }
+            else if (raw == 0x00) {
+                valueEvent = LoudSoundReductionState::Disabled;
+            }
+            else {
+                return;
+            }
+            LOG(Info, "AAP: Loud sound reduction (ATT notify): {}", static_cast<int>(*valueEvent));
+            _loudSoundReductionState = valueEvent;
+        }
     }
+
+    // Diagnostics and callbacks stay outside the state mutex (P2 callback contract).
+    if (probeEvent.has_value()) {
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::AttProbe, true, confirmReason);
+        if (callbacks.onAttProbeResult) {
+            callbacks.onAttProbeResult(*probeEvent, attempt);
+        }
+    }
+    if (valueEvent.has_value() && callbacks.onLoudSoundReductionChanged) {
+        callbacks.onLoudSoundReductionChanged(*valueEvent, attempt);
+    }
+}
+
+bool Manager::IsActiveAttemptLocked(AAPAttempt attempt) const
+{
+    return attempt.generation != 0 && _attempt.address == attempt.address &&
+           _attempt.generation == attempt.generation && (_connected || _connecting);
 }
 
 bool Manager::SendPacket(const std::vector<uint8_t> &packet)
 {
-    if (!_connected) {
-        return false;
+    AAPAttempt attempt;
+    {
+        std::lock_guard lock{_mutex};
+        attempt = _attempt;
     }
+    return SendPacket(packet, attempt);
+}
 
-    return SendPacket(_transport.load(), packet, {});
+    std::shared_ptr<AAPTransport> transport;
+    {
+        std::lock_guard lock{_mutex};
+        if (!IsActiveAttemptLocked(attempt)) {
+            return false;
+        }
+        transport = _transport.load();
+    }
+    return SendPacket(packet, attempt, transport);
 }
 
 bool Manager::SendPacket(
@@ -678,7 +947,20 @@ bool Manager::SendPacket(
     if (!transport || stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
         return false;
     }
-    if (!transport->Send(packet, stopToken)) {
+    return transport->Send(packet, stopToken);
+}
+
+bool Manager::SendPacket(
+    const std::vector<uint8_t> &packet, AAPAttempt attempt,
+    const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken)
+{
+    {
+        std::lock_guard lock{_mutex};
+        if (!IsActiveAttemptLocked(attempt) || _transport.load() != transport) {
+            return false;
+        }
+    }
+    if (!SendPacket(transport, packet, stopToken)) {
         return false;
     }
 
@@ -719,6 +1001,50 @@ void Manager::ProcessPacket(
     // misparsed as settings notifications.
     if (Att::IsAttFrame(packet)) {
         ProcessAttFrame(packet, attempt, callbacks);
+        return;
+    }
+
+    // Handshake ACK (`01 00 04 00`, Docs/AAP-Protocol-Spec.md connection sequence). This
+    // record is the only device-side proof that the handshake was accepted: the line written
+    // on the connect path says "send accepted, ACK unconfirmed" until it arrives on the
+    // current session. Devices that never answer keep the honest wording instead of being
+    // claimed as acknowledged.
+    if (IsHandshakeAck(packet)) {
+        bool firstObservation = false;
+        {
+            std::lock_guard<std::mutex> lock{_mutex};
+            if (!IsCurrentAttemptLocked(attempt)) {
+                return;
+            }
+            firstObservation = !_handshakeAckObserved;
+            _handshakeAckObserved = true;
+        }
+        if (firstObservation) {
+            LOG(Info, "AAP: Handshake acknowledged by the device");
+            Diagnostics::Recorder::Instance().RecordForAttempt(
+                attempt.generation, Diagnostics::Step::Handshake, true, "device ACK observed");
+        }
+        return;
+    }
+
+    // Feature flags ACK (`04 00 04 00 2B 00`): the same rule for the 0x4D packet. Without it
+    // the connection still works, but capabilities such as Adaptive may be answered with
+    // another mode, which the report then shows as unconfirmed rather than assumed.
+    if (IsFeatureFlagsAck(packet)) {
+        bool firstObservation = false;
+        {
+            std::lock_guard<std::mutex> lock{_mutex};
+            if (!IsCurrentAttemptLocked(attempt)) {
+                return;
+            }
+            firstObservation = !_featureFlagsAckObserved;
+            _featureFlagsAckObserved = true;
+        }
+        if (firstObservation) {
+            LOG(Info, "AAP: Feature flags acknowledged by the device");
+            Diagnostics::Recorder::Instance().RecordForAttempt(
+                attempt.generation, Diagnostics::Step::FeatureFlags, true, "device ACK observed");
+        }
         return;
     }
 
@@ -788,19 +1114,14 @@ void Manager::ProcessPacket(
         return;
     }
 
-    // Loud sound reduction notification
-    if (IsLoudSoundReductionNotification(packet)) {
-        auto state = ParseLoudSoundReductionState(packet);
-        if (state.has_value()) {
-            {
-                std::lock_guard<std::mutex> lock{_mutex};
-                _loudSoundReductionState = state;
-            }
-            LOG(Info, "AAP: Loud sound reduction: {}", static_cast<int>(state.value()));
-            if (callbacks.onLoudSoundReductionChanged) {
-                callbacks.onLoudSoundReductionChanged(state.value(), attempt);
-            }
-        }
+    // Volume swipe echo (control identifier 0x25). P3: this is not loud sound reduction, so
+    // the frame is recognised and dropped instead of being pushed into the LSR state. The
+    // project exposes no volume swipe control yet; loud sound reduction only ever changes
+    // through an ATT answer to the outstanding read of handle 0x1B.
+    if (IsVolumeSwipeNotification(packet)) {
+        const auto mode = ParseVolumeSwipeMode(packet);
+        LOG(Trace, "AAP: Volume swipe echo (0x25) mode={}, ignored",
+            mode.has_value() ? static_cast<int>(*mode) : -1);
         return;
     }
 
@@ -885,9 +1206,22 @@ void Manager::ReaderLoop(
         _connected = false;
         _usingMagicAAP = false;
         _transport.store(std::shared_ptr<AAPTransport>{});
+        // The session is over, so its ATT reservation and its unacknowledged handshake
+        // bookkeeping go with it; a later probe belongs to a new generation.
+        _attPathState = AttPathState::Unknown;
+        _attPendingRead.Clear();
+        _handshakeAckObserved = false;
+        _featureFlagsAckObserved = false;
+        _featureFlagsEnabled = false;
         active = _attempt;
         callback = _callbacks.onDisconnected;
     }
+
+    // Unexpected loss closes the diagnostic sequence too, so the next advertisement match is
+    // recorded for the attempt it leads to rather than for the session that just ended.
+    Diagnostics::Recorder::Instance().RecordForAttempt(
+        active.generation, Diagnostics::Step::Disconnect, true, "transport closed by device");
+    Diagnostics::Recorder::Instance().EndAttempt(active.generation);
 
     if (callback) {
         callback(active);
@@ -911,37 +1245,54 @@ bool Manager::WaitCancellable(std::chrono::milliseconds delay, std::stop_token c
 // Protocol timing constants
 constexpr auto kPacketProcessingDelay = std::chrono::milliseconds(100);
 
-bool Manager::InitializeConnection(
-    const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken)
+bool Manager::InitializeConnection(AAPAttempt attempt, std::stop_token stopToken)
 {
     if (stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
         return false;
     }
 
-    // The connection gate remains closed until the handshake completes. Use the pinned
-    // session transport directly; SendPacket would reject these pre-connected packets.
-    if (!SendPacket(transport, Packets::Handshake, stopToken)) {
+    std::shared_ptr<AAPTransport> transport;
+    {
+        std::lock_guard lock{_mutex};
+        if (!IsActiveAttemptLocked(attempt)) {
+            return false;
+        }
+        transport = _transport.load();
+    }
+    // The connection gate remains closed until the handshake completes. Pin this attempt's
+    // transport for every initialization write and retain the caller's cancellation token.
+    if (!SendPacket(Packets::Handshake, attempt, transport, stopToken)) {
         LOG(Error, "AAP: Failed to send handshake");
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::Handshake, false, "send failed");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::Handshake, false, "send failed");
         return false;
     }
     LOG(Info, "AAP: Sent handshake");
-    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::Handshake, true);
+    Diagnostics::Recorder::Instance().RecordPendingForAttempt(
+        attempt.generation, Diagnostics::Step::Handshake, "send accepted, ACK unconfirmed");
 
     if (!WaitCancellable(kPacketProcessingDelay, stopToken)) {
         return false;
     }
 
-    // Enable features (Conversational Awareness, Adaptive Transparency)
-    if (!SendPacket(transport, Packets::EnableFeatures, stopToken)) {
+    // Enable features (Conversational Awareness, Adaptive Transparency). A rejected write
+    // disables capability-dependent commands for this session but leaves basic AAP usable.
+    const bool featuresSent = SendPacket(Packets::EnableFeatures, attempt, transport, stopToken);
+    {
+        std::lock_guard lock{_mutex};
+        _featureFlagsEnabled = featuresSent && IsActiveAttemptLocked(attempt);
+    }
+    if (!featuresSent) {
         LOG(Warn, "AAP: Failed to send enable features packet");
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::FeatureFlags, false, "send failed");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::FeatureFlags, false,
+            "send failed, features degraded (Adaptive may be answered with another mode)");
     }
     else {
         LOG(Info, "AAP: Sent enable features");
-        Diagnostics::Recorder::Instance().Record(Diagnostics::Step::FeatureFlags, true);
+        Diagnostics::Recorder::Instance().RecordPendingForAttempt(
+            attempt.generation, Diagnostics::Step::FeatureFlags, "send accepted, ACK unconfirmed");
+    }
     }
 
     if (!WaitCancellable(kPacketProcessingDelay, stopToken)) {
@@ -949,19 +1300,20 @@ bool Manager::InitializeConnection(
     }
 
     // Request notifications (battery, ear detection, noise control, etc.)
-    if (!SendPacket(transport, Packets::RequestNotifications, stopToken)) {
+    if (!SendPacket(Packets::RequestNotifications, attempt, transport, stopToken)) {
         LOG(Error, "AAP: Failed to send request notifications");
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::NotificationSubscribe, false, "send failed");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::NotificationSubscribe, false, "send failed");
         return false;
     }
     LOG(Info, "AAP: Sent request notifications");
-    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::NotificationSubscribe, true);
+    Diagnostics::Recorder::Instance().RecordPendingForAttempt(
+        attempt.generation, Diagnostics::Step::NotificationSubscribe,
+        "send accepted, ACK unconfirmed");
 
-    // Blueprint 0.3: probe whether the firmware answers ATT frames on this
-    // pipe. Fire-and-forget; the outcome lands in _attPathState and is
-    // surfaced through onAttProbeResult.
-    StartAttProbe(transport, stopToken);
+    // Probe whether the firmware answers ATT frames on this pipe. The reservation is installed
+    // before the write, and initialization is an active attempt even before _connected flips.
+    StartAttProbe(attempt);
 
     return true;
 }
@@ -978,7 +1330,14 @@ bool Manager::IsMagicAAPDriverAvailable()
 // Stub implementation for non-Windows platforms
 namespace Core::AAP {
 
-Manager::Manager() {}
+Manager::Manager()
+    : _steadyMillis{[] {
+          return std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now().time_since_epoch())
+              .count();
+      }}
+{
+}
 Manager::~Manager()
 {
     Disconnect();
@@ -1070,8 +1429,24 @@ AttPathState Manager::GetAttPathState() const
 {
     return AttPathState::Unconfirmed;
 }
-void Manager::StartAttProbe(const std::shared_ptr<AAPTransport> &, std::stop_token) {}
+void Manager::StartAttProbe(AAPAttempt) {}
+bool Manager::RequestAttRead(AAPAttempt, uint16_t)
+{
+    return false;
+}
+bool Manager::MarkAttConfirmedLocked()
+{
+    return false;
+}
 bool Manager::IsCurrentAttempt(AAPAttempt) const
+{
+    return false;
+}
+bool Manager::IsCurrentAttemptLocked(AAPAttempt) const
+{
+    return false;
+}
+bool Manager::IsActiveAttemptLocked(AAPAttempt) const
 {
     return false;
 }
@@ -1085,6 +1460,16 @@ bool Manager::SendPacket(
 {
     return false;
 }
+bool Manager::SendPacket(const std::vector<uint8_t> &, AAPAttempt)
+{
+    return false;
+}
+bool Manager::SendPacket(
+    const std::vector<uint8_t> &, AAPAttempt, const std::shared_ptr<AAPTransport> &,
+    std::stop_token)
+{
+    return false;
+}
 void Manager::ProcessPacket(const std::vector<uint8_t> &) {}
 void Manager::ProcessPacket(const std::vector<uint8_t> &, AAPAttempt, const Callbacks &) {}
 void Manager::ReaderLoop(AAPAttempt, std::shared_ptr<AAPTransport>, std::stop_token, Callbacks) {}
@@ -1092,7 +1477,7 @@ bool Manager::WaitCancellable(std::chrono::milliseconds, std::stop_token)
 {
     return false;
 }
-bool Manager::InitializeConnection(const std::shared_ptr<AAPTransport> &, std::stop_token)
+bool Manager::InitializeConnection(AAPAttempt, std::stop_token)
 {
     return false;
 }

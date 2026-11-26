@@ -43,9 +43,14 @@ namespace Core::AAP {
 // LibrePods sends ATT on a separate PSM 0x001F socket; on Windows we only have
 // the PSM 0x1001 driver pipe, so the path is probed once per connection with a
 // read request to handle 0x1B and the outcome is recorded here.
+//
+// The states are per session: Unknown -> (Pending -> Confirmed | Unconfirmed).
+// An explicit read may retry an Unconfirmed path, but exactly one read may be outstanding
+// at a time (see Att::PendingReadTracker). Once Confirmed, the path stays confirmed for the
+// session: a later read-back that happens to time out says nothing about whether ATT works.
 enum class AttPathState : uint8_t {
     Unknown,    // no probe sent yet (or connection torn down)
-    Pending,    // probe sent, waiting within the 500ms window
+    Pending,    // request on the wire, still inside its 500ms window
     Confirmed,  // firmware answered (read response or error response)
     Unconfirmed // no ATT answer within the probe window
 };
@@ -157,7 +162,9 @@ public:
     static bool IsMagicAAPDriverAvailable();
 
     // ATT path probe result for the current connection (blueprint 0.3).
-    // Lazily flips a pending probe to Unconfirmed once its 500ms window passes.
+    // Lazily resolves a pending probe once its window passes, using the same half-open
+    // deadline rule as the reader path (Att::PendingReadTracker::WindowElapsed), so the
+    // getter and an inbound response cannot disagree about the 499/500/501ms boundary.
     AttPathState GetAttPathState() const;
 
     // Reason the most recent Connect() attempt failed (blueprint 1.3).
@@ -190,12 +197,23 @@ private:
     std::optional<LoudSoundReductionState> _loudSoundReductionState;
     std::optional<uint8_t> _ppeCapLevel;
 
-    // ATT path probe (blueprint 0.3): deadline in steady_clock milliseconds,
-    // 0 when no probe is outstanding. GetAttPathState flips Pending to
-    // Unconfirmed lazily once the deadline passes — no probe thread needed.
-    // mutable: the lazy flip happens inside the const getter.
-    mutable std::atomic<AttPathState> _attPathState{AttPathState::Unknown};
-    mutable std::atomic<int64_t> _attProbeDeadlineMs{0};
+    // ATT path (blueprint 0.3 / P3). Both fields belong to _mutex: the reservation is
+    // installed before the request is written, so a response that overtakes the sender is
+    // still attributable, and the observable state cannot be rewritten to Pending after it
+    // was confirmed. One tracker means one outstanding read and one deadline per session.
+    // mutable: resolving an expired window is a lazy, cache-like update performed by the
+    // const getter, exactly as the previous atomic deadline field was.
+    mutable AttPathState _attPathState{AttPathState::Unknown};
+    mutable Att::PendingReadTracker _attPendingRead;
+
+    // Handshake and feature flags are only acknowledged by the device when its ACK record
+    // has actually been read (AAP.h). Both start false for every attempt and are never
+    // inferred from a successful send.
+    bool _handshakeAckObserved{false};
+    bool _featureFlagsAckObserved{false};
+    // False after a failed feature-flags write. Capability-dependent setters must degrade
+    // rather than emit commands the session never enabled.
+    bool _featureFlagsEnabled{false};
 
     // Why the last Connect() attempt failed; reset to None on success.
     std::atomic<ConnectFailure> _lastConnectFailure{ConnectFailure::None};
@@ -216,26 +234,41 @@ private:
     std::shared_ptr<AAPTransport> _pendingTransport;
 
     // Internal methods
+    // Clock injection keeps ATT deadline tests deterministic; production uses steady_clock.
+    std::function<int64_t()> _steadyMillis;
     bool SendPacket(const std::vector<uint8_t> &packet);
     bool SendPacket(
         const std::shared_ptr<AAPTransport> &transport, const std::vector<uint8_t> &packet,
         std::stop_token stopToken);
+    bool SendPacket(const std::vector<uint8_t> &packet, AAPAttempt attempt);
+    bool SendPacket(
+        const std::vector<uint8_t> &packet, AAPAttempt attempt,
+        const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken = {});
     bool IsCurrentAttempt(AAPAttempt attempt) const;
+    // Requires _mutex; used by the reader path, which already holds it.
+    bool IsCurrentAttemptLocked(AAPAttempt attempt) const;
+    bool IsActiveAttemptLocked(AAPAttempt attempt) const;
     void ProcessPacket(const std::vector<uint8_t> &packet);
     void ProcessPacket(
         const std::vector<uint8_t> &packet, AAPAttempt attempt, const Callbacks &callbacks);
     void ReaderLoop(
         AAPAttempt attempt, std::shared_ptr<AAPTransport> transport, std::stop_token stopToken,
         Callbacks callbacks);
-    bool
-    InitializeConnection(const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken);
+    bool InitializeConnection(AAPAttempt attempt, std::stop_token stopToken);
     bool WaitCancellable(std::chrono::milliseconds delay, std::stop_token callerStop);
     std::shared_ptr<AAPTransport>
     ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, ConnectFailure &failure);
 
-    // ATT path (blueprint 0.3): probe once after the handshake and route ATT
+    // ATT path (blueprint 0.3 / P3): probe once after the handshake and route ATT
     // frames received on the AAP pipe.
-    void StartAttProbe(const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken);
+    void StartAttProbe(AAPAttempt attempt);
+    // Reserves the single outstanding read for `attempt` before writing the request frame.
+    // Repeating it for the same session and handle is idempotent: no second frame, no
+    // second deadline. Returns false when another read still owns the session.
+    bool RequestAttRead(AAPAttempt attempt, uint16_t handle);
+    // Requires _mutex. Moves the probe state to Confirmed and reports whether this is the
+    // transition the callback has to observe.
+    bool MarkAttConfirmedLocked();
     void ProcessAttFrame(
         const std::vector<uint8_t> &packet, AAPAttempt attempt, const Callbacks &callbacks);
 };

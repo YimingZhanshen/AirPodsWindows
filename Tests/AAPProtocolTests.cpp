@@ -59,9 +59,9 @@ private slots:
     void HandshakePacketIsSixteenBytes()
     {
         QCOMPARE(
-            Packets::Handshake,
-            Hex({0x00, 0x00, 0x04, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                 0x00, 0x00}));
+            Packets::Handshake, Hex(
+                                    {0x00, 0x00, 0x04, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00,
+                                     0x00, 0x00, 0x00, 0x00, 0x00, 0x00}));
     }
 
     // Blueprint 0.2: the capability mask is D7 (LibrePods Android/Linux), not the
@@ -69,8 +69,9 @@ private slots:
     void EnableFeaturesSendsD7CapabilityMask()
     {
         QCOMPARE(
-            Packets::EnableFeatures,
-            Hex({0x04, 0x00, 0x04, 0x00, 0x4D, 0x00, 0xD7, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}));
+            Packets::EnableFeatures, Hex(
+                                         {0x04, 0x00, 0x04, 0x00, 0x4D, 0x00, 0xD7, 0x00, 0x00,
+                                          0x00, 0x00, 0x00, 0x00, 0x00}));
     }
 
     void RequestNotificationsSubscribesAllSettings()
@@ -86,8 +87,7 @@ private slots:
 
     void NoiseControlPacketCoversAllModes()
     {
-        struct
-        {
+        struct {
             NoiseControlMode mode;
             uint8_t wire;
         } cases[] = {
@@ -100,7 +100,8 @@ private slots:
         for (const auto &item : cases) {
             auto packet = Packets::BuildNoiseControlPacket(item.mode);
             QCOMPARE(
-                packet, Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, item.wire, 0x00, 0x00, 0x00}));
+                packet,
+                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, item.wire, 0x00, 0x00, 0x00}));
         }
     }
 
@@ -184,24 +185,19 @@ private slots:
     void NoiseControlParserAcceptsAllModes()
     {
         QCOMPARE(
-            ParseNoiseControlNotification(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x01})),
+            ParseNoiseControlNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x01})),
             std::optional(NoiseControlMode::Off));
         QCOMPARE(
-            ParseNoiseControlNotification(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02})),
+            ParseNoiseControlNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02})),
             std::optional(NoiseControlMode::NoiseCancellation));
         QCOMPARE(
-            ParseNoiseControlNotification(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x03})),
+            ParseNoiseControlNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x03})),
             std::optional(NoiseControlMode::Transparency));
         QCOMPARE(
-            ParseNoiseControlNotification(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x04})),
+            ParseNoiseControlNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x04})),
             std::optional(NoiseControlMode::Adaptive));
         QCOMPARE(
-            ParseNoiseControlNotification(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x7F})),
+            ParseNoiseControlNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x7F})),
             std::optional(NoiseControlMode::Unknown));
         QVERIFY(!ParseNoiseControlNotification({0x00}).has_value());
         QVERIFY(!ParseNoiseControlNotification({}).has_value());
@@ -236,8 +232,7 @@ private slots:
         QCOMPARE(
             ParseSpeakingLevel(frame(0x02)),
             std::optional(SpeakingLevel::StartedSpeaking_GreatlyReduce));
-        QCOMPARE(
-            ParseSpeakingLevel(frame(0x03)), std::optional(SpeakingLevel::StoppedSpeaking));
+        QCOMPARE(ParseSpeakingLevel(frame(0x03)), std::optional(SpeakingLevel::StoppedSpeaking));
         for (uint8_t level = 0x04; level <= 0x07; ++level) {
             QCOMPARE(ParseSpeakingLevel(frame(level)), std::optional(SpeakingLevel::Unknown));
         }
@@ -248,21 +243,18 @@ private slots:
         QCOMPARE(
             ParseSpeakingLevel(frame(0x00)),
             std::optional(SpeakingLevel::StartedSpeaking_GreatlyReduce));
-        QVERIFY(!ParseSpeakingLevel(
-                     Hex({0x04, 0x00, 0x04, 0x00, 0x4B, 0x00, 0x02, 0x00, 0x01}))
+        QVERIFY(!ParseSpeakingLevel(Hex({0x04, 0x00, 0x04, 0x00, 0x4B, 0x00, 0x02, 0x00, 0x01}))
                      .has_value());
     }
 
     void EarDetectionParserReadsBothSides()
     {
-        auto result = ParseEarDetection(
-            Hex({0x04, 0x00, 0x04, 0x00, 0x06, 0x00, 0x00, 0x02}));
+        auto result = ParseEarDetection(Hex({0x04, 0x00, 0x04, 0x00, 0x06, 0x00, 0x00, 0x02}));
         QVERIFY(result.has_value());
         QCOMPARE(result->first, EarStatus::InEar);
         QCOMPARE(result->second, EarStatus::InCase);
 
-        auto outOfEar = ParseEarDetection(
-            Hex({0x04, 0x00, 0x04, 0x00, 0x06, 0x00, 0x01, 0x01}));
+        auto outOfEar = ParseEarDetection(Hex({0x04, 0x00, 0x04, 0x00, 0x06, 0x00, 0x01, 0x01}));
         QVERIFY(outOfEar.has_value());
         QCOMPARE(outOfEar->first, EarStatus::OutOfEar);
 
@@ -276,12 +268,10 @@ private slots:
     void PersonalizedVolumeParserAcceptsBothStates()
     {
         QCOMPARE(
-            ParsePersonalizedVolumeState(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x26, 0x01})),
+            ParsePersonalizedVolumeState(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x26, 0x01})),
             std::optional(PersonalizedVolumeState::Enabled));
         QCOMPARE(
-            ParsePersonalizedVolumeState(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x26, 0x02})),
+            ParsePersonalizedVolumeState(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x26, 0x02})),
             std::optional(PersonalizedVolumeState::Disabled));
     }
 
@@ -290,17 +280,15 @@ private slots:
     void AutomaticEarDetectionParserMatches0x0AOnly()
     {
         QCOMPARE(
-            ParseAutomaticEarDetectionState(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0A, 0x01})),
+            ParseAutomaticEarDetectionState(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0A, 0x01})),
             std::optional(true));
         QCOMPARE(
-            ParseAutomaticEarDetectionState(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0A, 0x02})),
+            ParseAutomaticEarDetectionState(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0A, 0x02})),
             std::optional(false));
         // OneBudANCMode echo (the identifier this feature used to misuse) is rejected.
-        QVERIFY(!ParseAutomaticEarDetectionState(
-                     Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x1B, 0x01}))
-                     .has_value());
+        QVERIFY(
+            !ParseAutomaticEarDetectionState(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x1B, 0x01}))
+                 .has_value());
     }
 
     void PpeCapLevelParserReadsLevel()
@@ -312,18 +300,31 @@ private slots:
                      .has_value());
     }
 
-    // Kept for the legacy control path: 0x25 is VolumeSwipeMode, and the parser only
-    // claims to understand the old loud-sound-reduction echo format.
-    void LegacyLoudSoundReductionParserMatches0x25()
+    // P3: control identifier 0x25 is VolumeSwipeMode. It is recognised under that name and
+    // can never produce a LoudSoundReductionState — loud sound reduction only exists on ATT
+    // handle 0x1B. (The retired loud-sound-reduction control parser read this frame as LSR.)
+    void VolumeSwipeIs0x25AndIsNotLoudSoundReduction()
     {
+        const auto enabled =
+            Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x25, 0x01, 0x00, 0x00, 0x00});
+        const auto disabled =
+            Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x25, 0x02, 0x00, 0x00, 0x00});
+
+        QVERIFY(IsVolumeSwipeNotification(enabled));
+        QCOMPARE(ParseVolumeSwipeMode(enabled), std::optional(VolumeSwipeMode::Enabled));
+        QCOMPARE(ParseVolumeSwipeMode(disabled), std::optional(VolumeSwipeMode::Disabled));
+        // The 0x00 used by the loud-sound-reduction ATT value is not a volume swipe state.
         QCOMPARE(
-            ParseLoudSoundReductionState(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x25, 0x01})),
-            std::optional(LoudSoundReductionState::Enabled));
-        QCOMPARE(
-            ParseLoudSoundReductionState(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x25, 0x00})),
-            std::optional(LoudSoundReductionState::Disabled));
+            ParseVolumeSwipeMode(
+                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x25, 0x00, 0x00, 0x00, 0x00})),
+            std::optional(VolumeSwipeMode::Unknown));
+        QVERIFY(!ParseVolumeSwipeMode(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x26, 0x01}))
+                     .has_value());
+
+        // No LSR value can come out of the AAP control path: the ATT write is not a
+        // settings notification, and the 0x25 frame reaches no LSR parser.
+        QVERIFY(!IsSettingsNotification(Packets::BuildLoudSoundReductionPacket(true)));
+        QVERIFY(!IsVolumeSwipeNotification(Packets::BuildLoudSoundReductionPacket(true)));
     }
 
     void HeadTrackingParserReadsLittleEndianOffsets()
@@ -357,14 +358,12 @@ private slots:
 
     void ClassifierMatchesDocumentedFrames()
     {
-        QVERIFY(IsNoiseControlNotification(
-            Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02})));
+        QVERIFY(IsNoiseControlNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02})));
         QVERIFY(IsConversationalAwarenessNotification(
             Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x28, 0x01})));
         QVERIFY(IsSpeakingLevelNotification(
             Hex({0x04, 0x00, 0x04, 0x00, 0x4B, 0x00, 0x02, 0x00, 0x01, 0x08})));
-        QVERIFY(IsEarDetectionNotification(
-            Hex({0x04, 0x00, 0x04, 0x00, 0x06, 0x00, 0x00, 0x00})));
+        QVERIFY(IsEarDetectionNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x06, 0x00, 0x00, 0x00})));
         QVERIFY(IsBatteryNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x04, 0x00, 0x01})));
         QVERIFY(IsPersonalizedVolumeNotification(
             Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x26, 0x01})));
@@ -385,9 +384,8 @@ private slots:
     {
         QVERIFY(!IsSettingsNotification(Packets::BuildLoudSoundReductionPacket(true)));
         QVERIFY(!IsSettingsNotification(Packets::BuildLoudSoundReductionPacket(false)));
-        QVERIFY(!IsLoudSoundReductionNotification(Packets::BuildLoudSoundReductionPacket(true)));
-        QVERIFY(!IsAutomaticEarDetectionNotification(
-                     Packets::BuildLoudSoundReductionPacket(true)));
+        QVERIFY(!IsVolumeSwipeNotification(Packets::BuildLoudSoundReductionPacket(true)));
+        QVERIFY(!IsAutomaticEarDetectionNotification(Packets::BuildLoudSoundReductionPacket(true)));
     }
 
     // Truncated frames must be rejected everywhere, never read out of bounds.
@@ -400,8 +398,7 @@ private slots:
         }
         QVERIFY(!ParseNoiseControlNotification({0x04, 0x00, 0x04, 0x00, 0x09, 0x00}).has_value());
         QVERIFY(!ParseEarDetection({0x04, 0x00, 0x04, 0x00}).has_value());
-        QVERIFY(!ParseSpeakingLevel(
-                     Hex({0x04, 0x00, 0x04, 0x00, 0x4B, 0x00, 0x02, 0x00, 0x01}))
+        QVERIFY(!ParseSpeakingLevel(Hex({0x04, 0x00, 0x04, 0x00, 0x4B, 0x00, 0x02, 0x00, 0x01}))
                      .has_value());
         QVERIFY(!ParsePpeCapLevel(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38})).has_value());
         QVERIFY(!IsPpeCapLevelNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09})));
@@ -413,20 +410,15 @@ private slots:
 
     void AttWriteCommandUsesLittleEndianHandle()
     {
-        QCOMPARE(
-            Att::BuildWriteCommand(0x1B, 0x01), Hex({0x12, 0x1B, 0x00, 0x01}));
-        QCOMPARE(
-            Att::BuildWriteCommand(0x0102, 0xAA), Hex({0x12, 0x02, 0x01, 0xAA}));
-        QCOMPARE(
-            Att::BuildLoudSoundReductionWrite(true), Hex({0x12, 0x1B, 0x00, 0x01}));
-        QCOMPARE(
-            Att::BuildLoudSoundReductionWrite(false), Hex({0x12, 0x1B, 0x00, 0x00}));
+        QCOMPARE(Att::BuildWriteCommand(0x1B, 0x01), Hex({0x12, 0x1B, 0x00, 0x01}));
+        QCOMPARE(Att::BuildWriteCommand(0x0102, 0xAA), Hex({0x12, 0x02, 0x01, 0xAA}));
+        QCOMPARE(Att::BuildLoudSoundReductionWrite(true), Hex({0x12, 0x1B, 0x00, 0x01}));
+        QCOMPARE(Att::BuildLoudSoundReductionWrite(false), Hex({0x12, 0x1B, 0x00, 0x00}));
     }
 
     void AttReadRequestCoversHandle()
     {
-        QCOMPARE(Att::BuildReadRequest(Att::kLoudSoundReductionHandle),
-                 Hex({0x0A, 0x1B, 0x00}));
+        QCOMPARE(Att::BuildReadRequest(Att::kLoudSoundReductionHandle), Hex({0x0A, 0x1B, 0x00}));
     }
 
     void AttReadResponseParserStripsOpcode()
@@ -474,6 +466,189 @@ private slots:
     }
 
     //////////////////////////////////////////////////
+    // ATT single outstanding request (blueprint 0.3 / P3)
+    //
+
+    void AttErrorResponseDecodesRequestHandleAndCode()
+    {
+        // opcode 0x01, requested opcode 0x0A, handle 0x001B, error 0x0A (attr not long)
+        auto error = Att::ParseErrorResponse(Hex({0x01, 0x0A, 0x1B, 0x00, 0x0A}));
+        QVERIFY(error.has_value());
+        QCOMPARE(error->requestOpcode, uint8_t(0x0A));
+        QCOMPARE(error->handle, uint16_t(0x1B));
+        QCOMPARE(error->error, uint8_t(0x0A));
+
+        QVERIFY(!Att::ParseErrorResponse(Hex({0x01, 0x0A, 0x1B, 0x00})).has_value());
+    }
+
+    // The device acknowledges the handshake and the feature-flags packet with dedicated
+    // records. Recognising them is what allows a step to be reported as acknowledged only
+    // after the answer was actually read.
+    void AcknowledgementRecordsAreRecognised()
+    {
+        QVERIFY(IsHandshakeAck(Hex({0x01, 0x00, 0x04, 0x00})));
+        // Five bytes with the same prefix is an ATT Error Response instead.
+        QVERIFY(!IsHandshakeAck(Hex({0x01, 0x00, 0x04, 0x00, 0x0A})));
+        QVERIFY(!IsHandshakeAck(Hex({0x01, 0x00, 0x04})));
+        QVERIFY(IsFeatureFlagsAck(Hex({0x04, 0x00, 0x04, 0x00, 0x2B, 0x00})));
+        QVERIFY(!IsFeatureFlagsAck(Hex({0x04, 0x00, 0x04, 0x00, 0x4D, 0x00})));
+        QVERIFY(!Att::IsAttFrame(Hex({0x01, 0x00, 0x04, 0x00})));
+    }
+
+    void PendingReadReservesOneRequestPerSession()
+    {
+        constexpr int64_t base = 100000;
+        constexpr int64_t window = 500;
+        const AAPAttempt session{0x1122334455667788ULL, 7};
+
+        Att::PendingReadTracker tracker;
+        QCOMPARE(
+            tracker.Start(session, Att::kLoudSoundReductionHandle, base + window, base),
+            Att::PendingReadTracker::StartResult::Started);
+        // The reservation is complete before the frame is written, which is what makes an
+        // immediate answer attributable instead of racing a state set after the send.
+        QVERIFY(tracker.HasPending());
+        QCOMPARE(tracker.Attempt().address, session.address);
+        QCOMPARE(tracker.Attempt().generation, session.generation);
+        QCOMPARE(tracker.Handle(), std::optional<uint16_t>(Att::kLoudSoundReductionHandle));
+        QCOMPARE(
+            tracker.Match(session, std::nullopt, base + 1),
+            Att::PendingReadTracker::MatchResult::Matched);
+
+        // Repeating the same read is idempotent and must not open a second window.
+        QCOMPARE(
+            tracker.Start(session, Att::kLoudSoundReductionHandle, base + 9000, base + 10),
+            Att::PendingReadTracker::StartResult::AlreadyPending);
+        QCOMPARE(tracker.DeadlineMs(), std::optional<int64_t>(base + window));
+
+        // A different handle, address or an identity-less attempt is refused while the
+        // single slot for this session is held.
+        QCOMPARE(
+            tracker.Start(session, 0x18, base + 2 * window, base + 10),
+            Att::PendingReadTracker::StartResult::Rejected);
+        QCOMPARE(
+            tracker.Start(
+                AAPAttempt{0x99AAB0CCDDEEF001ULL, session.generation},
+                Att::kLoudSoundReductionHandle, base + 2 * window, base + 10),
+            Att::PendingReadTracker::StartResult::Rejected);
+        QCOMPARE(
+            tracker.Start(
+                AAPAttempt{session.address, 0}, Att::kLoudSoundReductionHandle, base + 2 * window,
+                base + 10),
+            Att::PendingReadTracker::StartResult::Rejected);
+
+        QVERIFY(tracker.ReleaseIf(session, Att::kLoudSoundReductionHandle));
+        QVERIFY(!tracker.HasPending());
+        // Releasing a reservation that has already been answered reports nothing to undo.
+        QVERIFY(!tracker.ReleaseIf(session, Att::kLoudSoundReductionHandle));
+    }
+
+    void PendingReadOnlyAnswersItsOwnSession()
+    {
+        constexpr int64_t base = 100000;
+        const AAPAttempt session{0x1122334455667788ULL, 7};
+
+        Att::PendingReadTracker tracker;
+        tracker.Start(session, Att::kLoudSoundReductionHandle, base + 500, base);
+
+        // A reply that reaches the current reader on behalf of a retired attempt, or that
+        // names another attribute, is not an answer to anything.
+        QCOMPARE(
+            tracker.Match(AAPAttempt{session.address, 8}, std::nullopt, base + 5),
+            Att::PendingReadTracker::MatchResult::NoPendingRead);
+        QCOMPARE(
+            tracker.Match(AAPAttempt{0x99AAB0CCDDEEF001ULL, 7}, std::nullopt, base + 5),
+            Att::PendingReadTracker::MatchResult::NoPendingRead);
+        QCOMPARE(
+            tracker.Match(session, std::optional<uint16_t>(0x2A), base + 5),
+            Att::PendingReadTracker::MatchResult::NoPendingRead);
+        QCOMPARE(
+            tracker.Match(
+                session, std::optional<uint16_t>(Att::kLoudSoundReductionHandle), base + 5),
+            Att::PendingReadTracker::MatchResult::Matched);
+
+        // The handle-less read response inherits its handle from the reservation, so a read
+        // of another attribute can never be interpreted as loud sound reduction.
+        Att::PendingReadTracker other;
+        other.Start(session, 0x2A, base + 500, base);
+        QCOMPARE(
+            other.Match(session, std::nullopt, base + 1),
+            Att::PendingReadTracker::MatchResult::Matched);
+        QVERIFY(other.Handle().has_value());
+        QVERIFY(other.Handle() != std::optional<uint16_t>(Att::kLoudSoundReductionHandle));
+    }
+
+    void NewSessionReplacesPendingIdentityWithoutAcceptingOldReplies()
+    {
+        constexpr int64_t base = 100000;
+        const AAPAttempt oldSession{0x1122334455667788ULL, 7};
+        const AAPAttempt newSession{0x1122334455667788ULL, 8};
+        Att::PendingReadTracker tracker;
+        QCOMPARE(
+            tracker.Start(oldSession, Att::kLoudSoundReductionHandle, base + 500, base),
+            Att::PendingReadTracker::StartResult::Started);
+        QCOMPARE(
+            tracker.Start(newSession, Att::kLoudSoundReductionHandle, base + 900, base + 1),
+            Att::PendingReadTracker::StartResult::Started);
+
+        QCOMPARE(
+            tracker.Match(oldSession, std::nullopt, base + 2),
+            Att::PendingReadTracker::MatchResult::NoPendingRead);
+        QCOMPARE(
+            tracker.Match(newSession, std::nullopt, base + 2),
+            Att::PendingReadTracker::MatchResult::Matched);
+        QVERIFY(!tracker.ReleaseIf(oldSession, Att::kLoudSoundReductionHandle));
+        QVERIFY(tracker.ReleaseIf(newSession, Att::kLoudSoundReductionHandle));
+    }
+
+    // 499 / 500 / 501 ms around the probe window, checked with one shared rule so the
+    // reader path and the lazy GetAttPathState() resolution can never disagree.
+    void PendingReadDeadlineBoundaryIsConsistent()
+    {
+        constexpr int64_t base = 100000;
+        constexpr int64_t deadline = base + 500;
+        Att::PendingReadTracker tracker;
+        tracker.Start(
+            AAPAttempt{0x1122334455667788ULL, 7}, Att::kLoudSoundReductionHandle, deadline, base);
+
+        QVERIFY(!Att::PendingReadTracker::WindowElapsed(base + 499, deadline));
+        QVERIFY(Att::PendingReadTracker::WindowElapsed(base + 500, deadline));
+        QVERIFY(Att::PendingReadTracker::WindowElapsed(base + 501, deadline));
+        QVERIFY(tracker.IsLive(base + 499));
+        QVERIFY(!tracker.IsLive(base + 500));
+
+        QCOMPARE(
+            tracker.Match(AAPAttempt{0x1122334455667788ULL, 7}, std::nullopt, base + 499),
+            Att::PendingReadTracker::MatchResult::Matched);
+        QCOMPARE(
+            tracker.Match(AAPAttempt{0x1122334455667788ULL, 7}, std::nullopt, base + 500),
+            Att::PendingReadTracker::MatchResult::Expired);
+        QCOMPARE(
+            tracker.Match(AAPAttempt{0x1122334455667788ULL, 7}, std::nullopt, base + 501),
+            Att::PendingReadTracker::MatchResult::Expired);
+
+        // An elapsed identical read is replaced rather than treated as idempotent.
+        Att::PendingReadTracker repeat;
+        repeat.Start(
+            AAPAttempt{0x1122334455667788ULL, 7}, Att::kLoudSoundReductionHandle, deadline, base);
+        QCOMPARE(
+            repeat.Start(
+                AAPAttempt{0x1122334455667788ULL, 7}, Att::kLoudSoundReductionHandle, base + 1000,
+                base + 500),
+            Att::PendingReadTracker::StartResult::Started);
+        QCOMPARE(repeat.DeadlineMs(), std::optional<int64_t>(base + 1000));
+
+        // An elapsed window is retired instead of blocking the session forever.
+        tracker.ClearIfElapsed(base + 500);
+        QVERIFY(!tracker.HasPending());
+        QCOMPARE(
+            tracker.Start(
+                AAPAttempt{0x1122334455667788ULL, 7}, Att::kLoudSoundReductionHandle, base + 1000,
+                base + 500),
+            Att::PendingReadTracker::StartResult::Started);
+    }
+
+    //////////////////////////////////////////////////
     // Connection diagnostics (blueprint 1.4)
     //
 
@@ -482,16 +657,17 @@ private slots:
         // The exported report is matched against these names in bug reports;
         // renaming one silently breaks every past report.
         using Core::Diagnostics::Step;
-        QCOMPARE(QString{Core::Diagnostics::StepName(Step::ScannerStarted)},
-                 QStringLiteral("scanner_started"));
-        QCOMPARE(QString{Core::Diagnostics::StepName(Step::TransportConnect)},
-                 QStringLiteral("transport_connect"));
-        QCOMPARE(QString{Core::Diagnostics::StepName(Step::Handshake)},
-                 QStringLiteral("handshake"));
-        QCOMPARE(QString{Core::Diagnostics::StepName(Step::AttProbe)},
-                 QStringLiteral("att_probe"));
-        QCOMPARE(QString{Core::Diagnostics::StepName(Step::Disconnect)},
-                 QStringLiteral("disconnect"));
+        QCOMPARE(
+            QString{Core::Diagnostics::StepName(Step::ScannerStarted)},
+            QStringLiteral("scanner_started"));
+        QCOMPARE(
+            QString{Core::Diagnostics::StepName(Step::TransportConnect)},
+            QStringLiteral("transport_connect"));
+        QCOMPARE(
+            QString{Core::Diagnostics::StepName(Step::Handshake)}, QStringLiteral("handshake"));
+        QCOMPARE(QString{Core::Diagnostics::StepName(Step::AttProbe)}, QStringLiteral("att_probe"));
+        QCOMPARE(
+            QString{Core::Diagnostics::StepName(Step::Disconnect)}, QStringLiteral("disconnect"));
     }
 
     void DiagnosticsMasksDeviceAddress()
@@ -504,29 +680,58 @@ private slots:
         QVERIFY(masked.find("77665544332211") == std::string::npos);
     }
 
-    void DiagnosticsRecorderBuildsReport()
+    void DiagnosticsRecorderResetsAndIsolatesGenerations()
     {
         using Core::Diagnostics::Recorder;
         using Core::Diagnostics::Step;
 
         auto &recorder = Recorder::Instance();
-        recorder.Reset();
+        recorder.BeginAttempt(7);
+        recorder.RecordForAttempt(7, Step::AdvertisementMatched, true, "model=14");
+        recorder.RecordPendingForAttempt(7, Step::Handshake, "send accepted, ACK unconfirmed");
+        recorder.RecordForAttempt(7, Step::FeatureFlags, false, "send failed");
+        recorder.RecordPendingForAttempt(7, Step::AttProbe, "probe sent, waiting up to 500ms");
+        QCOMPARE(recorder.ReportedAttemptStepCount(), size_t{4});
+
+        const auto report = QString::fromStdString(recorder.BuildReport({}));
+        QVERIFY(report.contains("attempt 7"));
+        QVERIFY(report.contains("handshake  PENDING  send accepted, ACK unconfirmed"));
+        QVERIFY(!report.contains("handshake  ok"));
+        QVERIFY(report.contains("feature_flags  FAILED  send failed"));
+        QVERIFY(report.contains("att_probe  PENDING"));
+
+        // A late event or end notification from generation 6 cannot alter open attempt 7.
+        const auto before = recorder.StepCount();
+        recorder.RecordForAttempt(6, Step::Handshake, true, "stale ACK");
+        recorder.EndAttempt(6);
+        QCOMPARE(recorder.StepCount(), before);
+        QCOMPARE(recorder.CurrentGeneration(), uint64_t{7});
+        QVERIFY(!QString::fromStdString(recorder.BuildReport({})).contains("stale ACK"));
+        recorder.EndAttempt(7);
+        QCOMPARE(recorder.CurrentGeneration(), uint64_t{0});
+
+        // BeginAttempt resets before opening generation 8, including untagged preconnect
+        // lines. No scanner, advertisement or handshake evidence from attempt 7 survives.
+        recorder.Record(Step::ScannerStarted, true);
+        recorder.Record(Step::AdvertisementMatched, true, "old preconnect");
+        recorder.BeginAttempt(8);
         QCOMPARE(recorder.StepCount(), size_t{0});
+        QCOMPARE(recorder.ReportedAttemptStepCount(), size_t{0});
+        QCOMPARE(recorder.CurrentGeneration(), uint64_t{8});
+        QCOMPARE(recorder.ReportedAttempt(), uint64_t{8});
 
-        recorder.Record(Step::Handshake, true);
-        recorder.Record(Step::AttProbe, false, "no ATT answer within 500ms");
-        QCOMPARE(recorder.StepCount(), size_t{2});
-
-        const auto report = recorder.BuildReport("header-line");
-        const auto asString = QString::fromStdString(report);
-        QVERIFY(asString.contains("header-line"));
-        QVERIFY(asString.contains("handshake"));
-        QVERIFY(asString.contains("att_probe"));
-        QVERIFY(asString.contains("FAILED"));
-        QVERIFY(asString.contains("no ATT answer within 500ms"));
-
-        recorder.Reset();
-        QCOMPARE(recorder.StepCount(), size_t{0});
+        recorder.RecordForAttempt(7, Step::Handshake, true, "late old ACK");
+        recorder.RecordForAttempt(8, Step::TransportConnect, false, "driver unavailable");
+        recorder.BeginAttempt(8); // idempotent while the same attempt is open
+        QCOMPARE(recorder.ReportedAttemptStepCount(), size_t{1});
+        const auto fresh = QString::fromStdString(recorder.BuildReport({}));
+        QVERIFY(fresh.contains("attempt 8"));
+        QVERIFY(fresh.contains("transport_connect  FAILED  driver unavailable"));
+        QVERIFY(!fresh.contains("attempt 7"));
+        QVERIFY(!fresh.contains("scanner_started"));
+        QVERIFY(!fresh.contains("advertisement_matched"));
+        QVERIFY(!fresh.contains("late old ACK"));
+        recorder.EndAttempt(8);
     }
 };
 

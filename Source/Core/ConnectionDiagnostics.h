@@ -25,17 +25,11 @@
 
 // Connection diagnostics step log (blueprint 1.4).
 //
-// Every stage of the ANC connection pipeline records one line — timestamp,
-// step name, ok/failed, and a short detail — so that a user reporting "it does
-// not connect" can export a report that pinpoints the failing stage without a
-// debug build. The report is redacted before it leaves this class: device
-// addresses are masked and no serial numbers are ever stored.
-//
-// The log is process-global (a singleton): connection attempts originate from
-// several threads (BLE watcher, device lookup, AAP reader), and the export
-// must capture whichever attempt failed. Recording is best-effort and never
-// blocks the connection path.
-//
+// Every stage of the ANC connection pipeline records one line: timestamp,
+// step name, outcome, and a short detail. A successful transport write is
+// PENDING until the device answers; only an observed ACK is recorded as ok.
+// The report is redacted before it leaves this class: device addresses are
+// masked and no serial numbers are ever stored.
 namespace Core::Diagnostics {
 
 enum class Step : uint8_t {
@@ -52,8 +46,6 @@ enum class Step : uint8_t {
     Disconnect,
 };
 
-// Human-readable, stable step names (English in the export; the UI translates
-// around them). Also used by tests to assert the recording contract.
 const char *StepName(Step step);
 
 class Recorder
@@ -63,32 +55,56 @@ public:
 
     Recorder();
 
-    // Records one step. `detail` must already be redacted by the caller.
+    // Records a BLE/preconnect event, or an event in the currently open attempt.
+    // `detail` must already be redacted by the caller.
     void Record(Step step, bool ok, std::string detail = {});
+    void RecordPending(Step step, std::string detail = {});
 
-    // Clears the log (called at the start of a fresh connection attempt).
+    // Attempt-tagged events are accepted only while that exact generation is open.
+    // A late reader/callback from a retired session therefore cannot pollute a new report.
+    void RecordForAttempt(uint64_t generation, Step step, bool ok, std::string detail = {});
+    void RecordPendingForAttempt(uint64_t generation, Step step, std::string detail = {});
+
+    // Resets the log as the very first operation, then opens a fresh generation.
+    // Repeating the currently open generation is idempotent.
+    void BeginAttempt(uint64_t generation);
+
+    // Closes only the named generation. A stale worker cannot end its successor.
+    void EndAttempt(uint64_t generation);
+
+    // Clears retained events and restarts the timestamp origin.
     void Reset();
 
-    // Renders the report: header (app/OS/driver/connection summary supplied by
-    // the caller) followed by one line per recorded step.
     std::string BuildReport(const std::string &header) const;
 
-    // Masks a classic-Bluetooth device address for display: keeps the last
-    // byte so two devices remain distinguishable, hides the rest.
     static std::string MaskAddress(uint64_t address);
 
     size_t StepCount() const;
+    size_t ReportedAttemptStepCount() const;
+    uint64_t CurrentGeneration() const;
+    uint64_t ReportedAttempt() const;
 
 private:
+    enum class Outcome : uint8_t { Ok, Failed, Pending };
+
     struct Entry {
         int64_t millisSinceStart;
+        uint64_t generation;
         Step step;
-        bool ok;
+        Outcome outcome;
         std::string detail;
     };
 
+    static constexpr size_t kMaxEntries = 512;
+
+    void ResetLocked(int64_t nowMillis);
+    void RecordLocked(
+        Step step, Outcome outcome, std::string detail, uint64_t generation, int64_t nowMillis);
+
     mutable std::mutex _mutex;
     std::vector<Entry> _entries;
+    uint64_t _generation{0};
+    uint64_t _reportedAttempt{0};
     int64_t _startMillis;
 };
 
