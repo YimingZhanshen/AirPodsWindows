@@ -431,20 +431,29 @@ bool Manager::IsCurrentAttemptLocked(AAPAttempt attempt) const
 
 bool Manager::SetNoiseControlMode(NoiseControlMode mode)
 {
-    if (!_connected) {
-        LOG(Warn, "AAP: Cannot set noise control mode - not connected");
-        return false;
-    }
+    AAPAttempt attempt;
+    std::shared_ptr<AAPTransport> transport;
     {
         std::lock_guard lock{_mutex};
+        if (!IsCurrentAttemptLocked(_attempt)) {
+            LOG(Warn, "AAP: Cannot set noise control mode - not connected");
+            return false;
+        }
         if (mode == NoiseControlMode::Adaptive && !_featureFlagsEnabled) {
             LOG(Warn, "AAP: Adaptive noise control unavailable, feature flags were not sent");
+            return false;
+        }
+        // Capability and destination are one session snapshot. The bound send revalidates
+        // both before writing, and can never resolve a replacement session's transport.
+        attempt = _attempt;
+        transport = _transport.load();
+        if (!transport) {
             return false;
         }
     }
 
     auto packet = Packets::BuildNoiseControlPacket(mode);
-    if (!SendPacket(packet)) {
+    if (!SendPacket(packet, attempt, transport, {}, mode == NoiseControlMode::Adaptive)) {
         return false;
     }
 
@@ -714,11 +723,15 @@ bool Manager::MarkAttConfirmedLocked()
     return firstConfirmation;
 }
 
-bool Manager::RequestAttRead(AAPAttempt attempt, uint16_t handle)
+bool Manager::RequestAttRead(AAPAttempt attempt, uint16_t handle, std::stop_token stopToken)
 {
+    if (stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
+        return false;
+    }
     const int64_t nowMs = _steadyMillis();
     Att::PendingReadTracker::StartResult start = Att::PendingReadTracker::StartResult::Rejected;
     Att::PendingReadTracker::ReservationToken reservationToken{0};
+    std::shared_ptr<AAPTransport> transport;
     bool announcesProbe = false;
     {
         std::lock_guard<std::mutex> lock{_mutex};
@@ -736,8 +749,8 @@ bool Manager::RequestAttRead(AAPAttempt attempt, uint16_t handle)
             if (announcesProbe) {
                 _attPathState = AttPathState::Pending;
             }
+            transport = _transport.load();
         }
-    }
     }
 
     if (start == Att::PendingReadTracker::StartResult::Rejected) {
@@ -753,7 +766,7 @@ bool Manager::RequestAttRead(AAPAttempt attempt, uint16_t handle)
         return true;
     }
 
-    if (!SendPacket(Att::BuildReadRequest(handle), attempt)) {
+    if (!SendPacket(Att::BuildReadRequest(handle), attempt, transport, stopToken)) {
         bool reportSendFailure = false;
         {
             std::lock_guard<std::mutex> lock{_mutex};
@@ -787,8 +800,11 @@ bool Manager::RequestAttRead(AAPAttempt attempt, uint16_t handle)
     return true;
 }
 
-void Manager::StartAttProbe(AAPAttempt attempt)
+void Manager::StartAttProbe(AAPAttempt attempt, std::stop_token stopToken)
 {
+    if (stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
+        return;
+    }
     // One-shot probe for the session: ask for the loud-sound-reduction value. Any ATT answer
     // (even an error response) proves the firmware accepts ATT on this pipe; no answer inside
     // the window marks the path unconfirmed, and the probe is never retried.
@@ -800,7 +816,7 @@ void Manager::StartAttProbe(AAPAttempt attempt)
             return;
         }
     }
-    RequestAttRead(attempt, Att::kLoudSoundReductionHandle);
+    RequestAttRead(attempt, Att::kLoudSoundReductionHandle, stopToken);
 }
 
 void Manager::ProcessAttFrame(
@@ -930,6 +946,9 @@ bool Manager::IsActiveAttemptLocked(AAPAttempt attempt) const
 
 bool Manager::SendPacket(const std::vector<uint8_t> &packet)
 {
+    if (_sendBarrier) {
+        _sendBarrier();
+    }
     AAPAttempt attempt;
     {
         std::lock_guard lock{_mutex};
@@ -938,6 +957,8 @@ bool Manager::SendPacket(const std::vector<uint8_t> &packet)
     return SendPacket(packet, attempt);
 }
 
+bool Manager::SendPacket(const std::vector<uint8_t> &packet, AAPAttempt attempt)
+{
     std::shared_ptr<AAPTransport> transport;
     {
         std::lock_guard lock{_mutex};
@@ -961,13 +982,19 @@ bool Manager::SendPacket(
 
 bool Manager::SendPacket(
     const std::vector<uint8_t> &packet, AAPAttempt attempt,
-    const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken)
+    const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken,
+    bool requireFeatureFlags)
 {
     {
         std::lock_guard lock{_mutex};
-        if (!IsActiveAttemptLocked(attempt) || _transport.load() != transport) {
+        if (!IsActiveAttemptLocked(attempt) || _transport.load() != transport ||
+            (requireFeatureFlags && !_featureFlagsEnabled))
+        {
             return false;
         }
+    }
+    if (_sendBarrier) {
+        _sendBarrier();
     }
     if (!SendPacket(transport, packet, stopToken)) {
         return false;
@@ -1302,7 +1329,6 @@ bool Manager::InitializeConnection(AAPAttempt attempt, std::stop_token stopToken
         Diagnostics::Recorder::Instance().RecordPendingForAttempt(
             attempt.generation, Diagnostics::Step::FeatureFlags, "send accepted, ACK unconfirmed");
     }
-    }
 
     if (!WaitCancellable(kPacketProcessingDelay, stopToken)) {
         return false;
@@ -1322,7 +1348,7 @@ bool Manager::InitializeConnection(AAPAttempt attempt, std::stop_token stopToken
 
     // Probe whether the firmware answers ATT frames on this pipe. The reservation is installed
     // before the write, and initialization is an active attempt even before _connected flips.
-    StartAttProbe(attempt);
+    StartAttProbe(attempt, stopToken);
 
     return true;
 }
@@ -1438,8 +1464,8 @@ AttPathState Manager::GetAttPathState() const
 {
     return AttPathState::Unconfirmed;
 }
-void Manager::StartAttProbe(AAPAttempt) {}
-bool Manager::RequestAttRead(AAPAttempt, uint16_t)
+void Manager::StartAttProbe(AAPAttempt, std::stop_token) {}
+bool Manager::RequestAttRead(AAPAttempt, uint16_t, std::stop_token)
 {
     return false;
 }
@@ -1475,7 +1501,7 @@ bool Manager::SendPacket(const std::vector<uint8_t> &, AAPAttempt)
 }
 bool Manager::SendPacket(
     const std::vector<uint8_t> &, AAPAttempt, const std::shared_ptr<AAPTransport> &,
-    std::stop_token)
+    std::stop_token, bool)
 {
     return false;
 }

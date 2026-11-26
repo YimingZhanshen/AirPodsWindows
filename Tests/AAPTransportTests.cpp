@@ -165,6 +165,27 @@ class AAPTransportTests : public QObject
     Q_OBJECT
 
 private slots:
+#if defined(APD_OS_WIN)
+    static void ResetRecorder()
+    {
+        auto &recorder = Core::Diagnostics::Recorder::Instance();
+        recorder.EndAttempt(recorder.CurrentGeneration());
+        recorder.Reset();
+        QCOMPARE(recorder.CurrentGeneration(), uint64_t{0});
+        QCOMPARE(recorder.StepCount(), size_t{0});
+    }
+
+    void init()
+    {
+        ResetRecorder();
+    }
+
+    void cleanup()
+    {
+        ResetRecorder();
+    }
+#endif
+
     void ShortWriteFailsWithoutEmittingASecondRecord()
     {
         AAPTestSupport::FakeTransport transport;
@@ -724,6 +745,8 @@ private slots:
         const Core::AAP::AAPAttempt attempt{1, 7};
         QVERIFY(!manager.Connect(attempt));
         QCOMPARE(transport->SendCalls(), size_t{0});
+    }
+
     void AdaptiveNoiseControlRequiresFeatureFlagsWithoutSendingPacket()
     {
         Core::AAP::Manager manager;
@@ -754,6 +777,68 @@ private slots:
         manager._featureFlagsEnabled = true;
         QVERIFY(manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Adaptive));
         QCOMPARE(transport->SendCalls(), size_t{4});
+        manager._connected = false;
+        manager._transport.store(nullptr);
+    }
+
+    // The capability check and transport choice must describe one session. An unbound send
+    // reaches the barrier before snapshotting; a bound send reaches it after revalidation but
+    // before writing. Replacing the session at that exact boundary therefore sends to A with
+    // the fix, whereas the old untagged implementation snapshots and writes to B.
+    void AdaptiveCommandCannotCrossReconnectBarrier()
+    {
+        Core::AAP::Manager manager;
+        auto sessionA = std::make_shared<AAPTestSupport::FakeTransport>();
+        auto sessionB = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(sessionA->Connect(1, {}));
+        QVERIFY(sessionB->Connect(1, {}));
+        manager._transport.store(sessionA);
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
+        manager._featureFlagsEnabled = true;
+
+        std::promise<void> barrierEntered;
+        std::promise<void> releaseBarrier;
+        auto entered = barrierEntered.get_future();
+        auto release = releaseBarrier.get_future().share();
+        std::atomic<bool> barrierSeen{false};
+        manager._sendBarrier = [&] {
+            if (!barrierSeen.exchange(true)) {
+                barrierEntered.set_value();
+                release.wait();
+            }
+        };
+
+        auto command = std::async(std::launch::async, [&] {
+            return manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Adaptive);
+        });
+        const bool reachedBarrier =
+            entered.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+        if (!reachedBarrier) {
+            releaseBarrier.set_value();
+        }
+        QVERIFY(reachedBarrier);
+
+        manager._attempt = Core::AAP::AAPAttempt{1, 2};
+        manager._transport.store(sessionB);
+        manager._featureFlagsEnabled = false;
+        manager._connected = true;
+        releaseBarrier.set_value();
+
+        QVERIFY(command.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+        QVERIFY(command.get());
+        manager._sendBarrier = {};
+        QCOMPARE(sessionA->SendCalls(), size_t{1});
+        QCOMPARE(
+            sessionA->LastSend(),
+            Core::AAP::Packets::BuildNoiseControlPacket(Core::AAP::NoiseControlMode::Adaptive));
+        QCOMPARE(sessionB->SendCalls(), size_t{0});
+        QVERIFY(sessionB->SentRecords().empty());
+        QCOMPARE(manager.GetLastAttempt().generation, uint64_t{2});
+
+        // B has no Adaptive capability, and a stale command cannot use A's old permission.
+        QVERIFY(!manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Adaptive));
+        QCOMPARE(sessionB->SendCalls(), size_t{0});
         manager._connected = false;
         manager._transport.store(nullptr);
     }
@@ -1274,7 +1359,7 @@ private slots:
         QVERIFY(transport->Connect(1, {}));
         transport->FailNthSend(1); // handshake, feature flags, notifications, ATT probe
         manager._transport.store(transport);
-        constexpr uint64_t kGeneration = 4242;
+        constexpr uint64_t kGeneration = 4301;
         manager._attempt = Core::AAP::AAPAttempt{1, kGeneration};
         manager._connected = true;
 
@@ -1283,7 +1368,7 @@ private slots:
 
         const auto report =
             QString::fromStdString(Core::Diagnostics::Recorder::Instance().BuildReport({}));
-        QVERIFY(report.contains("attempt 4242"));
+        QVERIFY(report.contains("attempt 4301"));
         const auto flags = LineFor(report, QStringLiteral("feature_flags"));
         QVERIFY(flags.contains("FAILED"));
         QVERIFY(!flags.contains(" ok"));
@@ -1302,7 +1387,7 @@ private slots:
 
         // Capability-dependent commands degrade instead of being emitted after the failure.
         QVERIFY(!manager.SetConversationalAwareness(true));
-        QVERIFY(!manager.SetAdaptiveTransparencyLevel(50));
+        QVERIFY(!manager.SetPpeCapLevel(50));
         QVERIFY(!manager.SetAdaptiveNoiseLevel(50));
         QVERIFY(!manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Adaptive));
         QCOMPARE(transport->SendCalls(), size_t{4});
@@ -1319,8 +1404,8 @@ private slots:
         auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
         QVERIFY(transport->Connect(1, {}));
         manager._transport.store(transport);
-        constexpr uint64_t kGeneration = 4243;
-        constexpr uint64_t kSuccessorGeneration = 4244;
+        constexpr uint64_t kGeneration = 4302;
+        constexpr uint64_t kSuccessorGeneration = 4303;
         manager._attempt = Core::AAP::AAPAttempt{1, kGeneration};
         manager._connected = true;
 
@@ -1370,28 +1455,40 @@ private slots:
     // with this attempt's evidence and never inherits an older session's lines.
     void BeginAttemptResetsBeforeRecordingAdvertisementMatched()
     {
+        constexpr uint64_t kOldGeneration = 4304;
+        constexpr uint64_t kFreshGeneration = 4305;
         auto &recorder = Core::Diagnostics::Recorder::Instance();
-        recorder.Record(Core::Diagnostics::Step::ScannerStarted, true);
-        recorder.Record(Core::Diagnostics::Step::AdvertisementMatched, true, "old attempt");
-        recorder.EndAttempt(4243);
+        recorder.BeginAttempt(kOldGeneration);
+        recorder.RecordForAttempt(
+            kOldGeneration, Core::Diagnostics::Step::AdvertisementMatched, true, "old attempt");
+        recorder.EndAttempt(kOldGeneration);
 
-        recorder.BeginAttempt(4244);
+        // These untagged events must really be accepted before the new attempt clears them.
+        recorder.Record(Core::Diagnostics::Step::ScannerStarted, true);
+        recorder.Record(
+            Core::Diagnostics::Step::AdvertisementMatched, true, "old preconnect event");
+        QCOMPARE(recorder.StepCount(), size_t{3});
+
+        recorder.BeginAttempt(kFreshGeneration);
         QCOMPARE(recorder.StepCount(), size_t{0});
         const auto masked = Core::Diagnostics::Recorder::MaskAddress(0x1122334455667788ULL);
         recorder.RecordForAttempt(
-            4244, Core::Diagnostics::Step::AdvertisementMatched, true, "address=" + masked);
+            kFreshGeneration, Core::Diagnostics::Step::AdvertisementMatched, true,
+            "address=" + masked);
         recorder.RecordForAttempt(
-            4244, Core::Diagnostics::Step::TransportConnect, false, "MagicAAP driver unavailable");
+            kFreshGeneration, Core::Diagnostics::Step::TransportConnect, false,
+            "MagicAAP driver unavailable");
 
         const auto report = QString::fromStdString(recorder.BuildReport({}));
         QVERIFY(!report.contains("scanner_started"));
         QVERIFY(!report.contains("old attempt"));
-        QVERIFY(report.contains("attempt 4244"));
+        QVERIFY(!report.contains("old preconnect event"));
+        QVERIFY(report.contains("attempt 4305"));
         QVERIFY(report.contains("advertisement_matched"));
         QVERIFY(report.indexOf("advertisement_matched") < report.indexOf("transport_connect"));
         QVERIFY(report.contains("transport_connect  FAILED  MagicAAP driver unavailable"));
         QVERIFY(!report.contains("1122334455667788"));
-        recorder.EndAttempt(4244);
+        recorder.EndAttempt(kFreshGeneration);
     }
 #endif
 };

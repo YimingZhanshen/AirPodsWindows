@@ -236,6 +236,9 @@ private:
     // Internal methods
     // Clock injection keeps ATT deadline tests deterministic; production uses steady_clock.
     std::function<int64_t()> _steadyMillis;
+    // Test-only barrier at the unbound snapshot / bound dispatch boundary. It lets a test
+    // replace the session without timing-dependent sleeps; production leaves it empty.
+    std::function<void()> _sendBarrier;
     bool SendPacket(const std::vector<uint8_t> &packet);
     bool SendPacket(
         const std::shared_ptr<AAPTransport> &transport, const std::vector<uint8_t> &packet,
@@ -243,7 +246,8 @@ private:
     bool SendPacket(const std::vector<uint8_t> &packet, AAPAttempt attempt);
     bool SendPacket(
         const std::vector<uint8_t> &packet, AAPAttempt attempt,
-        const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken = {});
+        const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken = {},
+        bool requireFeatureFlags = false);
     bool IsCurrentAttempt(AAPAttempt attempt) const;
     // Requires _mutex; used by the reader path, which already holds it.
     bool IsCurrentAttemptLocked(AAPAttempt attempt) const;
@@ -261,12 +265,12 @@ private:
 
     // ATT path (blueprint 0.3 / P3): probe once after the handshake and route ATT
     // frames received on the AAP pipe.
-    void StartAttProbe(AAPAttempt attempt);
+    void StartAttProbe(AAPAttempt attempt, std::stop_token stopToken = {});
     // Reserves the single outstanding read for `attempt` before writing the request frame.
     // Repeating it for the same session and handle is idempotent: no second frame, no
     // second deadline. The tracker token prevents a delayed failed send from releasing a
     // replacement reservation. Returns false when another read still owns the session.
-    bool RequestAttRead(AAPAttempt attempt, uint16_t handle);
+    bool RequestAttRead(AAPAttempt attempt, uint16_t handle, std::stop_token stopToken = {});
     // Requires _mutex. Moves the probe state to Confirmed and reports whether this is the
     // transition the callback has to observe.
     bool MarkAttConfirmedLocked();
