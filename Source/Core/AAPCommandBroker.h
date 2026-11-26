@@ -189,8 +189,9 @@ public:
 
     // Records `command` as desired and schedules the send. An unsent value for the same kind
     // is replaced in place (a fast slider drag only ever puts its last value on the wire) and
-    // an in-flight command of the same kind settles as Superseded. Without an open session the
-    // desired value is still recorded for the next replay and the result says TransportClosed.
+    // an in-flight command of the same kind settles as Superseded. Repeating the queued, in-flight,
+    // or already-confirmed desired value is a no-op. Without an open session the desired value is
+    // still recorded for the next replay and the result says TransportClosed.
     AAPCommandResult Submit(AAPCommand command, std::stop_token stop = {});
 
     // Records desired state without queueing a wire write. Used by mode-gated settings: the
@@ -217,8 +218,8 @@ public:
     // Opens `generation` as the current session. Confirmed baselines belong to this session only;
     // evidence received before the first open is retained in one bounded slot per kind.
     void BeginSession(uint64_t generation);
-    // Drops the in-flight and queued work as TransportClosed but keeps every desired value, so
-    // the next BeginSession + ReplayDesiredState re-applies them.
+    // Drops the in-flight and queued work as TransportClosed and clears session-scoped confirmed
+    // baselines, but keeps every desired value for the next BeginSession + ReplayDesiredState.
     void EndSession();
     bool IsSessionOpen() const;
     uint64_t Generation() const;

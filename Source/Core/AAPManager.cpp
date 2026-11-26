@@ -531,7 +531,25 @@ AAPCommandResult Manager::SubmitCommand(AAPCommand command, std::stop_token stop
 {
     CommandMode(command.kind, command.value);
     if (command.kind == AAPCommandKind::SetAdaptiveNoiseLevel && IsConnected()) {
-        const auto reportedMode = GetNoiseControlMode();
+        std::optional<NoiseControlMode> reportedMode;
+        {
+            std::lock_guard lock{_mutex};
+            reportedMode = _noiseControlMode;
+        }
+        if (_beforeAdaptiveEligibilityForTest) {
+            _beforeAdaptiveEligibilityForTest();
+        }
+        // Mode notifications take this same lock before touching desired/queued state. Keeping
+        // the eligibility decision and desired recording in one critical section prevents an
+        // Adaptive notification from observing the old desired/cache pair and queueing nothing.
+        // Re-read after the test rendezvous: the notification may have changed the mode since the
+        // first snapshot. Lock order is always Manager -> Broker; the broker never calls back while
+        // holding its mutex, and its wire worker takes the manager lock after releasing it.
+        std::lock_guard lock{_mutex};
+        if (!_connected) {
+            return _commandBroker->Submit(command, stopToken);
+        }
+        reportedMode = _noiseControlMode;
         const bool pendingAdaptive =
             !reportedMode.has_value() && _commandBroker->Desired(AAPCommandKind::SetNoiseControl) ==
                                              static_cast<uint32_t>(NoiseControlMode::Adaptive);
@@ -540,6 +558,7 @@ AAPCommandResult Manager::SubmitCommand(AAPCommand command, std::stop_token stop
             // strength without queueing a command that can only produce a false rejection.
             return _commandBroker->RecordDesired(command);
         }
+        return _commandBroker->Submit(command, stopToken);
     }
     return _commandBroker->Submit(command, stopToken);
 }
@@ -1199,19 +1218,19 @@ void Manager::ProcessPacket(
             {
                 std::lock_guard<std::mutex> lock{_mutex};
                 _noiseControlMode = mode;
-            }
-            if (*mode != NoiseControlMode::Unknown) {
-                RouteCommandEcho(
-                    {AAPCommandKind::SetNoiseControl,
-                     static_cast<uint32_t>(Helper::ToUnderlying(*mode))},
-                    attempt);
-            }
-            if (*mode == NoiseControlMode::Adaptive) {
-                if (const auto desired =
-                        _commandBroker->Desired(AAPCommandKind::SetAdaptiveNoiseLevel);
-                    desired && GetAdaptiveNoiseLevel() != desired)
-                {
-                    _commandBroker->Submit({AAPCommandKind::SetAdaptiveNoiseLevel, *desired});
+                if (*mode != NoiseControlMode::Unknown) {
+                    _commandBroker->OnEcho(
+                        {AAPCommandKind::SetNoiseControl,
+                         static_cast<uint32_t>(Helper::ToUnderlying(*mode))},
+                        attempt.generation);
+                }
+                if (*mode == NoiseControlMode::Adaptive) {
+                    if (const auto desired =
+                            _commandBroker->Desired(AAPCommandKind::SetAdaptiveNoiseLevel);
+                        desired && _adaptiveNoiseLevel != desired)
+                    {
+                        _commandBroker->Submit({AAPCommandKind::SetAdaptiveNoiseLevel, *desired});
+                    }
                 }
             }
             LOG(Info, "AAP: Noise control mode changed to {}",
