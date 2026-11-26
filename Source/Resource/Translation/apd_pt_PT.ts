@@ -501,6 +501,8 @@ Precisa primeiro de emparelhar os seus AirPods nas definições de Bluetooth do 
         <translation>Ação para uma pressão longa de haste direita.</translation>
         <source>Sets how strongly Adaptive mode shapes ambient noise (0-100). Adjustable only while the noise control mode is Adaptive.</source>
         <translation type="unfinished"></translation>
+        <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
+        <translation>Define a intensidade do filtro do modo Adaptive (0–100): 0 deixa passar mais ruído ambiente; 100 filtra mais. Disponível apenas quando o dispositivo ligado comunica o modo Adaptive.</translation>
     </message>
 </context>
 <context>

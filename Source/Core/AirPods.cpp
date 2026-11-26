@@ -238,6 +238,10 @@ void Manager::SetupAAPCallbacks()
         OnPpeCapLevelNotification(level, attempt);
     };
 
+    callbacks.onAdaptiveNoiseLevelChanged = [this](uint8_t level, AAP::AAPAttempt attempt) {
+        OnAdaptiveNoiseLevelNotification(level, attempt);
+    };
+
     callbacks.onSpeakingLevelChanged = [this](AAP::SpeakingLevel level, AAP::AAPAttempt attempt) {
         OnSpeakingLevelChanged(level, attempt);
     };
@@ -1000,13 +1004,10 @@ std::optional<uint8_t> Manager::GetPpeCapLevel() const
     return _aapMgr.GetPpeCapLevel();
 }
 
-bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
+AAP::AAPCommandResult Manager::SetAdaptiveNoiseLevel(uint8_t level)
 {
-    return _aapMgr
-        .SubmitCommand(
-            {AAP::AAPCommandKind::SetAdaptiveNoiseLevel,
-             Core::AAP::NormalizeAdaptiveNoiseLevel(level)})
-        .accepted;
+    return _aapMgr.SubmitCommand(
+        {AAP::AAPCommandKind::SetAdaptiveNoiseLevel, Core::AAP::FilteringStrengthToWire(level)});
 }
 
 std::optional<uint8_t> Manager::GetAdaptiveNoiseLevel() const
@@ -1161,7 +1162,7 @@ void Manager::OnPpeCapLevelChanged(uint8_t level)
 
 void Manager::OnAdaptiveNoiseLevelChanged(uint8_t level)
 {
-    _adaptiveNoiseLevel = Core::AAP::NormalizeAdaptiveNoiseLevel(level);
+    _adaptiveNoiseLevel = Core::AAP::FilteringStrengthToWire(level);
     SetAdaptiveNoiseLevel(_adaptiveNoiseLevel.load());
 }
 
@@ -1199,6 +1200,16 @@ void Manager::OnNoiseControlModeNotification(AAP::NoiseControlMode mode, AAP::AA
     emit AapCommandStateSafely(
         attempt.generation, static_cast<int>(AAP::AAPCommandKind::SetNoiseControl),
         static_cast<uint32_t>(Helper::ToUnderlying(mode)));
+    emit AapNoiseControlModeChangedSafely(static_cast<int>(mode));
+}
+
+void Manager::OnAdaptiveNoiseLevelNotification(uint8_t level, AAP::AAPAttempt attempt)
+{
+    if (!IsCurrentAAPAttempt(attempt)) {
+        return;
+    }
+    LOG(Info, "Adaptive filtering strength changed to: {}", level);
+    emit AapAdaptiveNoiseLevelChangedSafely(level);
 }
 
 void Manager::OnConversationalAwarenessStateChanged(
@@ -1555,6 +1566,7 @@ void Manager::OnAAPDisconnected(AAP::AAPAttempt attempt)
     }
     _aapWorkerCv.notify_all();
     _currentNoiseControlMode = -1;
+    emit AapNoiseControlModeChangedSafely(0);
 
     if (currentAttempt) {
         // The session is over: drop the overlay and republish the BLE-only state.

@@ -24,17 +24,17 @@ namespace Core::AAP {
 
 const std::array<AAPConfirmMode, kAAPCommandKindCount> &AAPCommandBroker::DefaultModes()
 {
-    // Indexed by AAPCommandKind. Only identifiers whose reply is documented and parsed count
-    // as Echo; see Docs/AAP-Protocol-Spec.md §7 (control identifiers) and §12 (ATT).
+    // Indexed by AAPCommandKind. Echo means a same-kind/value record is required evidence;
+    // 0x2E is optional on real firmware, so absence honestly becomes timeout/rollback.
     static constexpr std::array<AAPConfirmMode, kAAPCommandKindCount> kModes{
-        AAPConfirmMode::Echo,         // SetNoiseControl            0x0D
-        AAPConfirmMode::Echo,         // SetConversationalAwareness 0x28 (spec §11 reply)
-        AAPConfirmMode::Echo,         // SetPersonalizedVolume      0x26
-        AAPConfirmMode::Readback,     // SetLoudSoundReduction      ATT handle 0x1B
-        AAPConfirmMode::Echo,         // SetPpeCapLevel             0x38
-        AAPConfirmMode::Unverifiable, // SetAdaptiveNoiseLevel      0x2E, no reply defined
-        AAPConfirmMode::Echo,         // SetAutomaticEarDetection   0x0A
-        AAPConfirmMode::Readback,     // SetHeadTracking            0x17 sensor stream
+        AAPConfirmMode::Echo,     // SetNoiseControl            0x0D
+        AAPConfirmMode::Echo,     // SetConversationalAwareness 0x28 (spec §11 reply)
+        AAPConfirmMode::Echo,     // SetPersonalizedVolume      0x26
+        AAPConfirmMode::Readback, // SetLoudSoundReduction      ATT handle 0x1B
+        AAPConfirmMode::Echo,     // SetPpeCapLevel             0x38
+        AAPConfirmMode::Echo,     // SetAdaptiveNoiseLevel      0x2E optional firmware echo
+        AAPConfirmMode::Echo,     // SetAutomaticEarDetection   0x0A
+        AAPConfirmMode::Readback, // SetHeadTracking            0x17 sensor stream
     };
     return kModes;
 }
@@ -119,6 +119,23 @@ AAPCommandResult AAPCommandBroker::Submit(AAPCommand command, std::stop_token st
     return {true, false, std::nullopt, command.requestId};
 }
 
+AAPCommandResult AAPCommandBroker::RecordDesired(AAPCommand command)
+{
+    if (static_cast<size_t>(command.kind) >= kAAPCommandKindCount || command.value > 0xFF) {
+        return {false, false, AAPCommandFailure::Rejected};
+    }
+    std::lock_guard lock{_mutex};
+    if (_stopping) {
+        return {false, false, AAPCommandFailure::Rejected};
+    }
+    auto &state = _kinds[kKindIndex(command.kind)];
+    state.desired = command.value;
+    if (state.queued) {
+        *state.queued = command.value;
+    }
+    return {true, false, std::nullopt};
+}
+
 void AAPCommandBroker::OnEcho(AAPCommand command, uint64_t generation)
 {
     OnEcho(command, generation, 0);
@@ -197,7 +214,8 @@ void AAPCommandBroker::OnObserved(AAPCommand command, uint64_t generation)
     }
 }
 
-void AAPCommandBroker::ReplayDesiredState(uint64_t generation)
+void AAPCommandBroker::ReplayDesiredState(
+    uint64_t generation, const std::function<bool(AAPCommandKind)> &includeKind)
 {
     std::vector<AAPCommandOutcome> outcomes;
     {
@@ -230,13 +248,16 @@ void AAPCommandBroker::ReplayDesiredState(uint64_t generation)
         // Declaration order, one entry per kind: a reconnect always re-applies the whole desired
         // state the same way, and re-running the replay for a session adds nothing.
         for (size_t index = 0; index < kAAPCommandKindCount; ++index) {
+            const auto kind = static_cast<AAPCommandKind>(index);
             auto &state = _kinds[index];
-            if (!state.desired || state.queued || state.confirmed == state.desired) {
+            if (!state.desired || state.queued || state.confirmed == state.desired ||
+                (includeKind && !includeKind(kind)))
+            {
                 continue;
             }
             state.queued = state.desired;
             state.queuedRequestId = state.desiredRequestId;
-            _queue.push_back(static_cast<AAPCommandKind>(index));
+            _queue.push_back(kind);
         }
         _workCondition.notify_all();
     }

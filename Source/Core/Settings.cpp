@@ -327,6 +327,10 @@ public:
 
         std::lock_guard<std::mutex> lock{_mutex};
 
+        // Load is allowed to retain untouched keys, but never a previous D3 value. A missing or
+        // invalid adaptive_noise_level must converge to the compiled default on every load.
+        _fields.adaptive_noise_level = Core::AAP::kAdaptiveNoiseLevelDefault;
+
         std::decay_t<decltype(kFieldsAbiVersion)> abi_version = 0;
         if (!loadKey("abi_version", abi_version)) {
             LOG(Warn, "No abi_version key. Load default settings.");

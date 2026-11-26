@@ -146,7 +146,7 @@ void SetRepository(std::unique_ptr<Repository> repository);
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Caps how loud loud sounds get, for hearing protection (0-100).")}) \
     callback(uint8_t, adaptive_noise_level, {Core::AAP::kAdaptiveNoiseLevelDefault},               \
         Impl::OnApply(&OnApply_adaptive_noise_level),                                              \
-        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Sets how strongly Adaptive mode shapes ambient noise (0-100). Adjustable only while the noise control mode is Adaptive.")}) \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.")}) \
     callback(bool, head_tracking, {false}, Impl::OnApply(&OnApply_head_tracking))                   \
     callback(Core::AAP::StemAction, stem_left_single, {Core::AAP::DefaultStemActions()[0]},         \
         Impl::OnApply(&OnApply_stem_actions),                                                     \

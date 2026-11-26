@@ -21,12 +21,16 @@
 #include <cstdint>
 #include <optional>
 
-// D3: Adaptive noise strength - the value carried by AAP control command 0x2E
+// D3: Adaptive noise filtering strength - the value carried by AAP control command 0x2E
 // (AutoAncStrength, Docs/AAP-Protocol-Spec.md §7). Note the blueprint reserves 0x39 for
 // StemConfig (D4); the adaptive-strength wire in AAPManager is and stays 0x2E. The domain
 // range is 0-100 with default 50; the setting key is adaptive_noise_level. This header is
-// intentionally Qt-free so the pure clamp/gating logic stays reachable from the settings
+// intentionally Qt-free so the pure clamp/mapping/gating logic stays reachable from the settings
 // layer, the widgets, and the MSVC standalone harness without pulling in the wire code.
+//
+// UI↔wire contract: the UI is *filtering strength*, not "more noise". Vendored Android sends
+// 100-slider while the wire uses 0=more noise and 100=more filtering, therefore filtering strength
+// maps identically to the wire. Do not invert this mapping: UI 0/50/100 -> wire 0/50/100.
 //
 namespace Core::AAP {
 
@@ -43,6 +47,18 @@ constexpr uint8_t kNoiseControlModeAdaptiveWireValue = 0x04;
 constexpr uint8_t NormalizeAdaptiveNoiseLevel(uint8_t level)
 {
     return level > kAdaptiveNoiseLevelMax ? kAdaptiveNoiseLevelMax : level;
+}
+
+// Explicit UI↔wire mapping for 0x2E. Both ends use filtering strength, so the transform is
+// intentionally identity after normalization (the Android UI's 100-slider inversion is not needed).
+constexpr uint8_t FilteringStrengthToWire(uint8_t filteringStrength)
+{
+    return NormalizeAdaptiveNoiseLevel(filteringStrength);
+}
+
+constexpr uint8_t FilteringStrengthFromWire(uint8_t wireLevel)
+{
+    return NormalizeAdaptiveNoiseLevel(wireLevel);
 }
 
 // The strength control is adjustable only while the device reports Adaptive mode. An unknown

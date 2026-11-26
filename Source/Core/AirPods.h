@@ -283,9 +283,9 @@ public:
     std::optional<uint8_t> GetPpeCapLevel() const;
 
     // D3: adaptive noise filtering strength (0-100). Set submits the desired value through
-    // the broker; Get reports the level last sent on the current AAP session (nullopt when
-    // unknown).
-    bool SetAdaptiveNoiseLevel(uint8_t level);
+    // the broker and returns the submission outcome; terminal confirmation/rollback arrives via
+    // AapCommandFailedSafely. Get reports the current AAP session cache (nullopt when unknown).
+    AAP::AAPCommandResult SetAdaptiveNoiseLevel(uint8_t level);
     std::optional<uint8_t> GetAdaptiveNoiseLevel() const;
     bool IsAAPConnected() const;
     AAP::AAPAttempt GetLastAAPAttempt() const;
@@ -407,6 +407,7 @@ private:
     OnLoudSoundReductionStateChanged(AAP::LoudSoundReductionState state, AAP::AAPAttempt attempt);
     void OnAutomaticEarDetectionNotification(bool enabled, AAP::AAPAttempt attempt);
     void OnPpeCapLevelNotification(uint8_t level, AAP::AAPAttempt attempt);
+    void OnAdaptiveNoiseLevelNotification(uint8_t level, AAP::AAPAttempt attempt);
     void OnAAPCommandSettled(const AAP::AAPCommandOutcome &outcome, AAP::AAPAttempt attempt);
     void OnSpeakingLevelChanged(AAP::SpeakingLevel level, AAP::AAPAttempt attempt);
     void OnEarDetectionChanged(
@@ -457,6 +458,9 @@ Q_SIGNALS:
         uint64_t generation, uint64_t requestId, int kind, uint32_t value, uint32_t rollbackValue,
         bool hasRollbackValue);
     void AapCommandStateSafely(uint64_t generation, int kind, uint32_t value);
+    // Device-reported state, not the saved combo selection. Zero/unknown means unavailable.
+    void AapNoiseControlModeChangedSafely(int mode);
+    void AapAdaptiveNoiseLevelChangedSafely(uint32_t level);
     // Emitted from the AAP reader thread for a validated stem gesture. The receiver performs the
     // host work on the GUI thread only after revalidating the address and generation, so no widget
     // or media API is touched from the worker and stale queued gestures cannot cross a reconnect.

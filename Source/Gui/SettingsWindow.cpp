@@ -22,6 +22,7 @@
 #include <QDateTime>
 #include <QFileDialog>
 #include <QFile>
+#include <limits>
 #include <QPainter>
 #include <QLabel>
 #include <QListWidget>

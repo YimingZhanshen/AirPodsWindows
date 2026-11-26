@@ -24,6 +24,7 @@
 #include <functional>
 
 #include "Base.h"
+#include "AdaptiveNoiseLevel.h"
 #include "AAPBattery.h"
 #include "AAPStem.h"
 #include "../Helper.h"
@@ -149,7 +150,9 @@ inline std::vector<uint8_t> BuildConversationalAwarenessPacket(bool enable)
             0x00, 0x00, 0x00};
 }
 
-// Adaptive Audio Noise level packet builder (0-100)
+// Adaptive filtering-strength packet builder (0-100). UI filtering strength maps identically:
+// wire 0 lets more ambient noise through, wire 100 filters more. Do not apply Android's
+// UI-side 100-slider inversion again.
 inline std::vector<uint8_t> BuildAdaptiveNoisePacket(uint8_t level)
 {
     return {0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, level, 0x00, 0x00, 0x00};
@@ -216,6 +219,23 @@ inline std::vector<uint8_t> BuildPpeCapLevelPacket(uint8_t level)
 //////////////////////////////////////////////////
 // Packet Parsing
 //
+
+// Optional 0x2E firmware echo for adaptive filtering strength. The protocol does not guarantee
+// this record, so callers must time out when it is absent; a present record is evidence only when
+// its identifier, value and session generation all match.
+inline bool IsAdaptiveNoiseLevelNotification(const std::vector<uint8_t> &data)
+{
+    return data.size() >= 8 && data[0] == 0x04 && data[1] == 0x00 && data[2] == 0x04 &&
+           data[3] == 0x00 && data[4] == 0x09 && data[5] == 0x00 && data[6] == 0x2E;
+}
+
+inline std::optional<uint8_t> ParseAdaptiveNoiseLevelNotification(const std::vector<uint8_t> &data)
+{
+    if (!IsAdaptiveNoiseLevelNotification(data) || data[7] > 100) {
+        return std::nullopt;
+    }
+    return Core::AAP::FilteringStrengthFromWire(data[7]);
+}
 
 // Parse noise control mode from notification packet
 // Packet format: 04 00 04 00 09 00 0D [mode] 00 00 00
