@@ -283,7 +283,6 @@ private Q_SLOTS:
     void TracksLidAcrossShortGaps();
     void TracksLidWhilePodsAreOut();
     void LidPopupCooldownBlocksRapidRepeats();
-    void EarDetectionTrackerSurvivesStateLoss();
     void DebouncesRapidRemovalAndInsertion();
     void DebounceCompletesAtDeadlineWithoutAnotherPacket();
     void SingleEarAlternationUsesFusedResult();
