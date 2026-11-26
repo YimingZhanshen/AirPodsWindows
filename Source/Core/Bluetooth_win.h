@@ -128,7 +128,7 @@ private:
     std::mutex _mutex;
 
     winrt::event_token _tokenReceived, _tokenStopped;
-    std::atomic<bool> _stop{false}, _destroy{false}, _stopped{false};
+    std::atomic<bool> _stop{false}, _destroy{false}, _stopped{false}, _everStarted{false};
     std::mutex _conVarMutex;
     std::condition_variable _destroyConVar;
 

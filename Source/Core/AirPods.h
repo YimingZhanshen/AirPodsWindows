@@ -265,7 +265,8 @@ public:
 
 private:
     std::mutex _mutex;
-    // Declared before StateManager so its timer callbacks cannot outlive these trackers.
+    // Declared before the scanner and workers it feeds so its timer callbacks cannot outlive
+    // these trackers. The destructor first drains workers, then member destruction converges.
     Details::LidTracker _lidTracker;
     Details::EarDetectionTracker _earDetection;
     Details::StateManager _stateMgr;
@@ -292,8 +293,7 @@ private:
     // for in-flight callbacks, which reach `_stateMgr` and `_mutex` above.
     Bluetooth::AdvertisementWatcher _adWatcher;
 
-    // Owned workers are declared last so member destruction cannot release the objects their
-    // callbacks touch before both threads have been stopped and joined.
+    // Destructor body stops and joins these workers before dependent members are destroyed.
     std::atomic<bool> _scannerRunning{false};
     mutable std::mutex _scannerRetryMutex;
     Helper::ConWorker _scannerRetryWorker;

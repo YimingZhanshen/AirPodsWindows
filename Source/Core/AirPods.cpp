@@ -306,6 +306,11 @@ void Manager::OnBoundDeviceAddressChanged(uint64_t address)
         _deviceLookupThread.join();
     }
 
+    // Cancel and drain the old AAP worker before holding the AirPods state mutex. A driver
+    // call may be slow, and this method can arrive from the GUI or another state callback.
+    DisconnectAAP();
+    _currentNoiseControlMode = -1;
+
     std::lock_guard<std::mutex> lock{_mutex};
 
     _requestedDeviceAddress = address;
@@ -316,8 +321,6 @@ void Manager::OnBoundDeviceAddressChanged(uint64_t address)
     _stateMgr.Disconnect();
     _lidTracker.Reset();
     _earDetection.Reset();
-
-    DisconnectAAP();
 
     emit DeviceConnectionChanged(false);
     QMetaObject::invokeMethod(this, [this] { StopScanner(); }, Qt::QueuedConnection);
@@ -347,79 +350,96 @@ void Manager::OnBoundDeviceAddressChanged(uint64_t address)
 
 void Manager::CompleteBoundDeviceLookup(uint64_t address, std::optional<Bluetooth::Device> device)
 {
-    std::lock_guard<std::mutex> lock{_mutex};
-
-    if (address != _requestedDeviceAddress) {
-        LOG(Info, "Ignore a stale bound-device lookup result.");
-        return;
-    }
-
-    if (!device.has_value()) {
-        LOG(Warn, "The bound device address is no longer available.");
-        emit BoundDeviceUnavailable();
-        return;
-    }
-
-    _boundDevice = std::move(device);
-    _boundModel = AppleCP::AirPods::GetModel(_boundDevice->GetProductId());
-
-    if (auto modelNumber = _boundDevice->GetModelNumber(); modelNumber.has_value()) {
-        _modelOverride = ModelFromModelNumber(modelNumber.value());
-        if (_modelOverride.has_value()) {
-            LOG(Info, "Detected model number '{}', override model: {}", modelNumber.value(),
-                Helper::ToString(_modelOverride.value()));
-        }
-    }
-
-    _deviceName = QString::fromStdString([&] {
-        auto name = _boundDevice->GetName();
-        return name.find("Bluetooth") != std::string::npos ? std::string{} : name;
-    }());
-
-    _boundDevice->CbConnectionStatusChanged() += [this](auto &&...args) {
+    std::optional<Bluetooth::DeviceState> initialState;
+    {
         std::lock_guard<std::mutex> lock{_mutex};
-        OnBoundDeviceConnectionStateChanged(std::forward<decltype(args)>(args)...);
-    };
 
-    OnBoundDeviceConnectionStateChanged(_boundDevice->GetConnectionState());
+        if (address != _requestedDeviceAddress) {
+            LOG(Info, "Ignore a stale bound-device lookup result.");
+            return;
+        }
+
+        if (!device.has_value()) {
+            LOG(Warn, "The bound device address is no longer available.");
+            emit BoundDeviceUnavailable();
+            return;
+        }
+
+        _boundDevice = std::move(device);
+        _boundModel = AppleCP::AirPods::GetModel(_boundDevice->GetProductId());
+
+        if (auto modelNumber = _boundDevice->GetModelNumber(); modelNumber.has_value()) {
+            _modelOverride = ModelFromModelNumber(modelNumber.value());
+            if (_modelOverride.has_value()) {
+                LOG(Info, "Detected model number '{}', override model: {}", modelNumber.value(),
+                    Helper::ToString(_modelOverride.value()));
+            }
+        }
+
+        _deviceName = QString::fromStdString([&] {
+            auto name = _boundDevice->GetName();
+            return name.find("Bluetooth") != std::string::npos ? std::string{} : name;
+        }());
+
+        _boundDevice->CbConnectionStatusChanged() += [this](auto &&...args) {
+            OnBoundDeviceConnectionStateChanged(std::forward<decltype(args)>(args)...);
+        };
+
+        initialState = _boundDevice->GetConnectionState();
+    }
+
+    if (initialState.has_value()) {
+        OnBoundDeviceConnectionStateChanged(*initialState);
+    }
 }
 
 void Manager::OnBoundDeviceConnectionStateChanged(Bluetooth::DeviceState state)
 {
-    const bool oldDeviceConnected = _deviceConnected;
+    bool doDisconnect = false;
+    bool doConnect = false;
+    bool hasBoundDevice = false;
     bool newDeviceConnected = state == Bluetooth::DeviceState::Connected;
-    bool doDisconnect = oldDeviceConnected && !newDeviceConnected;
-    bool doConnect = !oldDeviceConnected && newDeviceConnected;
+    bool oldDeviceConnected = false;
+
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        oldDeviceConnected = _deviceConnected;
+        doDisconnect = oldDeviceConnected && !newDeviceConnected;
+        doConnect = !oldDeviceConnected && newDeviceConnected;
+        hasBoundDevice = _boundDevice.has_value();
+        _deviceConnected = newDeviceConnected;
+
+        if (doDisconnect) {
+            _stateMgr.Disconnect();
+            _lidTracker.Reset();
+            _earDetection.Reset();
+        }
+
+        emit DeviceConnectionChanged(newDeviceConnected);
+        QMetaObject::invokeMethod(
+            this,
+            [this, newDeviceConnected] {
+                if (newDeviceConnected) {
+                    StartScanner();
+                }
+                else {
+                    StopScanner();
+                }
+            },
+            Qt::QueuedConnection);
+    }
 
     LOG(Info,
         "OnBoundDeviceConnectionStateChanged: state={}, _deviceConnected={}, "
         "newDeviceConnected={}, doConnect={}",
         static_cast<int>(state), oldDeviceConnected, newDeviceConnected, doConnect);
 
-    _deviceConnected = newDeviceConnected;
-    emit DeviceConnectionChanged(newDeviceConnected);
-
-    QMetaObject::invokeMethod(
-        this,
-        [this, newDeviceConnected] {
-            if (newDeviceConnected) {
-                StartScanner();
-            }
-            else {
-                StopScanner();
-            }
-        },
-        Qt::QueuedConnection);
-
     if (doDisconnect) {
-        _stateMgr.Disconnect();
-        _lidTracker.Reset();
-        _earDetection.Reset();
         DisconnectAAP();
+        _currentNoiseControlMode = -1;
     }
 
-    if (doConnect && _boundDevice.has_value()) {
-        // Try to connect AAP for devices that support it
+    if (doConnect && hasBoundDevice) {
         ConnectAAP();
     }
 
@@ -508,6 +528,7 @@ void Manager::DisconnectAAP()
         _aapConnection.FinishStop();
     }
     _aapWorkerCv.notify_all();
+    _currentNoiseControlMode = -1;
 }
 
 void Manager::AAPConnectLoop(std::stop_token stopToken)
@@ -559,7 +580,11 @@ void Manager::AAPConnectLoop(std::stop_token stopToken)
         const uint64_t address = *_aapDesiredAddress;
         const auto begin = _aapConnection.Begin(address);
         if (!begin.started) {
-            _aapWorkerCv.wait_for(lock, std::chrono::milliseconds{50});
+            _aapWorkerCv.wait(lock, [this, &stopToken] {
+                return stopToken.stop_requested() || _aapShutdown || !_aapDesiredAddress ||
+                       _aapConnection.State() == AAP::AAPConnectionState::Idle ||
+                       _aapConnection.State() == AAP::AAPConnectionState::Backoff;
+            });
             continue;
         }
 
@@ -592,7 +617,7 @@ void Manager::AAPConnectLoop(std::stop_token stopToken)
             }
         }
 
-        if (reportFailure) {
+        if (reportFailure && !stopToken.stop_requested() && !_aapShutdown) {
             lock.unlock();
             emit AapConnectionFailedSafely(static_cast<int>(failure));
         }
@@ -1097,6 +1122,7 @@ void Manager::OnAAPDisconnected(AAP::AAPAttempt attempt)
         }
     }
     _aapWorkerCv.notify_all();
+    _currentNoiseControlMode = -1;
 
     LOG(Info, "AAP connection lost - ANC features unavailable");
     emit AapConnectionStateChangedSafely(false);

@@ -199,6 +199,8 @@ private:
 
     // Why the last Connect() attempt failed; reset to None on success.
     std::atomic<ConnectFailure> _lastConnectFailure{ConnectFailure::None};
+    std::atomic<uint64_t> _cancelledGeneration{0};
+    std::function<std::shared_ptr<AAPTransport>(AAPTransportKind)> _transportFactory;
 
     // Callbacks
     Callbacks _callbacks;
@@ -215,6 +217,9 @@ private:
 
     // Internal methods
     bool SendPacket(const std::vector<uint8_t> &packet);
+    bool SendPacket(
+        const std::shared_ptr<AAPTransport> &transport, const std::vector<uint8_t> &packet,
+        std::stop_token stopToken);
     bool IsCurrentAttempt(AAPAttempt attempt) const;
     void ProcessPacket(const std::vector<uint8_t> &packet);
     void ProcessPacket(
@@ -222,14 +227,15 @@ private:
     void ReaderLoop(
         AAPAttempt attempt, std::shared_ptr<AAPTransport> transport, std::stop_token stopToken,
         Callbacks callbacks);
-    bool InitializeConnection(std::stop_token stopToken);
+    bool
+    InitializeConnection(const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken);
     bool WaitCancellable(std::chrono::milliseconds delay, std::stop_token callerStop);
     std::shared_ptr<AAPTransport>
     ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, ConnectFailure &failure);
 
     // ATT path (blueprint 0.3): probe once after the handshake and route ATT
     // frames received on the AAP pipe.
-    void StartAttProbe();
+    void StartAttProbe(const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken);
     void ProcessAttFrame(
         const std::vector<uint8_t> &packet, AAPAttempt attempt, const Callbacks &callbacks);
 };

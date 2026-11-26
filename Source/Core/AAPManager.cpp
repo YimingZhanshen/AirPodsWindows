@@ -43,6 +43,9 @@ void Manager::CancelConnect()
     std::stop_source connectStop;
     {
         std::lock_guard lock{_mutex};
+        if (_attempt.generation != 0) {
+            _cancelledGeneration.store(_attempt.generation);
+        }
         connectStop = _connectStop;
     }
     connectStop.request_stop();
@@ -59,11 +62,17 @@ void Manager::CancelConnect()
 
 bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
 {
-    if (attempt.generation == 0 || stopToken.stop_requested()) {
+    if (attempt.generation == 0 || stopToken.stop_requested() ||
+        _cancelledGeneration.load() == attempt.generation)
+    {
         return false;
     }
 
     std::unique_lock connectLock{_connectMutex};
+    const auto cancelled = [&] {
+        return stopToken.stop_requested() || _connectStop.get_token().stop_requested() ||
+               _cancelledGeneration.load() == attempt.generation;
+    };
     Callbacks callbacks;
     std::shared_ptr<AAPTransport> previousTransport;
     std::jthread previousReader;
@@ -98,7 +107,7 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         previousReader.join();
     }
 
-    if (stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
+    if (cancelled()) {
         std::lock_guard lock{_mutex};
         _connecting = false;
         _lastConnectFailure.store(ConnectFailure::TransportError);
@@ -115,7 +124,7 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
 
     {
         std::lock_guard lock{_mutex};
-        if (_connectStop.get_token().stop_requested()) {
+        if (cancelled()) {
             _connecting = false;
             _lastConnectFailure.store(ConnectFailure::TransportError);
         }
@@ -136,23 +145,24 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
     }
     LOG(Info, "AAP: Transport connected; starting handshake");
 
-    const bool initialized = InitializeConnection(stopToken);
-    const bool cancelled = stopToken.stop_requested() || _connectStop.get_token().stop_requested();
-    if (!initialized || cancelled) {
+    const bool initialized = InitializeConnection(transport, stopToken);
+    const bool connectionCancelled = cancelled();
+    if (!initialized || connectionCancelled) {
         transport->Close();
         std::lock_guard lock{_mutex};
         _transport.store(std::shared_ptr<AAPTransport>{});
         _usingMagicAAP = false;
         _connecting = false;
         _lastConnectFailure.store(
-            cancelled ? ConnectFailure::TransportError : ConnectFailure::HandshakeFailure);
+            connectionCancelled ? ConnectFailure::TransportError
+                                : ConnectFailure::HandshakeFailure);
         return false;
     }
 
     std::stop_source readerStop;
     {
         std::lock_guard lock{_mutex};
-        if (_connectStop.get_token().stop_requested()) {
+        if (cancelled()) {
             _connecting = false;
             _lastConnectFailure.store(ConnectFailure::TransportError);
             transport->Close();
@@ -188,20 +198,27 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
         }
     };
 
+    const auto cancelled = [&] {
+        return stopToken.stop_requested() || _connectStop.get_token().stop_requested() ||
+               _cancelledGeneration.load() == attempt.generation;
+    };
+
     LOG(Info, "AAP: Attempting L2CAP SEQPACKET connection to {:016X} on PSM {}", attempt.address,
         kPSM);
-    auto seqPacket = std::shared_ptr<AAPTransport>(CreateSeqPacketTransport().release());
+    auto seqPacket = _transportFactory
+                         ? _transportFactory(AAPTransportKind::SeqPacket)
+                         : std::shared_ptr<AAPTransport>(CreateSeqPacketTransport().release());
     setPending(seqPacket);
     const bool seqConnected = seqPacket->Connect(attempt.address, stopToken);
     clearPending(seqPacket);
-    if (seqConnected && !_connectStop.get_token().stop_requested() && !stopToken.stop_requested()) {
+    if (seqConnected && !cancelled()) {
         failure = ConnectFailure::None;
         return seqPacket;
     }
     seqPacket->Close();
     failure = ConnectFailure::ServiceUnavailable;
 
-    if (stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
+    if (cancelled()) {
         failure = ConnectFailure::TransportError;
         return nullptr;
     }
@@ -222,12 +239,13 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
     }
     Diagnostics::Recorder::Instance().Record(Diagnostics::Step::DriverOpen, true);
 
-    auto magicAAP = std::shared_ptr<AAPTransport>(CreateMagicAAPTransport().release());
+    auto magicAAP = _transportFactory
+                        ? _transportFactory(AAPTransportKind::MagicAAP)
+                        : std::shared_ptr<AAPTransport>(CreateMagicAAPTransport().release());
     setPending(magicAAP);
     const bool magicConnected = magicAAP->Connect(attempt.address, stopToken);
     clearPending(magicAAP);
-    if (magicConnected && !_connectStop.get_token().stop_requested() && !stopToken.stop_requested())
-    {
+    if (magicConnected && !cancelled()) {
         failure = ConnectFailure::None;
         return magicAAP;
     }
@@ -543,13 +561,14 @@ AttPathState Manager::GetAttPathState() const
     return state;
 }
 
-void Manager::StartAttProbe()
+void Manager::StartAttProbe(
+    const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken)
 {
     // One-shot probe: ask for the loud-sound-reduction value. Any ATT answer
     // (even an error response) proves the firmware accepts ATT on this pipe;
     // no answer within the window marks the path unconfirmed. Never retried.
     auto packet = Att::BuildReadRequest(Att::kLoudSoundReductionHandle);
-    if (!SendPacket(packet)) {
+    if (!SendPacket(transport, packet, stopToken)) {
         _attPathState.store(AttPathState::Unconfirmed);
         Diagnostics::Recorder::Instance().Record(Diagnostics::Step::AttProbe, false, "send failed");
         return;
@@ -651,8 +670,17 @@ bool Manager::SendPacket(const std::vector<uint8_t> &packet)
         return false;
     }
 
-    auto transport = _transport.load();
-    if (!transport || !transport->Send(packet, {})) {
+    return SendPacket(_transport.load(), packet, {});
+}
+
+bool Manager::SendPacket(
+    const std::shared_ptr<AAPTransport> &transport, const std::vector<uint8_t> &packet,
+    std::stop_token stopToken)
+{
+    if (!transport || stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
+        return false;
+    }
+    if (!transport->Send(packet, stopToken)) {
         return false;
     }
 
@@ -885,14 +913,16 @@ bool Manager::WaitCancellable(std::chrono::milliseconds delay, std::stop_token c
 // Protocol timing constants
 constexpr auto kPacketProcessingDelay = std::chrono::milliseconds(100);
 
-bool Manager::InitializeConnection(std::stop_token stopToken)
+bool Manager::InitializeConnection(
+    const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken)
 {
     if (stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
         return false;
     }
 
-    // Send handshake
-    if (!SendPacket(Packets::Handshake)) {
+    // The connection gate remains closed until the handshake completes. Use the pinned
+    // session transport directly; SendPacket would reject these pre-connected packets.
+    if (!SendPacket(transport, Packets::Handshake, stopToken)) {
         LOG(Error, "AAP: Failed to send handshake");
         Diagnostics::Recorder::Instance().Record(
             Diagnostics::Step::Handshake, false, "send failed");
@@ -906,19 +936,22 @@ bool Manager::InitializeConnection(std::stop_token stopToken)
     }
 
     // Enable features (Conversational Awareness, Adaptive Transparency)
-    if (!SendPacket(Packets::EnableFeatures)) {
+    if (!SendPacket(transport, Packets::EnableFeatures, stopToken)) {
         LOG(Warn, "AAP: Failed to send enable features packet");
-        // Continue anyway - some features may still work
+        Diagnostics::Recorder::Instance().Record(
+            Diagnostics::Step::FeatureFlags, false, "send failed");
     }
-    LOG(Info, "AAP: Sent enable features");
-    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::FeatureFlags, true);
+    else {
+        LOG(Info, "AAP: Sent enable features");
+        Diagnostics::Recorder::Instance().Record(Diagnostics::Step::FeatureFlags, true);
+    }
 
     if (!WaitCancellable(kPacketProcessingDelay, stopToken)) {
         return false;
     }
 
     // Request notifications (battery, ear detection, noise control, etc.)
-    if (!SendPacket(Packets::RequestNotifications)) {
+    if (!SendPacket(transport, Packets::RequestNotifications, stopToken)) {
         LOG(Error, "AAP: Failed to send request notifications");
         Diagnostics::Recorder::Instance().Record(
             Diagnostics::Step::NotificationSubscribe, false, "send failed");
@@ -930,7 +963,7 @@ bool Manager::InitializeConnection(std::stop_token stopToken)
     // Blueprint 0.3: probe whether the firmware answers ATT frames on this
     // pipe. Fire-and-forget; the outcome lands in _attPathState and is
     // surfaced through onAttProbeResult.
-    StartAttProbe();
+    StartAttProbe(transport, stopToken);
 
     return true;
 }
@@ -982,6 +1015,38 @@ std::optional<ConversationalAwarenessState> Manager::GetConversationalAwarenessS
 {
     return std::nullopt;
 }
+bool Manager::SetPersonalizedVolume(bool)
+{
+    return false;
+}
+std::optional<PersonalizedVolumeState> Manager::GetPersonalizedVolumeState() const
+{
+    return std::nullopt;
+}
+bool Manager::SetAutomaticEarDetection(bool)
+{
+    return false;
+}
+std::optional<bool> Manager::GetAutomaticEarDetectionState() const
+{
+    return std::nullopt;
+}
+bool Manager::SetLoudSoundReduction(bool)
+{
+    return false;
+}
+std::optional<LoudSoundReductionState> Manager::GetLoudSoundReductionState() const
+{
+    return std::nullopt;
+}
+bool Manager::SetAdaptiveTransparencyLevel(uint8_t)
+{
+    return false;
+}
+std::optional<uint8_t> Manager::GetAdaptiveTransparencyLevel() const
+{
+    return std::nullopt;
+}
 bool Manager::SetAdaptiveNoiseLevel(uint8_t)
 {
     return false;
@@ -1007,13 +1072,18 @@ AttPathState Manager::GetAttPathState() const
 {
     return AttPathState::Unconfirmed;
 }
-void Manager::StartAttProbe() {}
+void Manager::StartAttProbe(const std::shared_ptr<AAPTransport> &, std::stop_token) {}
 bool Manager::IsCurrentAttempt(AAPAttempt) const
 {
     return false;
 }
 void Manager::ProcessAttFrame(const std::vector<uint8_t> &, AAPAttempt, const Callbacks &) {}
 bool Manager::SendPacket(const std::vector<uint8_t> &)
+{
+    return false;
+}
+bool Manager::SendPacket(
+    const std::shared_ptr<AAPTransport> &, const std::vector<uint8_t> &, std::stop_token)
 {
     return false;
 }
@@ -1024,7 +1094,7 @@ bool Manager::WaitCancellable(std::chrono::milliseconds, std::stop_token)
 {
     return false;
 }
-bool Manager::InitializeConnection(std::stop_token)
+bool Manager::InitializeConnection(const std::shared_ptr<AAPTransport> &, std::stop_token)
 {
     return false;
 }

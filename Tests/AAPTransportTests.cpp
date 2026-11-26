@@ -682,6 +682,47 @@ private slots:
         manager._connected = false;
         manager._transport.store(nullptr);
     }
+
+    void ManagerConnectInitializesBeforeConnectionGateOpens()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transportFactory =
+            [transport](Core::AAP::AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            return transport;
+        };
+
+        const Core::AAP::AAPAttempt attempt{1, 1};
+        QVERIFY(manager.Connect(attempt));
+        QVERIFY(manager.IsConnected());
+        QCOMPARE(manager.GetLastAttempt().generation, attempt.generation);
+
+        // Handshake, feature flags, notification subscriptions, then one ATT read.
+        QCOMPARE(transport->SendCalls(), size_t{4});
+        QCOMPARE(transport->LastSend(), (std::vector<uint8_t>{0x0A, 0x1B, 0x00}));
+        QVERIFY(manager._readerThread.joinable());
+
+        manager.Disconnect();
+        QVERIFY(!manager.IsConnected());
+        QVERIFY(!manager._readerThread.joinable());
+    }
+
+    void CancelConnectBeforeAttemptStartsSuppressesThatGeneration()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transportFactory =
+            [transport](Core::AAP::AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            return transport;
+        };
+        manager._attempt = Core::AAP::AAPAttempt{1, 7};
+        manager.CancelConnect();
+        manager._attempt = {};
+
+        const Core::AAP::AAPAttempt attempt{1, 7};
+        QVERIFY(!manager.Connect(attempt));
+        QCOMPARE(transport->SendCalls(), size_t{0});
+    }
 #endif
 };
 

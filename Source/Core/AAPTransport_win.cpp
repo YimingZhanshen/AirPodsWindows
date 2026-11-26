@@ -108,17 +108,30 @@ bool SeqPacketTransport::Connect(uint64_t address, std::stop_token stop)
         _winsockInitialized = true;
     }
 
-    // P1 deliberately provides no L2CAP STREAM or RFCOMM fallback: neither
-    // preserves AAP record boundaries.
-    SOCKET socketHandle = socket(AF_BTH, SOCK_SEQPACKET, BTHPROTO_L2CAP);
-    if (socketHandle == INVALID_SOCKET) {
-        spdlog::error("[AAPTransport] SEQPACKET socket creation failed: {}", WSAGetLastError());
-        return false;
-    }
-
     std::shared_ptr<SocketState> connecting;
+    SOCKET socketHandle = INVALID_SOCKET;
     {
+        // Publish the socket before the OS call so Close() can cancel this attempt without
+        // racing with a socket that the caller has created but not yet retained.
         std::lock_guard<std::mutex> lock{_ioMutex};
+        _closed = false;
+        // P1 deliberately provides no L2CAP STREAM or RFCOMM fallback.
+        socketHandle = socket(AF_BTH, SOCK_SEQPACKET, BTHPROTO_L2CAP);
+        if (socketHandle == INVALID_SOCKET) {
+            _closed = true;
+            spdlog::error("[AAPTransport] SEQPACKET socket creation failed: {}", WSAGetLastError());
+            return false;
+        }
+
+        u_long nonBlocking = 1;
+        if (ioctlsocket(socketHandle, FIONBIO, &nonBlocking) != 0) {
+            closesocket(socketHandle);
+            _closed = true;
+            spdlog::error(
+                "[AAPTransport] SEQPACKET non-blocking setup failed: {}", WSAGetLastError());
+            return false;
+        }
+
         connecting = std::make_shared<SocketState>(reinterpret_cast<void *>(socketHandle));
         _connectingSocket = connecting;
     }
@@ -127,41 +140,95 @@ bool SeqPacketTransport::Connect(uint64_t address, std::stop_token stop)
     addressRecord.addressFamily = AF_BTH;
     addressRecord.btAddr = address;
     addressRecord.port = kPSM;
-    if (connect(
-            socketHandle, reinterpret_cast<SOCKADDR *>(&addressRecord), sizeof(addressRecord)) ==
-        SOCKET_ERROR)
-    {
-        const bool expected = [&] {
-            std::lock_guard<std::mutex> lock{_ioMutex};
-            if (_connectingSocket == connecting) {
-                _connectingSocket.reset();
-                return true;
-            }
-            return false;
-        }();
-        if (!expected) {
-            connecting->Shutdown();
+    int result =
+        connect(socketHandle, reinterpret_cast<SOCKADDR *>(&addressRecord), sizeof(addressRecord));
+    int error = result == 0 ? 0 : WSAGetLastError();
+    if (result != 0 && error != WSAEWOULDBLOCK) {
+        std::lock_guard<std::mutex> lock{_ioMutex};
+        if (_connectingSocket == connecting) {
+            _connectingSocket.reset();
         }
-        spdlog::error("[AAPTransport] SEQPACKET connect failed: {}", WSAGetLastError());
+        _closed = true;
+        spdlog::error("[AAPTransport] SEQPACKET connect failed: {}", error);
         return false;
     }
 
-    {
-        std::lock_guard<std::mutex> lock{_ioMutex};
-        if (_closed || stop.stop_requested() || connecting->closed.load() ||
-            _connectingSocket != connecting)
-        {
+    bool connected = result == 0;
+    while (!connected && !stop.stop_requested() && !connecting->closed.load()) {
+        fd_set writeSet{};
+        FD_ZERO(&writeSet);
+        FD_SET(socketHandle, &writeSet);
+        fd_set errorSet{};
+        FD_ZERO(&errorSet);
+        FD_SET(socketHandle, &errorSet);
+        timeval timeout{};
+        timeout.tv_sec = 0;
+        timeout.tv_usec = static_cast<long>(kReceivePollInterval.count() * 1000);
+
+        const int selected = select(0, nullptr, &writeSet, &errorSet, &timeout);
+        if (selected == SOCKET_ERROR) {
+            error = WSAGetLastError();
+            std::lock_guard<std::mutex> lock{_ioMutex};
             if (_connectingSocket == connecting) {
                 _connectingSocket.reset();
             }
-            connecting->Shutdown();
+            _closed = true;
+            spdlog::error("[AAPTransport] SEQPACKET connect wait failed: {}", error);
             return false;
         }
-
-        _socket = std::move(_connectingSocket);
-        _closed = false;
+        if (selected == 0) {
+            continue;
+        }
+        if (FD_ISSET(socketHandle, &errorSet)) {
+            int socketError = 0;
+            int errorSize = sizeof(socketError);
+            getsockopt(
+                socketHandle, SOL_SOCKET, SO_ERROR, reinterpret_cast<char *>(&socketError),
+                &errorSize);
+            error = socketError != 0 ? socketError : WSAECONNREFUSED;
+            std::lock_guard<std::mutex> lock{_ioMutex};
+            if (_connectingSocket == connecting) {
+                _connectingSocket.reset();
+            }
+            _closed = true;
+            spdlog::error("[AAPTransport] SEQPACKET connect failed: {}", error);
+            return false;
+        }
+        if (FD_ISSET(socketHandle, &writeSet)) {
+            connected = true;
+        }
     }
 
+    u_long blocking = 0;
+    if (connected && ioctlsocket(socketHandle, FIONBIO, &blocking) != 0) {
+        connected = false;
+        error = WSAGetLastError();
+    }
+
+    std::lock_guard<std::mutex> lock{_ioMutex};
+    if (!connected || stop.stop_requested() || _closed || _connectingSocket != connecting ||
+        connecting->closed.load())
+    {
+        if (_connectingSocket == connecting) {
+            _connectingSocket.reset();
+        }
+        connecting->Shutdown();
+        if (stop.stop_requested() || _closed || connecting->closed.load()) {
+            _closed = true;
+            spdlog::info("[AAPTransport] SEQPACKET connect cancelled");
+        }
+        else if (error != 0) {
+            _closed = true;
+            spdlog::error("[AAPTransport] SEQPACKET connect failed: {}", error);
+        }
+        else {
+            _closed = true;
+        }
+        return false;
+    }
+
+    _socket = std::move(_connectingSocket);
+    _closed = false;
     spdlog::info("[AAPTransport] Connected with L2CAP SEQPACKET");
     return true;
 }

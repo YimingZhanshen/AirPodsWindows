@@ -303,13 +303,14 @@ AdvertisementWatcher::AdvertisementWatcher()
 
 AdvertisementWatcher::~AdvertisementWatcher()
 {
-    const bool wasRunning = !_stop.load();
+    const bool needDrain = _everStarted.load() && !_stopped.load();
     _destroy = true;
-    _stopped = false;
-    Stop();
+    if (needDrain) {
+        Stop();
+    }
 
     std::unique_lock<std::mutex> lock{_conVarMutex};
-    if (wasRunning) {
+    if (needDrain) {
         _destroyConVar.wait_for(lock, 1s, [this] { return _stopped.load(); });
     }
 
@@ -327,6 +328,7 @@ bool AdvertisementWatcher::Start()
 
         std::lock_guard<std::mutex> lock{_mutex};
         _bleWatcher.Start();
+        _everStarted = true;
         LOG(Info, "Bluetooth AdvWatcher start succeeded.");
         CbStateChanged().Invoke(State::Started, std::nullopt);
         return true;

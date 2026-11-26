@@ -146,6 +146,12 @@ public:
         return _sendCalls;
     }
 
+    std::vector<std::vector<uint8_t>> SentRecords() const
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        return _sentRecords;
+    }
+
     std::vector<uint8_t> LastSend() const
     {
         std::lock_guard<std::mutex> lock{_mutex};

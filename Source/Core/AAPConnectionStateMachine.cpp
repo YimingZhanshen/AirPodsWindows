@@ -18,12 +18,6 @@ AAPConnectionStateMachine::BeginResult AAPConnectionStateMachine::Begin(uint64_t
         return {{address, 0}, false};
     }
 
-    if (_state == AAPConnectionState::Backoff) {
-        // Lost() already reserved this generation. Only the scheduled retry may consume it.
-        _state = AAPConnectionState::Connecting;
-        return {_attempt, true};
-    }
-
     _attempt = {address, _nextGeneration++};
     _retryDelay = {};
     _state = AAPConnectionState::Connecting;

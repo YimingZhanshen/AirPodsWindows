@@ -33,8 +33,9 @@ class AAPConnectionStateMachineTests : public QObject
     Q_OBJECT
 
 private slots:
-    void ConcurrentConnectStartsExactlyOneAttempt()
+    void SerializedConcurrentRequestsStartOneAttempt()
     {
+        // The state machine intentionally has no internal lock; callers serialize it.
         AAPConnectionStateMachine machine{NoJitter};
         std::mutex mutex;
         std::atomic<int> starts{0};
@@ -54,6 +55,19 @@ private slots:
         QCOMPARE(starts.load(), 1);
         QCOMPARE(staleGenerations.load(), 0);
         QCOMPARE(machine.State(), AAPConnectionState::Connecting);
+    }
+
+    void BackoffRetryAllocatesFreshGeneration()
+    {
+        AAPConnectionStateMachine machine{NoJitter};
+        const auto first = machine.Begin(42).attempt;
+        QVERIFY(machine.Connected(first, AAPConnectionStateMachine::Clock::now()));
+        const auto retryDelay = machine.Lost(first, AAPConnectionStateMachine::Clock::now() + 1s);
+        QVERIFY(retryDelay.has_value());
+        const auto second = machine.Begin(42).attempt;
+        QVERIFY(second.generation > first.generation);
+        QVERIFY(machine.IsCurrent(second));
+        QVERIFY(!machine.IsCurrent(first));
     }
 
     void OldGenerationCannotCompleteOrDisconnectNewAttempt()
