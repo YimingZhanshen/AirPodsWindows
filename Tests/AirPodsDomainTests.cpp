@@ -1332,9 +1332,7 @@ void AirPodsDomainTests::HebrewUpdateWindowTranslationsAreFinished()
             contextName.clear();
             source.clear();
         }
-        else if (
-            contextName == QStringLiteral("UpdateWindow") && xml.name() == QStringLiteral("name"))
-        {
+        else if (xml.name() == QStringLiteral("name")) {
             contextName = xml.readElementText();
         }
         else if (
