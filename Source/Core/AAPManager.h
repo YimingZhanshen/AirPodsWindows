@@ -264,7 +264,8 @@ private:
     void StartAttProbe(AAPAttempt attempt);
     // Reserves the single outstanding read for `attempt` before writing the request frame.
     // Repeating it for the same session and handle is idempotent: no second frame, no
-    // second deadline. Returns false when another read still owns the session.
+    // second deadline. The tracker token prevents a delayed failed send from releasing a
+    // replacement reservation. Returns false when another read still owns the session.
     bool RequestAttRead(AAPAttempt attempt, uint16_t handle);
     // Requires _mutex. Moves the probe state to Confirmed and reports whether this is the
     // transition the callback has to observe.

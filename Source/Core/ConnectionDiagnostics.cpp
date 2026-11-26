@@ -96,6 +96,9 @@ void Recorder::Record(Step step, bool ok, std::string detail)
 {
     const auto nowMillis = SteadyMillis();
     std::lock_guard<std::mutex> lock{_mutex};
+    if (_generation != 0) {
+        return;
+    }
     RecordLocked(
         step, ok ? Outcome::Ok : Outcome::Failed, std::move(detail), _generation, nowMillis);
 }
@@ -104,6 +107,9 @@ void Recorder::RecordPending(Step step, std::string detail)
 {
     const auto nowMillis = SteadyMillis();
     std::lock_guard<std::mutex> lock{_mutex};
+    if (_generation != 0) {
+        return;
+    }
     RecordLocked(step, Outcome::Pending, std::move(detail), _generation, nowMillis);
 }
 

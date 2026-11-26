@@ -502,9 +502,12 @@ private slots:
         const AAPAttempt session{0x1122334455667788ULL, 7};
 
         Att::PendingReadTracker tracker;
+        Att::PendingReadTracker::ReservationToken token{0};
+        Att::PendingReadTracker::ReservationToken repeatToken{0};
         QCOMPARE(
-            tracker.Start(session, Att::kLoudSoundReductionHandle, base + window, base),
+            tracker.Start(session, Att::kLoudSoundReductionHandle, base + window, base, token),
             Att::PendingReadTracker::StartResult::Started);
+        QVERIFY(token != 0);
         // The reservation is complete before the frame is written, which is what makes an
         // immediate answer attributable instead of racing a state set after the send.
         QVERIFY(tracker.HasPending());
@@ -517,30 +520,36 @@ private slots:
 
         // Repeating the same read is idempotent and must not open a second window.
         QCOMPARE(
-            tracker.Start(session, Att::kLoudSoundReductionHandle, base + 9000, base + 10),
+            tracker.Start(
+                session, Att::kLoudSoundReductionHandle, base + 9000, base + 10, repeatToken),
             Att::PendingReadTracker::StartResult::AlreadyPending);
+        QCOMPARE(repeatToken, token);
         QCOMPARE(tracker.DeadlineMs(), std::optional<int64_t>(base + window));
 
         // A different handle, address or an identity-less attempt is refused while the
         // single slot for this session is held.
+        Att::PendingReadTracker::ReservationToken rejectedToken{0};
         QCOMPARE(
-            tracker.Start(session, 0x18, base + 2 * window, base + 10),
+            tracker.Start(session, 0x18, base + 2 * window, base + 10, rejectedToken),
             Att::PendingReadTracker::StartResult::Rejected);
+        QCOMPARE(rejectedToken, uint64_t{0});
         QCOMPARE(
             tracker.Start(
                 AAPAttempt{0x99AAB0CCDDEEF001ULL, session.generation},
-                Att::kLoudSoundReductionHandle, base + 2 * window, base + 10),
+                Att::kLoudSoundReductionHandle, base + 2 * window, base + 10, rejectedToken),
             Att::PendingReadTracker::StartResult::Rejected);
+        QCOMPARE(rejectedToken, uint64_t{0});
         QCOMPARE(
             tracker.Start(
                 AAPAttempt{session.address, 0}, Att::kLoudSoundReductionHandle, base + 2 * window,
-                base + 10),
+                base + 10, rejectedToken),
             Att::PendingReadTracker::StartResult::Rejected);
+        QCOMPARE(rejectedToken, uint64_t{0});
 
-        QVERIFY(tracker.ReleaseIf(session, Att::kLoudSoundReductionHandle));
+        QVERIFY(tracker.ReleaseIf(token));
         QVERIFY(!tracker.HasPending());
         // Releasing a reservation that has already been answered reports nothing to undo.
-        QVERIFY(!tracker.ReleaseIf(session, Att::kLoudSoundReductionHandle));
+        QVERIFY(!tracker.ReleaseIf(token));
     }
 
     void PendingReadOnlyAnswersItsOwnSession()
@@ -549,7 +558,8 @@ private slots:
         const AAPAttempt session{0x1122334455667788ULL, 7};
 
         Att::PendingReadTracker tracker;
-        tracker.Start(session, Att::kLoudSoundReductionHandle, base + 500, base);
+        Att::PendingReadTracker::ReservationToken token{0};
+        tracker.Start(session, Att::kLoudSoundReductionHandle, base + 500, base, token);
 
         // A reply that reaches the current reader on behalf of a retired attempt, or that
         // names another attribute, is not an answer to anything.
@@ -570,7 +580,8 @@ private slots:
         // The handle-less read response inherits its handle from the reservation, so a read
         // of another attribute can never be interpreted as loud sound reduction.
         Att::PendingReadTracker other;
-        other.Start(session, 0x2A, base + 500, base);
+        Att::PendingReadTracker::ReservationToken otherToken{0};
+        other.Start(session, 0x2A, base + 500, base, otherToken);
         QCOMPARE(
             other.Match(session, std::nullopt, base + 1),
             Att::PendingReadTracker::MatchResult::Matched);
@@ -584,12 +595,16 @@ private slots:
         const AAPAttempt oldSession{0x1122334455667788ULL, 7};
         const AAPAttempt newSession{0x1122334455667788ULL, 8};
         Att::PendingReadTracker tracker;
+        Att::PendingReadTracker::ReservationToken oldToken{0};
+        Att::PendingReadTracker::ReservationToken newToken{0};
         QCOMPARE(
-            tracker.Start(oldSession, Att::kLoudSoundReductionHandle, base + 500, base),
+            tracker.Start(oldSession, Att::kLoudSoundReductionHandle, base + 500, base, oldToken),
             Att::PendingReadTracker::StartResult::Started);
         QCOMPARE(
-            tracker.Start(newSession, Att::kLoudSoundReductionHandle, base + 900, base + 1),
+            tracker.Start(
+                newSession, Att::kLoudSoundReductionHandle, base + 900, base + 1, newToken),
             Att::PendingReadTracker::StartResult::Started);
+        QVERIFY(newToken != oldToken);
 
         QCOMPARE(
             tracker.Match(oldSession, std::nullopt, base + 2),
@@ -597,8 +612,32 @@ private slots:
         QCOMPARE(
             tracker.Match(newSession, std::nullopt, base + 2),
             Att::PendingReadTracker::MatchResult::Matched);
-        QVERIFY(!tracker.ReleaseIf(oldSession, Att::kLoudSoundReductionHandle));
-        QVERIFY(tracker.ReleaseIf(newSession, Att::kLoudSoundReductionHandle));
+        QVERIFY(!tracker.ReleaseIf(oldToken));
+        QVERIFY(tracker.ReleaseIf(newToken));
+    }
+
+    void ExpiredSameSessionReplacementCannotBeReleasedByOriginalCall()
+    {
+        constexpr int64_t base = 100000;
+        const AAPAttempt session{0x1122334455667788ULL, 7};
+        Att::PendingReadTracker tracker;
+        Att::PendingReadTracker::ReservationToken oldToken{0};
+        Att::PendingReadTracker::ReservationToken newToken{0};
+        QCOMPARE(
+            tracker.Start(session, Att::kLoudSoundReductionHandle, base + 500, base, oldToken),
+            Att::PendingReadTracker::StartResult::Started);
+
+        // The first send is still blocked when its window expires. A replacement reservation
+        // for the identical session and handle must not be released by that old send's failure.
+        QCOMPARE(
+            tracker.Start(
+                session, Att::kLoudSoundReductionHandle, base + 1000, base + 500, newToken),
+            Att::PendingReadTracker::StartResult::Started);
+        QVERIFY(newToken != oldToken);
+        QVERIFY(!tracker.ReleaseIf(oldToken));
+        QVERIFY(tracker.HasPending());
+        QCOMPARE(tracker.DeadlineMs(), std::optional<int64_t>(base + 1000));
+        QVERIFY(tracker.ReleaseIf(newToken));
     }
 
     // 499 / 500 / 501 ms around the probe window, checked with one shared rule so the
@@ -608,8 +647,10 @@ private slots:
         constexpr int64_t base = 100000;
         constexpr int64_t deadline = base + 500;
         Att::PendingReadTracker tracker;
+        Att::PendingReadTracker::ReservationToken token{0};
         tracker.Start(
-            AAPAttempt{0x1122334455667788ULL, 7}, Att::kLoudSoundReductionHandle, deadline, base);
+            AAPAttempt{0x1122334455667788ULL, 7}, Att::kLoudSoundReductionHandle, deadline, base,
+            token);
 
         QVERIFY(!Att::PendingReadTracker::WindowElapsed(base + 499, deadline));
         QVERIFY(Att::PendingReadTracker::WindowElapsed(base + 500, deadline));
@@ -629,13 +670,17 @@ private slots:
 
         // An elapsed identical read is replaced rather than treated as idempotent.
         Att::PendingReadTracker repeat;
+        Att::PendingReadTracker::ReservationToken oldToken{0};
+        Att::PendingReadTracker::ReservationToken newToken{0};
         repeat.Start(
-            AAPAttempt{0x1122334455667788ULL, 7}, Att::kLoudSoundReductionHandle, deadline, base);
+            AAPAttempt{0x1122334455667788ULL, 7}, Att::kLoudSoundReductionHandle, deadline, base,
+            oldToken);
         QCOMPARE(
             repeat.Start(
                 AAPAttempt{0x1122334455667788ULL, 7}, Att::kLoudSoundReductionHandle, base + 1000,
-                base + 500),
+                base + 500, newToken),
             Att::PendingReadTracker::StartResult::Started);
+        QVERIFY(newToken != oldToken);
         QCOMPARE(repeat.DeadlineMs(), std::optional<int64_t>(base + 1000));
 
         // An elapsed window is retired instead of blocking the session forever.
@@ -644,7 +689,7 @@ private slots:
         QCOMPARE(
             tracker.Start(
                 AAPAttempt{0x1122334455667788ULL, 7}, Att::kLoudSoundReductionHandle, base + 1000,
-                base + 500),
+                base + 500, token),
             Att::PendingReadTracker::StartResult::Started);
     }
 
@@ -720,6 +765,13 @@ private slots:
         QCOMPARE(recorder.CurrentGeneration(), uint64_t{8});
         QCOMPARE(recorder.ReportedAttempt(), uint64_t{8});
 
+        // Untagged BLE watcher callbacks have no attempt identity. While an attempt is open,
+        // accepting them would silently attach a delayed event to the successor generation.
+        const auto openCount = recorder.StepCount();
+        recorder.Record(Step::ScannerStarted, true, "stale watcher callback");
+        recorder.RecordPending(Step::AttProbe, "stale watcher callback");
+        QCOMPARE(recorder.StepCount(), openCount);
+
         recorder.RecordForAttempt(7, Step::Handshake, true, "late old ACK");
         recorder.RecordForAttempt(8, Step::TransportConnect, false, "driver unavailable");
         recorder.BeginAttempt(8); // idempotent while the same attempt is open
@@ -731,6 +783,7 @@ private slots:
         QVERIFY(!fresh.contains("scanner_started"));
         QVERIFY(!fresh.contains("advertisement_matched"));
         QVERIFY(!fresh.contains("late old ACK"));
+        QVERIFY(!fresh.contains("stale watcher callback"));
         recorder.EndAttempt(8);
     }
 };

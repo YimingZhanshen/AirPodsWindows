@@ -51,7 +51,7 @@ public:
         _closed = false;
         _eof = false;
         _records.clear();
-        _sendHook.reset();
+        _sendHook = {};
         _connected = true;
         return true;
     }

@@ -104,9 +104,11 @@ std::vector<uint8_t> BuildLoudSoundReductionWrite(bool enable)
     return BuildWriteCommand(kLoudSoundReductionHandle, static_cast<uint8_t>(enable ? 0x01 : 0x00));
 }
 
-PendingReadTracker::StartResult
-PendingReadTracker::Start(AAPAttempt attempt, uint16_t handle, int64_t deadlineMs, int64_t nowMs)
+PendingReadTracker::StartResult PendingReadTracker::Start(
+    AAPAttempt attempt, uint16_t handle, int64_t deadlineMs, int64_t nowMs,
+    ReservationToken &reservationToken)
 {
+    reservationToken = 0;
     // A reservation without a session identity could never be matched to a response,
     // and a deadline that is already in the past could never be answered.
     if (attempt.generation == 0 || WindowElapsed(nowMs, deadlineMs)) {
@@ -114,22 +116,37 @@ PendingReadTracker::Start(AAPAttempt attempt, uint16_t handle, int64_t deadlineM
     }
 
     if (_pending) {
-        const bool sameSession = _pending->attempt.address == attempt.address &&
-                                 _pending->attempt.generation == attempt.generation;
+        const bool sameGeneration = _pending->attempt.generation == attempt.generation;
+        const bool sameSession = _pending->attempt.address == attempt.address && sameGeneration;
+        // Generations identify sessions globally. Reusing one for another device must not
+        // inherit or displace the existing reservation, even after its deadline elapsed.
+        if (sameGeneration && !sameSession) {
+            return StartResult::Rejected;
+        }
         if (sameSession && !WindowElapsed(nowMs, _pending->deadlineMs)) {
             if (_pending->handle == handle) {
+                reservationToken = _pending->token;
                 return StartResult::AlreadyPending;
             }
             return StartResult::Rejected;
         }
-        // A different session owns a different reservation slot. Retiring the old identity
-        // here prevents its late response from matching the new generation.
-        _pending = Pending{attempt, handle, deadlineMs};
-        return StartResult::Started;
+        // A successor generation or an elapsed same-session window owns a new reservation.
+        // Retiring the old identity here prevents its late response from matching the new one.
     }
 
-    _pending = Pending{attempt, handle, deadlineMs};
+    reservationToken = NextReservationToken();
+    _pending = Pending{attempt, handle, deadlineMs, reservationToken};
     return StartResult::Started;
+}
+
+PendingReadTracker::ReservationToken PendingReadTracker::NextReservationToken() noexcept
+{
+    // Zero means "no reservation". Skip the current token as well, so even wraparound cannot
+    // let a replacement alias the reservation an older sender can still release.
+    do {
+        ++_nextReservationToken;
+    } while (_nextReservationToken == 0 || (_pending && _nextReservationToken == _pending->token));
+    return _nextReservationToken;
 }
 
 PendingReadTracker::MatchResult
@@ -167,11 +184,9 @@ void PendingReadTracker::Clear()
     _pending.reset();
 }
 
-bool PendingReadTracker::ReleaseIf(AAPAttempt attempt, uint16_t handle) noexcept
+bool PendingReadTracker::ReleaseIf(ReservationToken reservationToken) noexcept
 {
-    if (!_pending || _pending->attempt.address != attempt.address ||
-        _pending->attempt.generation != attempt.generation || _pending->handle != handle)
-    {
+    if (!_pending || _pending->token != reservationToken) {
         return false;
     }
     _pending.reset();

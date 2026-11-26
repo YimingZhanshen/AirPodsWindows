@@ -116,6 +116,11 @@ std::vector<uint8_t> BuildLoudSoundReductionWrite(bool enable);
 class PendingReadTracker
 {
 public:
+    // Identifies one reservation, not merely its session and handle. An expired reservation
+    // may be replaced while the old send is still blocked; only this token lets that send's
+    // later failure release the reservation it actually owns.
+    using ReservationToken = uint64_t;
+
     enum class StartResult : uint8_t {
         Started,        // reserved: the caller may write the request frame
         AlreadyPending, // the identical read is still outstanding: stay idempotent, do not
@@ -139,10 +144,14 @@ public:
         return nowMs >= deadlineMs;
     }
 
-    // Reserves `handle` for `attempt` until `deadlineMs`. An elapsed reservation is replaced.
-    // Within one live session, an identical read is idempotent and a different handle is
-    // rejected. A new session replaces the retired identity so it cannot inherit its reply.
-    StartResult Start(AAPAttempt attempt, uint16_t handle, int64_t deadlineMs, int64_t nowMs);
+    // Reserves `handle` for `attempt` until `deadlineMs` and returns its unique token.
+    // An elapsed reservation is replaced. Within one live session, an identical read is
+    // idempotent and returns the existing token; a different handle is rejected. A successor
+    // generation replaces the old identity, but another address reusing the same generation
+    // cannot take over its reservation. Rejected calls set `reservationToken` to zero.
+    StartResult Start(
+        AAPAttempt attempt, uint16_t handle, int64_t deadlineMs, int64_t nowMs,
+        ReservationToken &reservationToken);
 
     // Classifies an inbound frame. `handle` is nullopt for a read response (the frame carries
     // none) and the parsed handle for an error response, which then has to agree with the
@@ -157,10 +166,10 @@ public:
     // Releases the reservation, e.g. once it has been answered or the send failed.
     void Clear();
 
-    // Releases the reservation only when it is still the one issued by `attempt` for
-    // `handle`. A request that has already been answered has nothing left to undo, so a
-    // failed follow-up read can never take back the state a successful one established.
-    bool ReleaseIf(AAPAttempt attempt, uint16_t handle) noexcept;
+    // Releases only the reservation identified by `reservationToken`. A request that has
+    // already been answered has nothing left to undo, and an old blocked send cannot release
+    // a newer same-session replacement.
+    bool ReleaseIf(ReservationToken reservationToken) noexcept;
 
     // True while a reservation exists, whether or not its window is still open.
     bool HasPending() const noexcept
@@ -191,9 +200,13 @@ private:
         AAPAttempt attempt;
         uint16_t handle{0};
         int64_t deadlineMs{0};
+        ReservationToken token{0};
     };
 
+    ReservationToken NextReservationToken() noexcept;
+
     std::optional<Pending> _pending;
+    ReservationToken _nextReservationToken{0};
 };
 
 } // namespace Core::AAP::Att

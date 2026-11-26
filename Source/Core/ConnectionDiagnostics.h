@@ -55,8 +55,9 @@ public:
 
     Recorder();
 
-    // Records a BLE/preconnect event, or an event in the currently open attempt.
-    // `detail` must already be redacted by the caller.
+    // Records a BLE/preconnect event only while no attempt is open. Untagged watcher
+    // callbacks carry no session identity, so accepting one during an attempt could attach
+    // a delayed event to a newer generation. `detail` must already be redacted by the caller.
     void Record(Step step, bool ok, std::string detail = {});
     void RecordPending(Step step, std::string detail = {});
 

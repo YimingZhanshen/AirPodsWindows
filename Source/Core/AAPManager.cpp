@@ -435,6 +435,13 @@ bool Manager::SetNoiseControlMode(NoiseControlMode mode)
         LOG(Warn, "AAP: Cannot set noise control mode - not connected");
         return false;
     }
+    {
+        std::lock_guard lock{_mutex};
+        if (mode == NoiseControlMode::Adaptive && !_featureFlagsEnabled) {
+            LOG(Warn, "AAP: Adaptive noise control unavailable, feature flags were not sent");
+            return false;
+        }
+    }
 
     auto packet = Packets::BuildNoiseControlPacket(mode);
     if (!SendPacket(packet)) {
@@ -711,13 +718,15 @@ bool Manager::RequestAttRead(AAPAttempt attempt, uint16_t handle)
 {
     const int64_t nowMs = _steadyMillis();
     Att::PendingReadTracker::StartResult start = Att::PendingReadTracker::StartResult::Rejected;
+    Att::PendingReadTracker::ReservationToken reservationToken{0};
     bool announcesProbe = false;
     {
         std::lock_guard<std::mutex> lock{_mutex};
         if (!IsActiveAttemptLocked(attempt)) {
             return false;
         }
-        start = _attPendingRead.Start(attempt, handle, nowMs + kAttProbeWindowMs, nowMs);
+        start = _attPendingRead.Start(
+            attempt, handle, nowMs + kAttProbeWindowMs, nowMs, reservationToken);
         if (start == Att::PendingReadTracker::StartResult::Started) {
             // The reservation and the Pending state are installed in the same critical
             // section, before the request is written. A device that answers immediately is
@@ -749,9 +758,9 @@ bool Manager::RequestAttRead(AAPAttempt attempt, uint16_t handle)
         {
             std::lock_guard<std::mutex> lock{_mutex};
             // Release only the reservation this call made. A response that arrived in the
-            // meantime already consumed it and confirmed the path, which must survive a
-            // failed follow-up read.
-            if (_attPendingRead.ReleaseIf(attempt, handle) && announcesProbe) {
+            // meantime already consumed it, or an expired reservation replaced while this
+            // send was blocked belongs to a newer call; either must survive this failure.
+            if (_attPendingRead.ReleaseIf(reservationToken) && announcesProbe) {
                 _attPathState = AttPathState::Unconfirmed;
                 reportSendFailure = true;
             }

@@ -16,6 +16,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <memory>
@@ -723,6 +724,40 @@ private slots:
         const Core::AAP::AAPAttempt attempt{1, 7};
         QVERIFY(!manager.Connect(attempt));
         QCOMPARE(transport->SendCalls(), size_t{0});
+    void AdaptiveNoiseControlRequiresFeatureFlagsWithoutSendingPacket()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
+        manager._featureFlagsEnabled = false;
+
+        QVERIFY(!manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Adaptive));
+        QCOMPARE(transport->SendCalls(), size_t{0});
+        QVERIFY(transport->SentRecords().empty());
+
+        // Basic modes remain usable when optional feature flags were rejected.
+        const std::vector<Core::AAP::NoiseControlMode> basicModes{
+            Core::AAP::NoiseControlMode::Off, Core::AAP::NoiseControlMode::NoiseCancellation,
+            Core::AAP::NoiseControlMode::Transparency};
+        for (const auto mode : basicModes) {
+            QVERIFY(manager.SetNoiseControlMode(mode));
+        }
+        QCOMPARE(transport->SendCalls(), size_t{3});
+        const auto records = transport->SentRecords();
+        QCOMPARE(records[0], Core::AAP::Packets::BuildNoiseControlPacket(basicModes[0]));
+        QCOMPARE(records[1], Core::AAP::Packets::BuildNoiseControlPacket(basicModes[1]));
+        QCOMPARE(records[2], Core::AAP::Packets::BuildNoiseControlPacket(basicModes[2]));
+
+        manager._featureFlagsEnabled = true;
+        QVERIFY(manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Adaptive));
+        QCOMPARE(transport->SendCalls(), size_t{4});
+        manager._connected = false;
+        manager._transport.store(nullptr);
+    }
+
     //////////////////////////////////////////////////
     // ATT single outstanding request per session (blueprint 0.3 / P3)
     //
@@ -735,9 +770,10 @@ private slots:
         auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
         QVERIFY(transport->Connect(1, {}));
         manager._transport.store(transport);
-        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        constexpr uint64_t kGeneration = 5100;
+        manager._attempt = Core::AAP::AAPAttempt{1, kGeneration};
         manager._connected = true;
-        Core::Diagnostics::Recorder::Instance().BeginAttempt(5100);
+        Core::Diagnostics::Recorder::Instance().BeginAttempt(kGeneration);
 
         int probeResults = 0;
         int loudSoundReductions = 0;
@@ -759,11 +795,11 @@ private slots:
             pendingInsideSend = manager._attPathState == Core::AAP::AttPathState::Pending &&
                                 manager._attPendingRead.IsLive(manager._steadyMillis());
             manager.ProcessAttFrame(
-                std::vector<uint8_t>{0x0B, 0x01}, Core::AAP::AAPAttempt{1, 1}, callbacks);
+                std::vector<uint8_t>{0x0B, 0x01}, Core::AAP::AAPAttempt{1, kGeneration}, callbacks);
         });
 
         QCOMPARE(manager.GetAttPathState(), Core::AAP::AttPathState::Unknown);
-        manager.StartAttProbe(Core::AAP::AAPAttempt{1, 1});
+        manager.StartAttProbe(Core::AAP::AAPAttempt{1, kGeneration});
         transport->SetSendHook({});
 
         QVERIFY(pendingInsideSend);
@@ -785,7 +821,7 @@ private slots:
         QVERIFY(!report.contains("probe sent, waiting up to 500ms"));
 
         // The one-shot probe is not repeated after confirmation.
-        manager.StartAttProbe(Core::AAP::AAPAttempt{1, 1});
+        manager.StartAttProbe(Core::AAP::AAPAttempt{1, kGeneration});
         QCOMPARE(transport->SentRecords().size(), size_t{1});
         QCOMPARE(probeResults, 1);
 
@@ -1015,9 +1051,10 @@ private slots:
         int64_t nowMs = 10000;
         manager._steadyMillis = [&] { return nowMs; };
         manager._transport.store(transport);
-        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        constexpr uint64_t kGeneration = 5200;
+        manager._attempt = Core::AAP::AAPAttempt{1, kGeneration};
         manager._connected = true;
-        Core::Diagnostics::Recorder::Instance().BeginAttempt(5200 + elapsedMs);
+        Core::Diagnostics::Recorder::Instance().BeginAttempt(kGeneration);
 
         int probeResults = 0;
         Core::AAP::Callbacks callbacks;
@@ -1025,11 +1062,11 @@ private slots:
             [&probeResults](const Core::AAP::AttPathState &, const Core::AAP::AAPAttempt &) {
                 ++probeResults;
             };
-        manager.StartAttProbe(Core::AAP::AAPAttempt{1, 1});
+        manager.StartAttProbe(Core::AAP::AAPAttempt{1, kGeneration});
         QCOMPARE(manager._attPathState, Core::AAP::AttPathState::Pending);
         nowMs += elapsedMs;
         manager.ProcessAttFrame(
-            std::vector<uint8_t>{0x0B, 0x01}, Core::AAP::AAPAttempt{1, 1}, callbacks);
+            std::vector<uint8_t>{0x0B, 0x01}, Core::AAP::AAPAttempt{1, kGeneration}, callbacks);
         QCOMPARE(int(manager.GetAttPathState()), expectedState);
         QCOMPARE(probeResults, elapsedMs < 500 ? 1 : 0);
         QVERIFY(!manager._attPendingRead.HasPending());
@@ -1054,11 +1091,12 @@ private slots:
         QVERIFY(transport->Connect(1, {}));
         transport->SetSendError(true);
         manager._transport.store(transport);
-        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        constexpr uint64_t kGeneration = 5300;
+        manager._attempt = Core::AAP::AAPAttempt{1, kGeneration};
         manager._connected = true;
-        Core::Diagnostics::Recorder::Instance().BeginAttempt(5300);
+        Core::Diagnostics::Recorder::Instance().BeginAttempt(kGeneration);
 
-        QVERIFY(!manager.RequestAttRead(Core::AAP::AAPAttempt{1, 1}, 0x1B));
+        QVERIFY(!manager.RequestAttRead(Core::AAP::AAPAttempt{1, kGeneration}, 0x1B));
         QCOMPARE(manager._attPathState, Core::AAP::AttPathState::Unconfirmed);
         QVERIFY(!manager._attPendingRead.HasPending());
         QCOMPARE(transport->SentRecords().size(), size_t{0});
@@ -1068,7 +1106,7 @@ private slots:
 
         // The failed write released the only slot, so an explicit later read can reserve it.
         transport->SetSendError(false);
-        QVERIFY(manager.RequestAttRead(Core::AAP::AAPAttempt{1, 1}, 0x1B));
+        QVERIFY(manager.RequestAttRead(Core::AAP::AAPAttempt{1, kGeneration}, 0x1B));
         QVERIFY(manager._attPendingRead.HasPending());
         QCOMPARE(transport->SentRecords().size(), size_t{1});
         manager._connected = false;
@@ -1082,9 +1120,10 @@ private slots:
         QVERIFY(transport->Connect(1, {}));
         transport->FailNthSend(0);
         manager._transport.store(transport);
-        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        constexpr uint64_t kGeneration = 5400;
+        manager._attempt = Core::AAP::AAPAttempt{1, kGeneration};
         manager._connected = true;
-        Core::Diagnostics::Recorder::Instance().BeginAttempt(5400);
+        Core::Diagnostics::Recorder::Instance().BeginAttempt(kGeneration);
         int probeResults = 0;
         Core::AAP::Callbacks callbacks;
         callbacks.onAttProbeResult =
@@ -1093,10 +1132,10 @@ private slots:
             };
         transport->SetSendHook([&] {
             manager.ProcessAttFrame(
-                std::vector<uint8_t>{0x0B, 0x01}, Core::AAP::AAPAttempt{1, 1}, callbacks);
+                std::vector<uint8_t>{0x0B, 0x01}, Core::AAP::AAPAttempt{1, kGeneration}, callbacks);
         });
 
-        QVERIFY(!manager.RequestAttRead(Core::AAP::AAPAttempt{1, 1}, 0x1B));
+        QVERIFY(!manager.RequestAttRead(Core::AAP::AAPAttempt{1, kGeneration}, 0x1B));
         QCOMPARE(manager._attPathState, Core::AAP::AttPathState::Confirmed);
         QVERIFY(!manager._attPendingRead.HasPending());
         QCOMPARE(probeResults, 1);
@@ -1104,6 +1143,54 @@ private slots:
             QString::fromStdString(Core::Diagnostics::Recorder::Instance().BuildReport({}));
         QVERIFY(report.contains("confirmed by read response"));
         QVERIFY(!report.contains("att_probe  FAILED  send failed"));
+        manager._connected = false;
+        manager._transport.store(nullptr);
+    }
+
+    void DelayedOldSendFailureCannotReleaseReplacementReservation()
+    {
+        constexpr uint64_t kGeneration = 5500;
+        const Core::AAP::AAPAttempt attempt{1, kGeneration};
+        Core::AAP::Manager manager;
+        auto oldTransport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(oldTransport->Connect(1, {}));
+        oldTransport->SetBlockSend(true);
+        std::atomic<int64_t> nowMs{10000};
+        manager._steadyMillis = [&] { return nowMs.load(); };
+        manager._transport.store(oldTransport);
+        manager._attempt = attempt;
+        manager._connected = true;
+        Core::Diagnostics::Recorder::Instance().BeginAttempt(kGeneration);
+
+        auto oldSend = std::async(std::launch::async, [&] {
+            return manager.RequestAttRead(attempt, Core::AAP::Att::kLoudSoundReductionHandle);
+        });
+        QVERIFY(oldTransport->WaitForSendWaiter(std::chrono::seconds(1)));
+
+        // The old write remains blocked while its half-open window closes. The identical
+        // session/handle may then reserve a fresh window and send through a replacement link.
+        nowMs = 10500;
+        auto replacement = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(replacement->Connect(1, {}));
+        manager._transport.store(replacement);
+        QVERIFY(manager.RequestAttRead(attempt, Core::AAP::Att::kLoudSoundReductionHandle));
+        QVERIFY(manager._attPendingRead.HasPending());
+        QCOMPARE(manager._attPendingRead.DeadlineMs(), std::optional<int64_t>(11000));
+
+        oldTransport->SetSendError(true);
+        oldTransport->SetBlockSend(false);
+        QVERIFY(oldSend.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+        QVERIFY(!oldSend.get());
+
+        // The failed old sender must not clear or downgrade the replacement reservation.
+        QVERIFY(manager._attPendingRead.HasPending());
+        QCOMPARE(manager._attPendingRead.Attempt().generation, kGeneration);
+        QCOMPARE(manager._attPendingRead.DeadlineMs(), std::optional<int64_t>(11000));
+        QCOMPARE(manager._attPathState, Core::AAP::AttPathState::Pending);
+        QCOMPARE(replacement->SentRecords().size(), size_t{1});
+
+        manager.ProcessAttFrame(std::vector<uint8_t>{0x0B, 0x01}, attempt, Core::AAP::Callbacks{});
+        QCOMPARE(manager.GetAttPathState(), Core::AAP::AttPathState::Confirmed);
         manager._connected = false;
         manager._transport.store(nullptr);
     }
@@ -1187,11 +1274,12 @@ private slots:
         QVERIFY(transport->Connect(1, {}));
         transport->FailNthSend(1); // handshake, feature flags, notifications, ATT probe
         manager._transport.store(transport);
-        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        constexpr uint64_t kGeneration = 4242;
+        manager._attempt = Core::AAP::AAPAttempt{1, kGeneration};
         manager._connected = true;
 
-        Core::Diagnostics::Recorder::Instance().BeginAttempt(4242);
-        QVERIFY(manager.InitializeConnection(Core::AAP::AAPAttempt{1, 1}, {}));
+        Core::Diagnostics::Recorder::Instance().BeginAttempt(kGeneration);
+        QVERIFY(manager.InitializeConnection(Core::AAP::AAPAttempt{1, kGeneration}, {}));
 
         const auto report =
             QString::fromStdString(Core::Diagnostics::Recorder::Instance().BuildReport({}));
@@ -1216,6 +1304,7 @@ private slots:
         QVERIFY(!manager.SetConversationalAwareness(true));
         QVERIFY(!manager.SetAdaptiveTransparencyLevel(50));
         QVERIFY(!manager.SetAdaptiveNoiseLevel(50));
+        QVERIFY(!manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Adaptive));
         QCOMPARE(transport->SendCalls(), size_t{4});
 
         manager._connected = false;
@@ -1230,11 +1319,13 @@ private slots:
         auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
         QVERIFY(transport->Connect(1, {}));
         manager._transport.store(transport);
-        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        constexpr uint64_t kGeneration = 4243;
+        constexpr uint64_t kSuccessorGeneration = 4244;
+        manager._attempt = Core::AAP::AAPAttempt{1, kGeneration};
         manager._connected = true;
 
-        Core::Diagnostics::Recorder::Instance().BeginAttempt(4243);
-        QVERIFY(manager.InitializeConnection(Core::AAP::AAPAttempt{1, 1}, {}));
+        Core::Diagnostics::Recorder::Instance().BeginAttempt(kGeneration);
+        QVERIFY(manager.InitializeConnection(Core::AAP::AAPAttempt{1, kGeneration}, {}));
         QVERIFY(!manager._handshakeAckObserved);
         QVERIFY(!manager._featureFlagsAckObserved);
         QVERIFY(manager._featureFlagsEnabled);
@@ -1261,12 +1352,12 @@ private slots:
         QCOMPARE(Core::Diagnostics::Recorder::Instance().ReportedAttemptStepCount(), before);
 
         // An ACK explicitly tagged with the retired generation cannot confirm the successor.
-        manager._attempt = Core::AAP::AAPAttempt{1, 2};
+        manager._attempt = Core::AAP::AAPAttempt{1, kSuccessorGeneration};
         manager._handshakeAckObserved = false;
-        Core::Diagnostics::Recorder::Instance().BeginAttempt(4245);
+        Core::Diagnostics::Recorder::Instance().BeginAttempt(kSuccessorGeneration);
         const auto freshCount = Core::Diagnostics::Recorder::Instance().ReportedAttemptStepCount();
         manager.ProcessPacket(
-            std::vector<uint8_t>{0x01, 0x00, 0x04, 0x00}, Core::AAP::AAPAttempt{1, 1},
+            std::vector<uint8_t>{0x01, 0x00, 0x04, 0x00}, Core::AAP::AAPAttempt{1, kGeneration},
             Core::AAP::Callbacks{});
         QVERIFY(!manager._handshakeAckObserved);
         QCOMPARE(Core::Diagnostics::Recorder::Instance().ReportedAttemptStepCount(), freshCount);
