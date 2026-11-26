@@ -184,15 +184,8 @@ SettingsWindow::SettingsWindow(
 #endif
     _ui.lbVersion->setText(versionText);
 
-    // Setup noise control mode combo box
-    _ui.cbNoiseControlMode->addItem(tr("Off"));
-    _ui.cbNoiseControlMode->addItem(tr("Noise Cancellation"));
-    _ui.cbNoiseControlMode->addItem(tr("Transparency"));
-    _ui.cbNoiseControlMode->addItem(tr("Adaptive"));
-
-    _ui.cbEarDetectSensitivity->addItem(tr("Low"));
-    _ui.cbEarDetectSensitivity->addItem(tr("Normal"));
-    _ui.cbEarDetectSensitivity->addItem(tr("High"));
+    // Setup noise control mode combo box: the translatable choices live in the .ui form so
+    // retranslateUi updates them with every other label on language change.
 
     _ui.hsMaxReceivingRange->setMinimum(50);
     _ui.hsMaxReceivingRange->setMaximum(100);

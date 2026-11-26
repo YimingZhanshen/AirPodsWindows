@@ -1017,6 +1017,21 @@
                 <height>0</height>
                </size>
               </property>
+              <item>
+               <property name="text">
+                <string>Low</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Normal</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>High</string>
+               </property>
+              </item>
              </widget>
             </item>
            </layout>
@@ -1321,6 +1336,26 @@
                 <height>0</height>
                </size>
               </property>
+              <item>
+               <property name="text">
+                <string>Off</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Noise Cancellation</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Transparency</string>
+               </property>
+              </item>
+              <item>
+               <property name="text">
+                <string>Adaptive</string>
+               </property>
+              </item>
              </widget>
             </item>
            </layout>
