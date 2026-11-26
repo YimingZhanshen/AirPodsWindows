@@ -12,6 +12,7 @@
 #include <QImage>
 #include <QTemporaryFile>
 #include <QVector>
+#include <QXmlStreamReader>
 
 #include <Config.h>
 #include "Source/Core/AirPods.h"
@@ -258,6 +259,8 @@ private Q_SLOTS:
     void PreservesForkAnimationMappingsAndColors();
     void PlacesPopupInsideMultimonitorBounds();
     void TranslationLocalesIncludeUpstreamAndForkLanguages();
+    void HebrewUpdateWindowTranslationsAreFinished_data();
+    void HebrewUpdateWindowTranslationsAreFinished();
     void MapsMainWindowAnimationResources();
     void ConvertsTaskbarGeometryAcrossDpiBoundaries();
 };
@@ -1285,6 +1288,79 @@ void AirPodsDomainTests::TranslationLocalesIncludeUpstreamAndForkLanguages()
             locales.contains(locale),
             qPrintable(QString{"Missing translation locale: %1"}.arg(locale)));
     }
+}
+
+void AirPodsDomainTests::HebrewUpdateWindowTranslationsAreFinished_data()
+{
+    QTest::addColumn<QString>("expectedSource");
+    QTest::addColumn<QString>("expectedTranslation");
+
+    QTest::newRow("view release") << QStringLiteral("View release")
+                                  << QStringLiteral("צפה בפרטי הגרסה");
+    QTest::newRow("skip this version")
+        << QStringLiteral("Skip this version") << QStringLiteral("דלג על גרסה זו");
+    QTest::newRow("remind me later")
+        << QStringLiteral("Remind me later") << QStringLiteral("הזכר לי מאוחר יותר");
+    QTest::newRow("update now") << QStringLiteral("Update now") << QStringLiteral("עדכן עכשיו");
+    QTest::newRow("download manually")
+        << QStringLiteral("Download Manually") << QStringLiteral("הורדת ידנית");
+}
+
+void AirPodsDomainTests::HebrewUpdateWindowTranslationsAreFinished()
+{
+    QFETCH(QString, expectedSource);
+    QFETCH(QString, expectedTranslation);
+
+    QFile catalog{QString{APD_SOURCE_DIR} + "/Source/Resource/Translation/apd_he_IL.ts"};
+    QVERIFY(catalog.open(QIODevice::ReadOnly | QIODevice::Text));
+
+    QXmlStreamReader xml{&catalog};
+    QString contextName;
+    QString source;
+    int matches = 0;
+    while (!xml.atEnd()) {
+        xml.readNext();
+        if (xml.isEndElement() && xml.name() == QStringLiteral("context")) {
+            contextName.clear();
+            source.clear();
+            continue;
+        }
+        if (!xml.isStartElement()) {
+            continue;
+        }
+        if (xml.name() == QStringLiteral("context")) {
+            contextName.clear();
+            source.clear();
+        }
+        else if (
+            contextName == QStringLiteral("UpdateWindow") && xml.name() == QStringLiteral("name"))
+        {
+            contextName = xml.readElementText();
+        }
+        else if (
+            contextName == QStringLiteral("UpdateWindow") && xml.name() == QStringLiteral("source"))
+        {
+            source = xml.readElementText();
+        }
+        else if (
+            contextName == QStringLiteral("UpdateWindow") && source == expectedSource &&
+            xml.name() == QStringLiteral("translation"))
+        {
+            ++matches;
+            QVERIFY2(
+                xml.attributes().value(QStringLiteral("type")).toString() !=
+                    QStringLiteral("unfinished"),
+                qPrintable(QString{"UpdateWindow/%1 is marked unfinished"}.arg(expectedSource)));
+            const auto translation = xml.readElementText().trimmed();
+            QVERIFY2(
+                !translation.isEmpty(),
+                qPrintable(QString{"UpdateWindow/%1 has an empty Hebrew translation"}.arg(
+                    expectedSource)));
+            QCOMPARE(translation, expectedTranslation);
+        }
+    }
+    QVERIFY2(!xml.hasError(), qPrintable(xml.errorString()));
+    QCOMPARE(matches, 1);
 }
 
 void AirPodsDomainTests::MapsMainWindowAnimationResources()

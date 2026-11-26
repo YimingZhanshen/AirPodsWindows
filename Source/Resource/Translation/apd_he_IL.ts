@@ -635,23 +635,23 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>View release</source>
-        <translation type="unfinished">צפה בפרטי הגרסה</translation>
+        <translation>צפה בפרטי הגרסה</translation>
     </message>
     <message>
         <source>Skip this version</source>
-        <translation type="unfinished">דלג על גרסה זו</translation>
+        <translation>דלג על גרסה זו</translation>
     </message>
     <message>
         <source>Remind me later</source>
-        <translation type="unfinished">הזכר לי מאוחר יותר</translation>
+        <translation>הזכר לי מאוחר יותר</translation>
     </message>
     <message>
         <source>Update now</source>
-        <translation type="unfinished">עדכן עכשיו</translation>
+        <translation>עדכן עכשיו</translation>
     </message>
     <message>
         <source>Download Manually</source>
-        <translation type="unfinished">הורדת ידנית</translation>
+        <translation>הורדת ידנית</translation>
     </message>
     <message>
         <source>Close</source>
