@@ -256,6 +256,10 @@ GetAnimationPresentation(Core::AirPods::Model model, Core::AppleCP::Color color)
     case Model::AirPods_4_ANC:
         return {"qrc:/Resource/Video/AirPods_4_ANC.avi", {900, 450}, 0.233, 0.755};
     case Model::AirPods_5:
+    case Model::AirPods_5_WCC:
+        // Apple has not shipped a dedicated AirPods 5 pairing render yet, so the fork keeps
+        // reusing the AirPods 4 (ANC) turntable for both the base and the wireless-charging
+        // variant, matching the geometry Apple exposes on iOS.
         return {"qrc:/Resource/Video/AirPods_4_ANC.avi", {900, 450}, 0.233, 0.755};
     case Model::AirPods_Pro:
         return {"qrc:/Resource/Video/AirPods_Pro.avi", {900, 450}, 0.209, 0.762};

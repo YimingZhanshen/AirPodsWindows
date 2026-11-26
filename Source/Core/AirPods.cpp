@@ -52,21 +52,55 @@ std::string NormalizeModelNumber(std::string_view value)
     return result;
 }
 
+} // namespace
+
+namespace Details {
+
+// Every entry below is anchored in Docs/AAP-Protocol-Spec.md §14 (which cites librepods'
+// data/AirPods.kt) or in an upstream commit that was already in the fork's history. When
+// Apple publishes a new identifier without a matching reference we leave the string out so
+// callers see nullopt instead of a guessed capability.
 std::optional<Model> ModelFromModelNumber(std::string_view modelNumber)
 {
     static const std::unordered_map<std::string, Model> kModelMap{
-        {"A1523", Model::AirPods_1},           {"A1722", Model::AirPods_1},
-        {"A2032", Model::AirPods_2},           {"A2031", Model::AirPods_2},
-        {"A2565", Model::AirPods_3},           {"A2564", Model::AirPods_3},
-        {"A3053", Model::AirPods_4},           {"A3050", Model::AirPods_4},
-        {"A3054", Model::AirPods_4},           {"A3056", Model::AirPods_4_ANC},
-        {"A3055", Model::AirPods_4_ANC},       {"A3057", Model::AirPods_4_ANC},
-        {"A2084", Model::AirPods_Pro},         {"A2083", Model::AirPods_Pro},
-        {"A2931", Model::AirPods_Pro_2},       {"A2699", Model::AirPods_Pro_2},
-        {"A2698", Model::AirPods_Pro_2},       {"A3047", Model::AirPods_Pro_2_USB_C},
-        {"A3048", Model::AirPods_Pro_2_USB_C}, {"A3049", Model::AirPods_Pro_2_USB_C},
-        {"A3063", Model::AirPods_Pro_3},       {"A3064", Model::AirPods_Pro_3},
-        {"A3065", Model::AirPods_Pro_3},       {"A2096", Model::AirPods_Max},
+        // AirPods 1/2/3 -- AAP-Protocol-Spec.md row 216-218 (librepods data/AirPods.kt).
+        {"A1523", Model::AirPods_1},
+        {"A1722", Model::AirPods_1},
+        {"A2032", Model::AirPods_2},
+        {"A2031", Model::AirPods_2},
+        {"A2565", Model::AirPods_3},
+        {"A2564", Model::AirPods_3},
+        // AirPods 4 / 4 (ANC) -- AAP-Protocol-Spec.md row 219-220.
+        {"A3053", Model::AirPods_4},
+        {"A3050", Model::AirPods_4},
+        {"A3054", Model::AirPods_4},
+        {"A3056", Model::AirPods_4_ANC},
+        {"A3055", Model::AirPods_4_ANC},
+        {"A3057", Model::AirPods_4_ANC},
+        // AirPods 5 and AirPods 5 with Wireless Charging Case -- AAP-Protocol-Spec.md row
+        // 221-222 (librepods AirPods.kt:114-149). The base variant uses A3531/A3532/A3533;
+        // the wireless-charging variant uses A3439/A3440/A3441.
+        {"A3531", Model::AirPods_5},
+        {"A3532", Model::AirPods_5},
+        {"A3533", Model::AirPods_5},
+        {"A3439", Model::AirPods_5_WCC},
+        {"A3440", Model::AirPods_5_WCC},
+        {"A3441", Model::AirPods_5_WCC},
+        // AirPods Pro 1/2/3 -- AAP-Protocol-Spec.md row 223-226.
+        {"A2084", Model::AirPods_Pro},
+        {"A2083", Model::AirPods_Pro},
+        {"A2931", Model::AirPods_Pro_2},
+        {"A2699", Model::AirPods_Pro_2},
+        {"A2698", Model::AirPods_Pro_2},
+        {"A3047", Model::AirPods_Pro_2_USB_C},
+        {"A3048", Model::AirPods_Pro_2_USB_C},
+        {"A3049", Model::AirPods_Pro_2_USB_C},
+        {"A3063", Model::AirPods_Pro_3},
+        {"A3064", Model::AirPods_Pro_3},
+        {"A3065", Model::AirPods_Pro_3},
+        // AirPods Max (Lightning) and AirPods Max (USB-C / "Max 2") -- AAP-Protocol-Spec.md
+        // row 227 (enums.h:51-52) and the upstream PR #251 mapping that fixed c543222.
+        {"A2096", Model::AirPods_Max},
         {"A3184", Model::AirPods_Max_USB_C},
     };
 
@@ -83,17 +117,18 @@ std::optional<Model> ModelFromModelNumber(std::string_view modelNumber)
     return iter->second;
 }
 
-} // namespace
-
-QString Details::ResolveDisplayName(QString deviceName, Model model)
+QString ResolveDisplayName(QString deviceName, Model model)
 {
     deviceName.remove(" - Find My");
 
     const bool isDefaultModelName =
         (model == Model::AirPods_Max_USB_C && deviceName == "AirPods Max") ||
-        (model == Model::AirPods_5 && deviceName == "AirPods");
+        (model == Model::AirPods_5 && deviceName == "AirPods") ||
+        (model == Model::AirPods_5_WCC && deviceName == "AirPods");
     return deviceName.isEmpty() || isDefaultModelName ? Helper::ToString(model) : deviceName;
 }
+
+} // namespace Details
 
 std::optional<bool> Details::EarDetectionTracker::Update(const State &state)
 {
@@ -369,7 +404,7 @@ void Manager::CompleteBoundDeviceLookup(uint64_t address, std::optional<Bluetoot
         _boundModel = AppleCP::AirPods::GetModel(_boundDevice->GetProductId());
 
         if (auto modelNumber = _boundDevice->GetModelNumber(); modelNumber.has_value()) {
-            _modelOverride = ModelFromModelNumber(modelNumber.value());
+            _modelOverride = Details::ModelFromModelNumber(modelNumber.value());
             if (_modelOverride.has_value()) {
                 LOG(Info, "Detected model number '{}', override model: {}", modelNumber.value(),
                     Helper::ToString(_modelOverride.value()));
@@ -1145,9 +1180,9 @@ std::vector<Bluetooth::Device> GetDevices()
                 const auto productId = device.GetProductId();
                 const auto modelFromProductId = AppleCP::AirPods::GetModel(productId);
                 const auto modelNumber = device.GetModelNumber();
-                const auto modelFromNumber = modelNumber.has_value()
-                                                 ? ModelFromModelNumber(modelNumber.value())
-                                                 : std::nullopt;
+                const auto modelFromNumber =
+                    modelNumber.has_value() ? Details::ModelFromModelNumber(modelNumber.value())
+                                            : std::nullopt;
 
                 const auto doErase =
                     vendorId != AppleCP::VendorId ||

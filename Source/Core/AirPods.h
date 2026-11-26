@@ -26,6 +26,7 @@
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -101,6 +102,12 @@ struct State {
 namespace Details {
 
 QString ResolveDisplayName(QString deviceName, Model model);
+
+// Resolve a Model from the Windows-published device model number (e.g. A3439). Returns
+// nullopt for an unknown/absent model number so callers must not guess a capability from it.
+// Evidence for each entry is documented in the definition inside AirPods.cpp; anything that
+// lacks a local source, upstream table, or public reference stays out of the map.
+std::optional<Model> ModelFromModelNumber(std::string_view modelNumber);
 
 class Advertisement
 {

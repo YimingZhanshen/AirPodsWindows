@@ -70,6 +70,10 @@ enum class Model : uint32_t {
     AirPods_4,
     AirPods_4_ANC,
     AirPods_5,
+    // Variant captured in the fork's own advertisement (product id 0x2030) and shipped with a
+    // wireless charging case; capabilities match AirPods 5 plus SWIPE_FOR_VOLUME. Model numbers
+    // A3439/A3440/A3441 identify it (Docs/AAP-Protocol-Spec.md §14, librepods data/AirPods.kt).
+    AirPods_5_WCC,
     AirPods_Pro,
     AirPods_Pro_2,
     AirPods_Pro_2_USB_C,
@@ -149,6 +153,8 @@ inline QString Helper::ToString<Core::AirPods::Model>(const Core::AirPods::Model
         return "AirPods 4 (ANC)";
     case Core::AirPods::Model::AirPods_5:
         return "AirPods 5";
+    case Core::AirPods::Model::AirPods_5_WCC:
+        return "AirPods 5 (Wireless Charging Case)";
     case Core::AirPods::Model::AirPods_Pro:
         return "AirPods Pro";
     case Core::AirPods::Model::AirPods_Pro_2:
