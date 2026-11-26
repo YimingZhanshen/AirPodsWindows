@@ -18,57 +18,27 @@
 
 #include "HeadTrackingPresentation.h"
 
-#include <cstring>
+#include "../Core/HeadTrackingMessage.h"
 
 namespace Gui {
 
-namespace {
-
-// Reads one little-endian int16, the same way `Core::AAP::ParseHeadTrackingData` does.
-std::int16_t ReadInt16LE(std::span<const std::uint8_t> packet, std::size_t offset) noexcept
-{
-    return static_cast<std::int16_t>(
-        static_cast<std::uint16_t>(packet[offset]) |
-        (static_cast<std::uint16_t>(packet[offset + 1]) << 8));
-}
-
-} // namespace
-
 HeadTrackingRecord ClassifyHeadTrackingRecord(std::span<const std::uint8_t> packet) noexcept
 {
-    // The ten-byte prefix plus the length the fields need. Everything shorter cannot be read
-    // safely, so it is not a head-tracking record as far as the view is concerned.
-    if (packet.size() < kHeadTrackingRecordSize) {
-        return HeadTrackingRecord::NotHeadTracking;
-    }
-
-    static constexpr std::array<std::uint8_t, 10> kPrefix{0x04, 0x00, 0x04, 0x00, 0x17,
-                                                          0x00, 0x00, 0x00, 0x10, 0x00};
-    if (std::memcmp(packet.data(), kPrefix.data(), kPrefix.size()) != 0) {
-        return HeadTrackingRecord::NotHeadTracking;
-    }
-
-    if (packet[11] != 0x00) {
-        return HeadTrackingRecord::NotHeadTracking;
-    }
-
-    return HeadTrackingRecord::Stream;
+    return Core::AAP::IsHeadTrackingStreamRecord(packet) ? HeadTrackingRecord::Stream
+                                                         : HeadTrackingRecord::NotHeadTracking;
 }
 
 std::optional<HeadTrackingCounts>
 ReadHeadTrackingCounts(std::span<const std::uint8_t> packet) noexcept
 {
-    if (packet.size() < kHeadTrackingRecordSize) {
+    const auto parsed = Core::AAP::ParseHeadTrackingData(packet);
+    if (!parsed.has_value()) {
         return std::nullopt;
     }
-
-    HeadTrackingCounts counts;
-    counts.orientation[0] = ReadInt16LE(packet, kHeadTrackingOrientationOffset);
-    counts.orientation[1] = ReadInt16LE(packet, kHeadTrackingOrientationOffset + 2);
-    counts.orientation[2] = ReadInt16LE(packet, kHeadTrackingOrientationOffset + 4);
-    counts.horizontalAcceleration = ReadInt16LE(packet, kHeadTrackingHorizontalAccelerationOffset);
-    counts.verticalAcceleration = ReadInt16LE(packet, kHeadTrackingVerticalAccelerationOffset);
-    return counts;
+    return HeadTrackingCounts{
+        {parsed->orientation1, parsed->orientation2, parsed->orientation3},
+        parsed->horizontalAcceleration,
+        parsed->verticalAcceleration};
 }
 
 HeadTrackingSample NormalizeHeadTrackingSample(const HeadTrackingCounts &counts) noexcept

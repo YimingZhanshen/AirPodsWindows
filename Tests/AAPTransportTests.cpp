@@ -22,6 +22,7 @@
 #include <memory>
 #include <optional>
 #include <stop_token>
+#include <thread>
 #include <vector>
 
 #if defined(APD_OS_WIN)
@@ -1399,6 +1400,135 @@ private slots:
         QVERIFY(!manager.IsCurrentAttempt({0x5678, 7}));
         manager._connected = false;
         QVERIFY(!manager.IsCurrentAttempt({0x1234, 7}));
+    }
+
+    void ManagerRetriesFailedHeadTrackingStartToConfirmation()
+    {
+        using namespace Core::AAP;
+        Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = AAPAttempt{1, 11};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(11);
+        transport->SetSendFailures(2);
+
+        std::promise<AAPCommandOutcome> settled;
+        auto settledFuture = settled.get_future();
+        Callbacks callbacks;
+        callbacks.onCommandSettled = [&](const AAPCommandOutcome &outcome, const AAPAttempt &) {
+            settled.set_value(outcome);
+        };
+        manager.SetCallbacks(std::move(callbacks));
+        QVERIFY(manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x01}).accepted);
+        QVERIFY(transport->WaitForRecordCount(1, std::chrono::seconds{1}));
+        QCOMPARE(transport->SendAttempts(), size_t{3});
+        QCOMPARE(transport->SendCalls(), size_t{3});
+        QVERIFY(!manager.IsHeadTrackingActive());
+
+        std::vector<uint8_t> sensor(70, 0);
+        const std::array<uint8_t, 10> prefix{0x04, 0x00, 0x04, 0x00, 0x17,
+                                             0x00, 0x00, 0x00, 0x10, 0x00};
+        std::copy(prefix.begin(), prefix.end(), sensor.begin());
+        sensor[10] = 0x44;
+        manager.ProcessPacket(sensor);
+        QVERIFY(settledFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        const auto outcome = settledFuture.get();
+        QCOMPARE(outcome.generation, uint64_t{11});
+        QCOMPARE(outcome.settlement, AAPCommandSettlement::Confirmed);
+        QVERIFY(manager.IsHeadTrackingActive());
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
+    }
+
+    void ManagerReconnectReplaysDesiredStop()
+    {
+        using namespace Core::AAP;
+        Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._commandBroker->SetConfirmMode(
+            AAPCommandKind::SetHeadTracking, AAPConfirmMode::Unverifiable);
+        const auto offline = manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x00});
+        QVERIFY(!offline.accepted);
+        QCOMPARE(offline.failure, std::optional(AAPCommandFailure::TransportClosed));
+        QCOMPARE(
+            manager.DesiredCommand(AAPCommandKind::SetHeadTracking), std::optional<uint32_t>{0});
+
+        manager._transport.store(transport);
+        manager._attempt = AAPAttempt{1, 21};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(21);
+        manager._commandBroker->ReplayDesiredState(21);
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+
+        manager._commandBroker->EndSession();
+        manager._attempt = AAPAttempt{1, 22};
+        manager._commandBroker->BeginSession(22);
+        manager._commandBroker->ReplayDesiredState(22);
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        const auto records = transport->SentRecords();
+        QCOMPARE(records.size(), size_t{2});
+        QCOMPARE(records[0], Packets::StopHeadTracking);
+        QCOMPARE(records[1], Packets::StopHeadTracking);
+        QCOMPARE(
+            manager.DesiredCommand(AAPCommandKind::SetHeadTracking), std::optional<uint32_t>{0});
+        QVERIFY(!manager.IsHeadTrackingActive());
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
+    }
+
+    void ConcurrentHeadTrackingToggleAndReplayUseOneBroker()
+    {
+        using namespace Core::AAP;
+        Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = AAPAttempt{1, 31};
+        manager._connected = true;
+        manager._commandBroker->SetConfirmMode(
+            AAPCommandKind::SetHeadTracking, AAPConfirmMode::Unverifiable);
+        manager._commandBroker->BeginSession(31);
+
+        std::atomic<uint32_t> lastDesired{0};
+        std::jthread toggles{[&] {
+            for (uint32_t index = 0; index < 200; ++index) {
+                const uint32_t value = index % 2;
+                lastDesired.store(value);
+                manager.SubmitCommand({AAPCommandKind::SetHeadTracking, value});
+            }
+        }};
+        std::jthread reconnects{[&] {
+            for (uint64_t generation = 32; generation <= 40; ++generation) {
+                {
+                    std::lock_guard lock{manager._mutex};
+                    manager._attempt = AAPAttempt{1, generation};
+                }
+                manager._commandBroker->EndSession();
+                manager._commandBroker->BeginSession(generation);
+                manager._commandBroker->ReplayDesiredState(generation);
+            }
+        }};
+        toggles.join();
+        reconnects.join();
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        QCOMPARE(
+            manager.DesiredCommand(AAPCommandKind::SetHeadTracking),
+            std::optional<uint32_t>{lastDesired.load()});
+        const auto records = transport->SentRecords();
+        QVERIFY(!records.empty());
+        for (const auto &record : records) {
+            QVERIFY(record == Packets::StartHeadTracking || record == Packets::StopHeadTracking);
+        }
+        QCOMPARE(transport->SendAttempts(), records.size());
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
     }
 
     void CancelConnectBeforeAttemptStartsSuppressesThatGeneration()

@@ -264,16 +264,15 @@ private:
     std::optional<bool> _lastBothInEar;
 };
 
-// Bridges the blueprint 2.5 head-tracking intent to the live AAP transport. This is the only
-// place the app sends Start/StopHeadTracking, and the only place it interprets the result, so
-// when C7's `AAPCommandBroker` takes over it replaces this class and nothing else: callers keep
-// going through `HeadTrackingIntent::Flush`.
+// Bridges the blueprint 2.5 head-tracking intent to C7's command broker. There is no direct AAP
+// Start/Stop path: submission, retries, serialization, outcomes and reconnect replay all belong to
+// AAPCommandBroker, while HeadTrackingIntent tracks only desired/pending presentation state.
 class HeadTrackingCommandPort final : public AAP::IHeadTrackingCommandPort
 {
 public:
     explicit HeadTrackingCommandPort(AAP::Manager *manager) : _manager{manager} {}
 
-    bool RequestHeadTracking(bool enable) override;
+    AAP::AAPCommandResult SubmitHeadTracking(bool enable, std::uint64_t generation) override;
 
 private:
     AAP::Manager *_manager;
@@ -428,20 +427,16 @@ private:
     bool _aapShutdown{false};
     std::jthread _aapConnectWorker;
 
-    // Blueprint 2.5. Its own mutex, deliberately not `_aapWorkerMutex`: `Flush` performs a
-    // transport write, and P2 established that no slow driver call may hold the connection mutex
-    // that the advertisement and scanner pipelines share.
-    //
-    // The port is the seam C7 replaces (`AAPCommandBroker` already lists a `SetHeadTracking`
-    // command kind); the intent, the generation reset and the replay on reconnect stay here, so
-    // there is exactly one head-tracking send path and no second rollback mechanism.
+    // Blueprint 2.5. Its own mutex serializes toggles with transport generation changes. The
+    // broker, not this mutex, serializes wire writes and owns desired-state replay.
     Details::HeadTrackingCommandPort _headTrackingPort{&_aapMgr};
     std::mutex _headTrackingMutex;
     AAP::HeadTrackingIntent _headTrackingIntent;
 
-    // Pushes the intent through the seam and reports the resulting desire to the GUI. Callers
-    // must not hold `_headTrackingMutex`.
-    void FlushHeadTracking();
+    // Submits through the intent/broker seam and reports the resulting desire to the GUI.
+    // Returns whether the broker accepted the desired value. Callers must not hold the mutex.
+    bool FlushHeadTracking();
+    bool SetHeadTrackingDesired(bool enabled);
 
     void CompleteBoundDeviceLookup(uint64_t address, std::optional<Bluetooth::Device> device);
     void OnBoundDeviceConnectionStateChanged(Bluetooth::DeviceState state);

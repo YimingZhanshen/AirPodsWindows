@@ -25,9 +25,9 @@
 
 #include "AdaptiveNoiseLevel.h"
 #include "Base.h"
-#include "AdaptiveNoiseLevel.h"
 #include "AAPBattery.h"
 #include "AAPStem.h"
+#include "HeadTrackingMessage.h"
 #include "../Helper.h"
 #include "../Logger.h"
 #include "PpeCapLevel.h"
@@ -444,38 +444,6 @@ inline std::optional<uint8_t> ParsePpeCapLevel(const std::vector<uint8_t> &data)
     }
 
     return data[7];
-}
-
-// Structure to hold head tracking data
-struct HeadTrackingData {
-    int16_t orientation1;
-    int16_t orientation2;
-    int16_t orientation3;
-    int16_t horizontalAcceleration;
-    int16_t verticalAcceleration;
-};
-
-// Parse head tracking sensor data
-// Offsets: orientation1=43, orientation2=45, orientation3=47, hAccel=51, vAccel=53
-inline std::optional<HeadTrackingData> ParseHeadTrackingData(const std::vector<uint8_t> &data)
-{
-    if (data.size() < 56) {
-        return std::nullopt;
-    }
-
-    HeadTrackingData result;
-
-    auto readInt16LE = [&data](size_t offset) -> int16_t {
-        return static_cast<int16_t>(data[offset] | (data[offset + 1] << 8));
-    };
-
-    result.orientation1 = readInt16LE(43);
-    result.orientation2 = readInt16LE(45);
-    result.orientation3 = readInt16LE(47);
-    result.horizontalAcceleration = readInt16LE(51);
-    result.verticalAcceleration = readInt16LE(53);
-
-    return result;
 }
 
 //////////////////////////////////////////////////

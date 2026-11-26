@@ -1065,12 +1065,12 @@ AAP::ConnectFailure Manager::GetLastAAPConnectFailure() const
 
 bool Manager::StartHeadTracking()
 {
-    return _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetHeadTracking, 0x01}).accepted;
+    return SetHeadTrackingDesired(true);
 }
 
 bool Manager::StopHeadTracking()
 {
-    return _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetHeadTracking, 0x00}).accepted;
+    return SetHeadTrackingDesired(false);
 }
 
 bool Manager::IsHeadTrackingActive() const
@@ -1129,41 +1129,51 @@ std::uint64_t Manager::GetHeadTrackingGeneration() const
     return _aapMgr.GetLastAttempt().generation;
 }
 
-// The single head-tracking send of the application. Returning false leaves the intent pending so
-// the next `FlushHeadTracking()` retries it, which is the hook C7's broker takes over.
-bool Details::HeadTrackingCommandPort::RequestHeadTracking(bool enable)
+// The head-tracking port submits to the broker; it never writes AAP bytes itself.
+AAP::AAPCommandResult
+Details::HeadTrackingCommandPort::SubmitHeadTracking(bool enable, std::uint64_t generation)
 {
-    if (_manager == nullptr) {
-        return false;
+    if (_manager == nullptr ||
+        (generation != 0 &&
+         (!_manager->IsConnected() || _manager->GetLastAttempt().generation != generation)))
+    {
+        return {false, false, AAP::AAPCommandFailure::TransportClosed};
     }
-    return enable ? _manager->StartHeadTracking() : _manager->StopHeadTracking();
+    return _manager->SubmitCommand(
+        {AAP::AAPCommandKind::SetHeadTracking, static_cast<uint32_t>(enable ? 0x01 : 0x00)});
 }
 
-void Manager::FlushHeadTracking()
+bool Manager::FlushHeadTracking()
 {
-    AAP::HeadTrackingIntent::Action action;
+    AAP::HeadTrackingIntent::FlushResult result;
     bool desired{false};
     {
         std::lock_guard<std::mutex> lock{_headTrackingMutex};
-        action = _headTrackingIntent.Flush(_headTrackingPort);
+        result = _headTrackingIntent.Flush(_headTrackingPort);
         desired = _headTrackingIntent.Enabled();
     }
 
-    if (action != AAP::HeadTrackingIntent::Action::None) {
-        LOG(Info, "Head tracking intent pushed: {}",
-            action == AAP::HeadTrackingIntent::Action::Start ? "start" : "stop");
+    if (result.action != AAP::HeadTrackingIntent::Action::None) {
+        LOG(Info, "Head tracking intent submitted: {}",
+            result.action == AAP::HeadTrackingIntent::Action::Start ? "start" : "stop");
     }
     emit HeadTrackingDesiredSafely(desired);
+    return result.submission.accepted;
+}
+
+bool Manager::SetHeadTrackingDesired(bool enabled)
+{
+    {
+        std::lock_guard<std::mutex> lock{_headTrackingMutex};
+        _headTrackingIntent.SetEnabled(enabled);
+    }
+    _headTrackingEnabled = enabled;
+    return FlushHeadTracking();
 }
 
 void Manager::OnHeadTrackingEnabledChanged(bool enable)
 {
-    {
-        std::lock_guard<std::mutex> lock{_headTrackingMutex};
-        _headTrackingIntent.SetEnabled(enable);
-    }
-    _headTrackingEnabled = enable;
-    FlushHeadTracking();
+    SetHeadTrackingDesired(enable);
 }
 
 void Manager::OnConversationalAwarenessChanged(bool enable)
@@ -1319,6 +1329,12 @@ void Manager::OnPpeCapLevelNotification(uint8_t level, AAP::AAPAttempt attempt)
 
 void Manager::OnAAPCommandSettled(const AAP::AAPCommandOutcome &outcome, AAP::AAPAttempt attempt)
 {
+    if (outcome.command.kind == AAP::AAPCommandKind::SetHeadTracking) {
+        // This can run just before OnAAPConnected: the intent retains a matching settlement and
+        // adopts it on transport-up. It rejects outcomes from any other live generation.
+        std::lock_guard<std::mutex> lock{_headTrackingMutex};
+        _headTrackingIntent.OnCommandSettled(outcome);
+    }
     if (!IsCurrentAAPAttempt(attempt)) {
         return;
     }

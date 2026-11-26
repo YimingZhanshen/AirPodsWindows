@@ -252,6 +252,10 @@ private:
         return static_cast<size_t>(kind);
     }
 
+    // A failed atomic head-tracking write is retried a small, bounded number of times in this
+    // same serialized slot. Other C7 command kinds retain their one-attempt behavior.
+    static constexpr unsigned kHeadTrackingSendAttempts = 3;
+
     struct KindState {
         std::optional<uint32_t> desired;
         uint64_t desiredRequestId{0};
