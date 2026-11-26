@@ -19,6 +19,11 @@
 #include "QuickConnect.h"
 
 #include <algorithm>
+#include <condition_variable>
+#include <cstdint>
+#include <deque>
+#include <mutex>
+#include <thread>
 #include <utility>
 
 #include <QMetaObject>
@@ -37,14 +42,53 @@ QString NormalizeId(QString id)
     return id.toLower();
 }
 
-// Driver calls are not guaranteed to observe cancellation. Move an old worker
-// to a detached reaper instead of ever joining it on the Controller/GUI thread.
-void ReapAsync(std::thread &worker)
-{
-    if (!worker.joinable()) {
-        return;
+// Blocking reconnect and explicit-link mutations share one process-lifetime queue so
+// opposite-direction requests are serialized globally. Driver calls have no reliable
+// cancellation point, so the single worker is intentionally never destroyed or joined:
+// the OS reclaims it at process exit. Controller generations make stale queued jobs
+// return without posting, and a currently blocked job can outlive its Controller only
+// through shared backend/link state, never through a raw Controller pointer.
+struct MutationWorker {
+    MutationWorker() : thread{[this] { Run(); }} {}
+
+    ~MutationWorker() = default;
+
+    std::mutex mutex;
+    std::condition_variable condition;
+    std::deque<std::function<void()>> jobs;
+    std::thread thread;
+
+    void Run()
+    {
+        for (;;) {
+            std::function<void()> job;
+            {
+                std::unique_lock lock{mutex};
+                condition.wait(lock, [this] { return !jobs.empty(); });
+                job = std::move(jobs.front());
+                jobs.pop_front();
+            }
+            job();
+        }
     }
-    std::thread{[thread = std::move(worker)]() mutable { thread.join(); }}.detach();
+};
+
+MutationWorker &GlobalMutationWorker()
+{
+    // Deliberately leaked: destroying this at static teardown could join a blocked
+    // driver call and freeze process shutdown.
+    static auto *worker = new MutationWorker{};
+    return *worker;
+}
+
+void QueueMutation(std::function<void()> job)
+{
+    auto &worker = GlobalMutationWorker();
+    {
+        std::lock_guard lock{worker.mutex};
+        worker.jobs.push_back(std::move(job));
+    }
+    worker.condition.notify_one();
 }
 
 } // namespace
@@ -80,7 +124,7 @@ Controller::Controller(
 
 Controller::~Controller()
 {
-    // Detach the workers from this object first, so anything still running posts nowhere.
+    // Detach queued work from this object first, so anything still running posts nowhere.
     {
         std::lock_guard<std::mutex> lock{_link->mutex};
         _link->controller = nullptr;
@@ -96,18 +140,9 @@ Controller::~Controller()
         _deviceRefreshThread.join();
     }
 
-    // The reconnect worker can be inside a blocking KsProperty call that has no cancellation point,
-    // and the driver decides when that returns. Joining it here would freeze the GUI thread on
-    // quit, so let it finish on its own; it holds a shared reference to the backend and posts
-    // through `_link`, so it cannot outlive anything it touches. The link worker uses the same
-    // escape hatch for the same reason.
-    if (_requestThread.joinable()) {
-        _requestThread.detach();
-    }
-    if (_linkThread.joinable()) {
-        _linkThread.detach();
-    }
-
+    // Reconnect and link mutations are already retired by their generation/stop tokens and run
+    // on the single process-lifetime queue. Joining that queue here could freeze the GUI on an
+    // uninterruptible driver call, so it is intentionally left to process exit.
     _backend->SetController(nullptr);
 }
 
@@ -187,7 +222,6 @@ void Controller::SetLinkAddress(uint64_t address)
     _linkStop.request_stop();
     _linkRunning = false;
     _linkDeadlineTimer.stop();
-    ReapAsync(_linkThread);
     if (wasRunning) {
         emit LinkBusyChanged(false);
     }
@@ -285,63 +319,61 @@ Outcome Controller::Request(bool automatic)
     _connectedDuringRequest = false;
     const uint64_t generation = ++_requestGeneration;
 
-    ReapAsync(_requestThread);
     _requestStop = std::stop_source{};
 
-    _requestThread =
-        std::thread{[backend = _backend, link = _link, stopToken = _requestStop.get_token(),
-                     requestedDeviceId = _deviceId, generation]() {
-            const auto devices = backend->ListDevices(stopToken);
-            const auto deviceIter =
-                std::find_if(devices.begin(), devices.end(), [&](const Device &device) {
-                    return device.id == requestedDeviceId;
-                });
+    QueueMutation([backend = _backend, link = _link, stopToken = _requestStop.get_token(),
+                   requestedDeviceId = _deviceId, generation]() {
+        const auto devices = backend->ListDevices(stopToken);
+        const auto deviceIter =
+            std::find_if(devices.begin(), devices.end(), [&](const Device &device) {
+                return device.id == requestedDeviceId;
+            });
 
-            auto outcome = Outcome::DeviceUnavailable;
-            QString deviceName;
-            if (deviceIter != devices.end()) {
-                deviceName = deviceIter->name;
-                if (deviceIter->connected) {
-                    outcome = Outcome::AlreadyConnected;
-                }
-                else {
-                    outcome = backend->RequestReconnect(requestedDeviceId, stopToken)
-                                  ? Outcome::RequestStarted
-                                  : Outcome::Failed;
-                }
+        auto outcome = Outcome::DeviceUnavailable;
+        QString deviceName;
+        if (deviceIter != devices.end()) {
+            deviceName = deviceIter->name;
+            if (deviceIter->connected) {
+                outcome = Outcome::AlreadyConnected;
             }
-
-            if (stopToken.stop_requested()) {
-                return;
+            else {
+                outcome = backend->RequestReconnect(requestedDeviceId, stopToken)
+                              ? Outcome::RequestStarted
+                              : Outcome::Failed;
             }
+        }
 
-            PostToController(
-                link, [requestedDeviceId, deviceName = std::move(deviceName), outcome,
-                       generation](Controller &self) mutable {
-                    if (generation != self._requestGeneration) {
+        if (stopToken.stop_requested()) {
+            return;
+        }
+
+        PostToController(
+            link, [requestedDeviceId, deviceName = std::move(deviceName), outcome,
+                   generation](Controller &self) mutable {
+                if (generation != self._requestGeneration) {
+                    return;
+                }
+                self._requestRunning = false;
+                self._requestingDeviceId.clear();
+
+                if (outcome == Outcome::RequestStarted) {
+                    if (self._connectedDuringRequest) {
+                        self._connectedDuringRequest = false;
+                        self._backend->StopObserving();
+                        self.EmitOutcome(Outcome::Connected, deviceName);
                         return;
                     }
-                    self._requestRunning = false;
-                    self._requestingDeviceId.clear();
 
-                    if (outcome == Outcome::RequestStarted) {
-                        if (self._connectedDuringRequest) {
-                            self._connectedDuringRequest = false;
-                            self._backend->StopObserving();
-                            self.EmitOutcome(Outcome::Connected, deviceName);
-                            return;
-                        }
+                    self._pending = true;
+                    self._pendingDeviceId = requestedDeviceId;
+                    self._pendingDeviceName = deviceName;
+                    self._resolveTimer.start();
+                }
 
-                        self._pending = true;
-                        self._pendingDeviceId = requestedDeviceId;
-                        self._pendingDeviceName = deviceName;
-                        self._resolveTimer.start();
-                    }
-
-                    self._connectedDuringRequest = false;
-                    self.EmitOutcome(outcome, deviceName);
-                });
-        }};
+                self._connectedDuringRequest = false;
+                self.EmitOutcome(outcome, deviceName);
+            });
+    });
 
     return Outcome::RequestStarted;
 }
@@ -459,7 +491,6 @@ Core::BluetoothLink::Outcome Controller::RequestLink(bool connect)
         _linkRunning = false;
         _linkDisconnectRequested = false;
         _linkDeadlineTimer.stop();
-        ReapAsync(_linkThread);
         emit LinkBusyChanged(false);
     }
 
@@ -484,15 +515,13 @@ Core::BluetoothLink::Outcome Controller::RequestLink(bool connect)
     _linkRunning = true;
     _linkDisconnectRequested = !connect;
     _linkStop = std::stop_source{};
-    ReapAsync(_linkThread);
 
-    // Same detach-safe contract as the reconnect worker: the thread keeps a
-    // shared reference to the backend (which owns the adapter) and posts
-    // through `_link`, so it can never outlive what it touches, and a
-    // completion for a retired generation is dropped by FinishLink.
-    _linkThread = std::thread{[backend = _backend, link = _link, adapter,
-                               stopToken = _linkStop.get_token(), address = _linkAddress, connect,
-                               deadline = _linkDeadline, poll = _linkPoll, generation]() {
+    // The queue serializes this mutation against every other explicit link or reconnect
+    // operation process-wide. The job keeps shared backend/link state only; its generation
+    // and stop token make completion after retirement a no-op.
+    QueueMutation([backend = _backend, link = _link, adapter, stopToken = _linkStop.get_token(),
+                   address = _linkAddress, connect, deadline = _linkDeadline, poll = _linkPoll,
+                   generation]() {
         const auto result =
             Core::BluetoothLink::RunAttempt(*adapter, address, connect, stopToken, deadline, poll);
         if (stopToken.stop_requested()) {
@@ -500,7 +529,7 @@ Core::BluetoothLink::Outcome Controller::RequestLink(bool connect)
         }
         PostToController(
             link, [generation, result](Controller &self) { self.FinishLink(generation, result); });
-    }};
+    });
 
     _linkDeadlineTimer.start();
     emit LinkBusyChanged(true);

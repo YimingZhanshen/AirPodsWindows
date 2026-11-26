@@ -939,20 +939,25 @@ void QuickConnectTests::repeatedLinkClicksJoinSameDirectionAndOppositeRetires()
     QTRY_VERIFY(adapter->parkedEntered.load());
 
     // Same-direction clicks join the parked request; the opposite direction
-    // retires it and starts a new logical request without joining the driver.
+    // retires it and queues a new logical request without joining the driver.
     QVERIFY(controller.RequestLinkConnect() == Outcome::Started);
     QVERIFY(controller.RequestLinkDisconnect() == Outcome::Started);
     QCOMPARE(adapter->submits.load(), 0);
     QVERIFY(controller.IsLinkDisconnectPending());
 
-    // The disconnect observes the still-disconnected link and completes before
-    // the retired connect is released. Only the newer request may speak.
+    // The queued opposite mutation must wait for the blocked submit to drain. It
+    // must not publish an early terminal result that the old driver call could
+    // contradict after it finally returns.
+    QTest::qWait(50);
+    QCOMPARE(spy.count(), 1); // joined-request feedback only
+    QVERIFY(controller.IsLinkBusy());
+
+    adapter->parkQuery = false;
     QVERIFY(spy.wait(2'000));
     QVERIFY(LastLinkOutcome(spy) == Outcome::AlreadyDisconnected);
     QVERIFY(controller.IsLinkSuppressed());
     QVERIFY(!controller.IsLinkBusy());
 
-    adapter->parkQuery = false;
     QTRY_COMPARE_WITH_TIMEOUT(adapter->parkedWorkers.load(), 0, 2'000);
     QTest::qWait(50);
     QCOMPARE(adapter->submits.load(), 0);

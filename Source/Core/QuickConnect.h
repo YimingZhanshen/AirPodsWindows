@@ -103,9 +103,11 @@ public:
     static constexpr std::chrono::milliseconds kDefaultResolveTimeout{10'000};
     static constexpr std::chrono::milliseconds kAutoRetryCooldown{30'000};
 
-    // The backend is shared rather than borrowed because a reconnect request can still be inside a
-    // blocking driver call when the Controller goes away; that worker is detached and keeps the
-    // backend alive for as long as it needs it.
+    // The backend is shared rather than borrowed because a request can still be inside a blocking
+    // driver call when the Controller goes away. All backend work runs on one bounded, process-
+    // lifetime queue worker; destruction cancels logical work without joining a driver call on the
+    // GUI thread. If that call never returns, the single owned worker is reclaimed only by process
+    // exit (an intentional, documented residual rather than a detached std::thread).
     //
     // `resolveTimeout` is a parameter so tests can drive the real timer instead of calling the
     // timeout slot by hand. `linkDeadline` and `linkPoll` do the same for the explicit link
@@ -203,7 +205,6 @@ private:
     uint64_t _requestGeneration{};
     std::jthread _deviceRefreshThread;
     std::stop_source _requestStop;
-    std::thread _requestThread;
     QTimer _resolveTimer;
 
     // Link-request state is only touched on the Controller's own thread; the
@@ -216,7 +217,6 @@ private:
     bool _linkDisconnectRequested{};
     bool _linkSuppressed{};
     std::optional<bool> _lastLinkConnected;
-    std::thread _linkThread;
     std::stop_source _linkStop;
     QTimer _linkDeadlineTimer;
 

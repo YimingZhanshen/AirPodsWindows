@@ -221,8 +221,9 @@ std::optional<ResolvedFilter> ResolveFilter(IMMDeviceEnumerator &enumerator, IMM
 }
 
 // KSPROPERTY_TYPE_BASICSUPPORT probe for one one-shot id; the BtAudio driver
-// advertises support on the GET bit before it will honour the request.
-bool SupportsOneShot(IKsControl &ksControl, ULONG propertyId)
+// advertises support on the GET bit before it will honour the request. A failed
+// or short query is unreadable evidence, not proof that the profile is absent.
+std::optional<bool> SupportsOneShot(IKsControl &ksControl, ULONG propertyId)
 {
     KSPROPERTY property{KSPROPSETID_BtAudio, propertyId, KSPROPERTY_TYPE_BASICSUPPORT};
     ULONG supported{};
@@ -230,8 +231,10 @@ bool SupportsOneShot(IKsControl &ksControl, ULONG propertyId)
     const HRESULT result = ksControl.KsProperty(
         reinterpret_cast<PKSPROPERTY>(&property), sizeof(property), &supported, sizeof(supported),
         &returned);
-    return SUCCEEDED(result) && returned >= sizeof(supported) &&
-           (supported & KSPROPERTY_TYPE_GET) != 0;
+    if (FAILED(result) || returned < sizeof(supported)) {
+        return std::nullopt;
+    }
+    return (supported & KSPROPERTY_TYPE_GET) != 0;
 }
 
 HRESULT SendOneShot(IKsControl &ksControl, ULONG propertyId)
@@ -248,8 +251,9 @@ struct AudioEndpointRow {
     DWORD state{};
     std::wstring filterId;
     std::optional<bool> profileConnected;
-    bool reconnectSupported{};
-    bool disconnectSupported{};
+    std::optional<bool> reconnectSupported;
+    std::optional<bool> disconnectSupported;
+    bool readable{true};
 };
 
 struct EndpointCollection {
@@ -356,7 +360,6 @@ EndpointCollection CollectDeviceEndpoints(uint64_t address, bool probeKs, std::s
         return collection;
     }
 
-    std::set<std::wstring> seenFilters;
     for (UINT i = 0; i < count; ++i) {
         if (stopToken.stop_requested()) {
             collection.readable = false;
@@ -377,6 +380,10 @@ EndpointCollection CollectDeviceEndpoints(uint64_t address, bool probeKs, std::s
 
         auto resolved = ResolveFilter(*enumerator.operator->(), *endpoint.operator->());
         if (!resolved.has_value()) {
+            // Without the filter id we cannot know whether this endpoint
+            // belongs to the target. Skipping it could turn a failed query
+            // into false Absent/Disconnected evidence.
+            collection.readable = false;
             continue;
         }
         const auto filterIdUpper = ToUpper(resolved->filterId);
@@ -391,11 +398,14 @@ EndpointCollection CollectDeviceEndpoints(uint64_t address, bool probeKs, std::s
         if (row.profile == Profile::Unclassified) {
             continue; // Never touch endpoints whose profile we cannot name.
         }
-        if (seenFilters.insert(row.filterId).second && probeKs) {
-            row.reconnectSupported = SupportsOneShot(*resolved->ksControl, kOneShotReconnectId);
-            row.disconnectSupported = SupportsOneShot(*resolved->ksControl, kOneShotDisconnectId);
+        if (probeKs) {
+            auto *ksControl = resolved->ksControl.operator->();
+            row.reconnectSupported = SupportsOneShot(*ksControl, kOneShotReconnectId);
+            row.disconnectSupported = SupportsOneShot(*ksControl, kOneShotDisconnectId);
+            row.readable =
+                row.reconnectSupported.has_value() && row.disconnectSupported.has_value();
             if (state == DEVICE_STATE_ACTIVE) {
-                row.profileConnected = ReadJackConnection(*resolved->ksControl, stopToken);
+                row.profileConnected = ReadJackConnection(*ksControl, stopToken);
             }
             else if (state == DEVICE_STATE_UNPLUGGED || state == DEVICE_STATE_NOTPRESENT) {
                 row.profileConnected = false;
@@ -418,9 +428,9 @@ void AggregateProfile(
         const bool available = row.state == DEVICE_STATE_ACTIVE ||
                                row.state == DEVICE_STATE_UNPLUGGED ||
                                row.state == DEVICE_STATE_NOTPRESENT;
-        evidence.push_back(
-            {true, row.reconnectSupported || row.disconnectSupported, row.profileConnected,
-             available});
+        const bool controllable = row.reconnectSupported == std::optional<bool>{true} ||
+                                  row.disconnectSupported == std::optional<bool>{true};
+        evidence.push_back({true, controllable, row.profileConnected, available, row.readable});
     }
     statusOut = AggregateEndpointEvidence(evidence);
 }
@@ -559,6 +569,15 @@ public:
             return Failure::Unreadable;
         }
 
+        for (const auto &row : endpoints.rows) {
+            const bool targeted =
+                (row.profile == Profile::A2DP && (plan.connectA2DP || plan.disconnectA2DP)) ||
+                (row.profile == Profile::HFP && (plan.connectHFP || plan.disconnectHFP));
+            if (targeted && !row.readable) {
+                return Failure::Unreadable;
+            }
+        }
+
         int sent{};
         int rejected{};
         std::set<std::wstring> done;
@@ -589,8 +608,8 @@ public:
                 continue;
             }
             const ULONG propertyId = wantConnect ? kOneShotReconnectId : kOneShotDisconnectId;
-            const bool supported = wantConnect ? row.reconnectSupported : row.disconnectSupported;
-            if (!supported) {
+            const auto supported = wantConnect ? row.reconnectSupported : row.disconnectSupported;
+            if (supported != std::optional<bool>{true}) {
                 ++rejected;
                 continue;
             }
@@ -616,12 +635,13 @@ public:
                 ++rejected;
                 continue;
             }
-            if (!SupportsOneShot(*ksControl, propertyId)) {
+            auto *rawKsControl = ksControl.operator->();
+            if (!SupportsOneShot(*rawKsControl, propertyId)) {
                 ++rejected;
                 continue;
             }
 
-            const HRESULT result = SendOneShot(*ksControl, propertyId);
+            const HRESULT result = SendOneShot(*rawKsControl, propertyId);
             if (FAILED(result)) {
                 LOG(Warn, "BtAudio one-shot {} request failed. Device: {}, HRESULT: {:#x}",
                     wantConnect ? "reconnect" : "disconnect", MaskAddressShort(address), result);

@@ -64,8 +64,12 @@ inline constexpr std::chrono::milliseconds kLinkPollInterval{200};
 enum class Service : uint8_t { A2DP, HFP };
 
 // Availability and link state of one audio profile on the target device.
+// Absent is a readable zero-row result; Unreadable and Uncontrollable are never
+// accepted as proof that a link is down.
 enum class ServiceStatus : uint8_t {
-    Unsupported,  // device does not expose it, or its driver failed the KS basicsupport probe
+    Absent,
+    Unreadable,
+    Uncontrollable,
     Unavailable,  // present but user-disabled / inactive - never toggled
     Unknown,      // controllable, but the driver did not provide profile connection evidence
     Disconnected, // driver evidence proves the profile link is down
@@ -81,28 +85,38 @@ struct EndpointEvidence {
     bool controllable{};
     std::optional<bool> connected;
     bool available{true}; // disabled/unknown MMDevice states are never reconnect targets
+    bool readable{true};  // false when filter/state/one-shot support evidence could not be read
 };
 
 inline ServiceStatus AggregateEndpointEvidence(std::span<const EndpointEvidence> evidence)
 {
+    if (evidence.empty()) {
+        return ServiceStatus::Absent;
+    }
+
     bool anyPresent{};
     bool anyControllable{};
     bool anyConnected{};
     bool anyDisconnected{};
     bool anyUnknown{};
     for (const auto &item : evidence) {
+        if (item.present && !item.readable) {
+            return ServiceStatus::Unreadable;
+        }
         anyPresent = anyPresent || item.present;
         anyControllable = anyControllable || item.controllable;
         anyConnected =
             anyConnected || (item.available && item.connected == std::optional<bool>{true});
         anyDisconnected =
             anyDisconnected || (item.available && item.connected == std::optional<bool>{false});
-        anyUnknown =
-            anyUnknown || (item.available && item.controllable && !item.connected.has_value());
+        anyUnknown = anyUnknown || (item.available && !item.connected.has_value());
     }
 
-    if (!anyPresent || !anyControllable) {
-        return ServiceStatus::Unsupported;
+    if (!anyPresent) {
+        return ServiceStatus::Absent;
+    }
+    if (!anyControllable) {
+        return ServiceStatus::Uncontrollable;
     }
     if (anyConnected) {
         return ServiceStatus::Connected;
@@ -120,8 +134,8 @@ struct DeviceLinkState {
     bool deviceKnown{false};   // paired/remembered on a local radio (bthprops)
     bool linkReadable{false};  // radio ACL read-back available
     bool linkConnected{false}; // radio-level ACL state, only meaningful when readable
-    ServiceStatus a2dp{ServiceStatus::Unsupported};
-    ServiceStatus hfp{ServiceStatus::Unsupported};
+    ServiceStatus a2dp{ServiceStatus::Absent};
+    ServiceStatus hfp{ServiceStatus::Absent};
 };
 
 struct RadioEnumerationResult {
@@ -198,6 +212,7 @@ RadioEnumerationResult EnumerateRadioHandles(
 
 enum class Decision : uint8_t {
     DeviceNotFound,     // no such paired device - refuse
+    Unreadable,         // evidence cannot safely classify the requested state
     NoSupportedService, // nothing controllable - refuse instead of guessing
     AlreadySatisfied,   // the requested state already holds, no OS call needed
     Proceed,
@@ -223,6 +238,7 @@ enum class Failure : uint8_t {
     DeviceNotFound,     // vanished from the paired list
     NoSupportedService, // nothing to operate on
     RequestRejected,    // the audio driver refused the one-shot request
+    Busy,               // the bounded worker queue could not accept another request
     Unreadable,         // state could not be queried at all
     Timeout,            // read-back never reached the requested state
     Cancelled,          // stop was requested (shutdown / superseded)
@@ -239,6 +255,8 @@ inline const char *FailureName(Failure failure)
         return "no_supported_service";
     case Failure::RequestRejected:
         return "request_rejected";
+    case Failure::Busy:
+        return "busy";
     case Failure::Unreadable:
         return "unreadable";
     case Failure::Timeout:
@@ -323,6 +341,12 @@ inline ActionPlan BuildPlan(const DeviceLinkState &state, bool connect)
         plan.decision = Decision::DeviceNotFound;
         return plan;
     }
+    if (!state.linkReadable || state.a2dp == ServiceStatus::Unreadable ||
+        state.hfp == ServiceStatus::Unreadable)
+    {
+        plan.decision = Decision::Unreadable;
+        return plan;
+    }
 
     const auto usable = [](ServiceStatus status) {
         return status == ServiceStatus::Unknown || status == ServiceStatus::Disconnected ||
@@ -362,12 +386,12 @@ inline ActionPlan BuildPlan(const DeviceLinkState &state, bool connect)
         plan.disconnectHFP = true;
     }
     if (!plan.TouchesAny()) {
-        // Unsupported means the profile is absent and Disconnected is explicit
-        // driver proof. A merely disabled/unavailable endpoint is not proof.
-        const bool positiveProof =
-            (state.a2dp == ServiceStatus::Unsupported ||
-             state.a2dp == ServiceStatus::Disconnected) &&
-            (state.hfp == ServiceStatus::Unsupported || state.hfp == ServiceStatus::Disconnected);
+        // Absent is a readable zero-row result and Disconnected is explicit
+        // driver proof. Uncontrollable, unavailable, and unknown are not proof.
+        const auto provenDown = [](ServiceStatus status) {
+            return status == ServiceStatus::Absent || status == ServiceStatus::Disconnected;
+        };
+        const bool positiveProof = provenDown(state.a2dp) && provenDown(state.hfp);
         plan.decision = positiveProof ? Decision::AlreadySatisfied : Decision::NoSupportedService;
     }
     return plan;
@@ -393,6 +417,13 @@ inline AttemptProgress Evaluate(const ActionPlan &plan, const DeviceLinkState &l
         progress.failure = Failure::DeviceNotFound;
         return progress;
     }
+    if (!latest.linkReadable || latest.a2dp == ServiceStatus::Unreadable ||
+        latest.hfp == ServiceStatus::Unreadable)
+    {
+        progress.evaluation = Evaluation::Failed;
+        progress.failure = Failure::Unreadable;
+        return progress;
+    }
 
     if (connect) {
         const bool touchedUp = (plan.connectA2DP && latest.a2dp == ServiceStatus::Connected) ||
@@ -403,12 +434,18 @@ inline AttemptProgress Evaluate(const ActionPlan &plan, const DeviceLinkState &l
         return progress;
     }
 
-    // A disappeared or unreadable profile is not proof that a disconnect
-    // request worked. Every profile touched by the plan must report explicit
-    // driver evidence that its link is down.
+    // A disappeared profile is not proof that a disconnect request worked.
+    // Every touched profile must report explicit driver evidence that its link
+    // is down; untouched profiles must at least be absent or positively down so
+    // an uncontrollable endpoint cannot be hidden by a successful sibling.
+    const auto provenDown = [](ServiceStatus status) {
+        return status == ServiceStatus::Absent || status == ServiceStatus::Disconnected;
+    };
     const bool touchedDown = (!plan.disconnectA2DP || latest.a2dp == ServiceStatus::Disconnected) &&
                              (!plan.disconnectHFP || latest.hfp == ServiceStatus::Disconnected);
-    if (plan.TouchesAny() && touchedDown) {
+    const bool untouchedDown = (plan.disconnectA2DP || provenDown(latest.a2dp)) &&
+                               (plan.disconnectHFP || provenDown(latest.hfp));
+    if (plan.TouchesAny() && touchedDown && untouchedDown) {
         progress.evaluation = Evaluation::Satisfied;
     }
     return progress;
@@ -471,24 +508,58 @@ inline AttemptResult RunAttempt(
         return {Outcome::Failed, Failure::Unreadable};
     }
 
-    const auto plan = BuildPlan(*state, connect);
-    switch (plan.decision) {
-    case Decision::DeviceNotFound:
-        return {Outcome::DeviceNotFound, Failure::DeviceNotFound};
-    case Decision::NoSupportedService:
-        return {Outcome::NoSupportedService, Failure::NoSupportedService};
-    case Decision::AlreadySatisfied:
-        return {connect ? Outcome::AlreadyConnected : Outcome::AlreadyDisconnected, Failure::None};
-    case Decision::Proceed:
-        break;
-    }
+    const auto terminalFor = [&](const DeviceLinkState &value) -> std::optional<AttemptResult> {
+        const auto candidate = BuildPlan(value, connect);
+        switch (candidate.decision) {
+        case Decision::DeviceNotFound:
+            return AttemptResult{Outcome::DeviceNotFound, Failure::DeviceNotFound};
+        case Decision::Unreadable:
+            return AttemptResult{Outcome::Failed, Failure::Unreadable};
+        case Decision::NoSupportedService:
+            return AttemptResult{Outcome::NoSupportedService, Failure::NoSupportedService};
+        case Decision::AlreadySatisfied:
+            return AttemptResult{
+                connect ? Outcome::AlreadyConnected : Outcome::AlreadyDisconnected, Failure::None};
+        case Decision::Proceed:
+            return std::nullopt;
+        }
+        return std::nullopt;
+    };
 
-    const auto submitted = adapter.Submit(address, plan, stopToken);
-    if (stopToken.stop_requested()) {
-        return {Outcome::Cancelled, Failure::Cancelled};
-    }
-    if (submitted != Failure::None) {
-        return {Outcome::Failed, submitted};
+    ActionPlan plan;
+    for (int submission = 0;; ++submission) {
+        plan = BuildPlan(*state, connect);
+        if (auto terminal = terminalFor(*state)) {
+            return *terminal;
+        }
+
+        const auto submitted = adapter.Submit(address, plan, stopToken);
+        if (stopToken.stop_requested()) {
+            return {Outcome::Cancelled, Failure::Cancelled};
+        }
+        if (submitted != Failure::NoSupportedService) {
+            if (submitted != Failure::None) {
+                return {Outcome::Failed, submitted};
+            }
+            break;
+        }
+
+        // Submit performs its own endpoint preflight. Another process may have
+        // satisfied the request between our query and that preflight, so never
+        // classify a nothing-to-send result until a fresh read-back agrees.
+        state = adapter.Query(address, stopToken);
+        if (stopToken.stop_requested()) {
+            return {Outcome::Cancelled, Failure::Cancelled};
+        }
+        if (!state.has_value()) {
+            return {Outcome::Failed, Failure::Unreadable};
+        }
+        if (auto terminal = terminalFor(*state)) {
+            return *terminal;
+        }
+        if (submission >= 1) {
+            return {Outcome::Failed, Failure::NoSupportedService};
+        }
     }
 
     // Submission is not connection: keep reading the state back until it
