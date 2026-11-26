@@ -18,12 +18,15 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -271,14 +274,14 @@ private:
     QString _deviceName;
     Model _boundModel{Model::Unknown};
     bool _deviceConnected{false};
-    bool _scannerWanted{false};
-    bool _automaticEarDetection{false};
-    bool _conversationalAwarenessEnabled{false};
-    uint8_t _conversationalAwarenessVolumePercent{40};
-    bool _personalizedVolumeEnabled{false};
-    bool _loudSoundReductionEnabled{false};
-    uint8_t _adaptiveTransparencyLevel{25};
-    std::optional<AAP::NoiseControlMode> _currentNoiseControlMode;
+    std::atomic<bool> _scannerWanted{false};
+    std::atomic<bool> _automaticEarDetection{false};
+    std::atomic<bool> _conversationalAwarenessEnabled{false};
+    std::atomic<uint8_t> _conversationalAwarenessVolumePercent{40};
+    std::atomic<bool> _personalizedVolumeEnabled{false};
+    std::atomic<bool> _loudSoundReductionEnabled{false};
+    std::atomic<uint8_t> _adaptiveTransparencyLevel{25};
+    std::atomic<int> _currentNoiseControlMode{-1};
     uint64_t _requestedDeviceAddress{0};
     std::jthread _deviceLookupThread;
 
@@ -288,6 +291,24 @@ private:
     // Declared last so that it is destroyed first: its destructor stops the watcher and waits
     // for in-flight callbacks, which reach `_stateMgr` and `_mutex` above.
     Bluetooth::AdvertisementWatcher _adWatcher;
+
+    // Owned workers are declared last so member destruction cannot release the objects their
+    // callbacks touch before both threads have been stopped and joined.
+    std::atomic<bool> _scannerRunning{false};
+    mutable std::mutex _scannerRetryMutex;
+    Helper::ConWorker _scannerRetryWorker;
+
+    using AAPClock = std::chrono::steady_clock;
+    std::mutex _aapWorkerMutex;
+    std::condition_variable _aapWorkerCv;
+    AAP::AAPConnectionStateMachine _aapConnection;
+    std::optional<uint64_t> _aapDesiredAddress;
+    AAP::AAPAttempt _aapActiveAttempt;
+    bool _aapConnectInProgress{false};
+    bool _aapRetryScheduled{false};
+    AAPClock::time_point _aapRetryAt{};
+    bool _aapShutdown{false};
+    std::jthread _aapConnectWorker;
 
     void CompleteBoundDeviceLookup(uint64_t address, std::optional<Bluetooth::Device> device);
     void OnBoundDeviceConnectionStateChanged(Bluetooth::DeviceState state);
@@ -299,18 +320,32 @@ private:
         Bluetooth::AdvertisementWatcher::State state, const std::optional<std::string> &optError);
 
     // AAP callbacks
-    void OnNoiseControlModeNotification(AAP::NoiseControlMode mode);
-    void OnConversationalAwarenessStateChanged(AAP::ConversationalAwarenessState state);
-    void OnPersonalizedVolumeStateChanged(AAP::PersonalizedVolumeState state);
-    void OnLoudSoundReductionStateChanged(AAP::LoudSoundReductionState state);
-    void OnAdaptiveTransparencyLevelNotification(uint8_t level);
-    void OnSpeakingLevelChanged(AAP::SpeakingLevel level);
-    void OnEarDetectionChanged(AAP::EarStatus primary, AAP::EarStatus secondary);
-    void OnHeadTrackingData(AAP::HeadTrackingData data);
-    void OnAAPConnected();
-    void OnAAPDisconnected();
+    void OnNoiseControlModeNotification(AAP::NoiseControlMode mode, AAP::AAPAttempt attempt);
+    void OnConversationalAwarenessStateChanged(
+        AAP::ConversationalAwarenessState state, AAP::AAPAttempt attempt);
+    void
+    OnPersonalizedVolumeStateChanged(AAP::PersonalizedVolumeState state, AAP::AAPAttempt attempt);
+    void
+    OnLoudSoundReductionStateChanged(AAP::LoudSoundReductionState state, AAP::AAPAttempt attempt);
+    void OnAutomaticEarDetectionNotification(bool enabled, AAP::AAPAttempt attempt);
+    void OnAdaptiveTransparencyLevelNotification(uint8_t level, AAP::AAPAttempt attempt);
+    void OnSpeakingLevelChanged(AAP::SpeakingLevel level, AAP::AAPAttempt attempt);
+    void OnEarDetectionChanged(
+        AAP::EarStatus primary, AAP::EarStatus secondary, AAP::AAPAttempt attempt);
+    void OnHeadTrackingData(AAP::HeadTrackingData data, AAP::AAPAttempt attempt);
+    void OnAttProbeResult(AAP::AttPathState state, AAP::AAPAttempt attempt);
+    void OnAAPConnected(AAP::AAPAttempt attempt);
+    void OnAAPDisconnected(AAP::AAPAttempt attempt);
     void SetupAAPCallbacks();
     void ConnectAAP();
+    void StartAAPConnectWorker();
+    void ScheduleAAPConnection(uint64_t address);
+    void DisconnectAAP();
+    void AAPConnectLoop(std::stop_token stopToken);
+    bool IsCurrentAAPAttempt(AAP::AAPAttempt attempt) const;
+    void ScheduleScannerRetry();
+    void StopScannerRetry();
+    bool StartScannerOnce();
 
 Q_SIGNALS:
     void StateUpdated(const Core::AirPods::State &newState);

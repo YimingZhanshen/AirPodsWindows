@@ -108,13 +108,19 @@ bool SeqPacketTransport::Connect(uint64_t address, std::stop_token stop)
         _winsockInitialized = true;
     }
 
-    std::lock_guard<std::mutex> lock{_ioMutex};
     // P1 deliberately provides no L2CAP STREAM or RFCOMM fallback: neither
     // preserves AAP record boundaries.
     SOCKET socketHandle = socket(AF_BTH, SOCK_SEQPACKET, BTHPROTO_L2CAP);
     if (socketHandle == INVALID_SOCKET) {
         spdlog::error("[AAPTransport] SEQPACKET socket creation failed: {}", WSAGetLastError());
         return false;
+    }
+
+    std::shared_ptr<SocketState> connecting;
+    {
+        std::lock_guard<std::mutex> lock{_ioMutex};
+        connecting = std::make_shared<SocketState>(reinterpret_cast<void *>(socketHandle));
+        _connectingSocket = connecting;
     }
 
     SOCKADDR_BTH addressRecord{};
@@ -125,13 +131,37 @@ bool SeqPacketTransport::Connect(uint64_t address, std::stop_token stop)
             socketHandle, reinterpret_cast<SOCKADDR *>(&addressRecord), sizeof(addressRecord)) ==
         SOCKET_ERROR)
     {
+        const bool expected = [&] {
+            std::lock_guard<std::mutex> lock{_ioMutex};
+            if (_connectingSocket == connecting) {
+                _connectingSocket.reset();
+                return true;
+            }
+            return false;
+        }();
+        if (!expected) {
+            connecting->Shutdown();
+        }
         spdlog::error("[AAPTransport] SEQPACKET connect failed: {}", WSAGetLastError());
-        closesocket(socketHandle);
         return false;
     }
 
-    _socket = std::make_shared<SocketState>(reinterpret_cast<void *>(socketHandle));
-    _closed = false;
+    {
+        std::lock_guard<std::mutex> lock{_ioMutex};
+        if (_closed || stop.stop_requested() || connecting->closed.load() ||
+            _connectingSocket != connecting)
+        {
+            if (_connectingSocket == connecting) {
+                _connectingSocket.reset();
+            }
+            connecting->Shutdown();
+            return false;
+        }
+
+        _socket = std::move(_connectingSocket);
+        _closed = false;
+    }
+
     spdlog::info("[AAPTransport] Connected with L2CAP SEQPACKET");
     return true;
 }
@@ -251,13 +281,18 @@ std::optional<std::vector<uint8_t>> SeqPacketTransport::Receive(std::stop_token 
 void SeqPacketTransport::Close()
 {
     std::shared_ptr<SocketState> socket;
+    std::shared_ptr<SocketState> connecting;
     {
         std::lock_guard<std::mutex> lock{_ioMutex};
         _closed = true;
         socket = std::move(_socket);
+        connecting = std::move(_connectingSocket);
     }
     if (socket) {
         socket->Shutdown();
+    }
+    if (connecting) {
+        connecting->Shutdown();
     }
 }
 

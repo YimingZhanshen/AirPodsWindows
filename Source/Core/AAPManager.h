@@ -19,6 +19,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <thread>
 #include <functional>
@@ -27,6 +28,7 @@
 
 #include "AAP.h"
 #include "AAPAtt.h"
+#include "AAPConnectionStateMachine.h"
 #include "AAPTransport.h"
 #include "Base.h"
 #include "../Helper.h"
@@ -63,18 +65,21 @@ enum class ConnectFailure : uint8_t {
 //
 
 struct Callbacks {
-    using FnOnNoiseControlChangedT = std::function<void(NoiseControlMode)>;
-    using FnOnConversationalAwarenessChangedT = std::function<void(ConversationalAwarenessState)>;
-    using FnOnSpeakingLevelChangedT = std::function<void(SpeakingLevel)>;
-    using FnOnEarDetectionChangedT = std::function<void(EarStatus, EarStatus)>;
-    using FnOnHeadTrackingDataT = std::function<void(HeadTrackingData)>;
-    using FnOnPersonalizedVolumeChangedT = std::function<void(PersonalizedVolumeState)>;
-    using FnOnLoudSoundReductionChangedT = std::function<void(LoudSoundReductionState)>;
-    using FnOnAutomaticEarDetectionChangedT = std::function<void(bool)>;
-    using FnOnAdaptiveTransparencyLevelChangedT = std::function<void(uint8_t)>;
-    using FnOnConnectedT = std::function<void()>;
-    using FnOnDisconnectedT = std::function<void()>;
-    using FnOnAttProbeResultT = std::function<void(AttPathState)>;
+    // Every worker event carries its immutable session identity. Consumers must discard stale
+    // generations after queuing, cancellation, or rebinding.
+    using FnOnNoiseControlChangedT = std::function<void(NoiseControlMode, AAPAttempt)>;
+    using FnOnConversationalAwarenessChangedT =
+        std::function<void(ConversationalAwarenessState, AAPAttempt)>;
+    using FnOnSpeakingLevelChangedT = std::function<void(SpeakingLevel, AAPAttempt)>;
+    using FnOnEarDetectionChangedT = std::function<void(EarStatus, EarStatus, AAPAttempt)>;
+    using FnOnHeadTrackingDataT = std::function<void(HeadTrackingData, AAPAttempt)>;
+    using FnOnPersonalizedVolumeChangedT = std::function<void(PersonalizedVolumeState, AAPAttempt)>;
+    using FnOnLoudSoundReductionChangedT = std::function<void(LoudSoundReductionState, AAPAttempt)>;
+    using FnOnAutomaticEarDetectionChangedT = std::function<void(bool, AAPAttempt)>;
+    using FnOnAdaptiveTransparencyLevelChangedT = std::function<void(uint8_t, AAPAttempt)>;
+    using FnOnConnectedT = std::function<void(AAPAttempt)>;
+    using FnOnDisconnectedT = std::function<void(AAPAttempt)>;
+    using FnOnAttProbeResultT = std::function<void(AttPathState, AAPAttempt)>;
 
     FnOnNoiseControlChangedT onNoiseControlChanged;
     FnOnConversationalAwarenessChangedT onConversationalAwarenessChanged;
@@ -101,9 +106,11 @@ public:
     ~Manager();
 
     // Connection management
-    bool Connect(uint64_t deviceAddress);
+    bool Connect(AAPAttempt attempt, std::stop_token stopToken = {});
+    void CancelConnect();
     void Disconnect();
     bool IsConnected() const;
+    AAPAttempt GetLastAttempt() const;
 
     // Noise control
     bool SetNoiseControlMode(NoiseControlMode mode);
@@ -164,8 +171,14 @@ private:
     // gate; neither behavior is reachable through the public connection API.
     friend class ::AAPTransportTests;
 
+    // Serializes whole Connect/Disconnect lifecycles; _mutex protects observable state and is
+    // never held while joining a reader or invoking a callback.
+    std::mutex _connectMutex;
     mutable std::mutex _mutex;
     std::atomic<bool> _connected{false};
+    bool _connecting{false};
+    AAPAttempt _attempt;
+    std::stop_source _connectStop;
     std::atomic<bool> _headTrackingActive{false};
     std::atomic<bool> _usingMagicAAP{false};
 
@@ -194,25 +207,31 @@ private:
     // while Disconnect exchanges it. P2 still owns worker/generation lifecycle.
     std::atomic<std::shared_ptr<AAPTransport>> _transport{std::shared_ptr<AAPTransport>{}};
 
-    // Reader thread
-    std::thread _readerThread;
+    // Retained after natural EOF so the next Connect (or Disconnect) joins it before reuse.
+    std::jthread _readerThread;
     std::stop_source _readerStop;
-    // Indicates whether reader thread has exited
-    std::atomic<bool> _readerExited{true};
+    std::mutex _pendingConnectMutex;
+    std::shared_ptr<AAPTransport> _pendingTransport;
 
     // Internal methods
     bool SendPacket(const std::vector<uint8_t> &packet);
+    bool IsCurrentAttempt(AAPAttempt attempt) const;
     void ProcessPacket(const std::vector<uint8_t> &packet);
-    void ReaderLoop();
-    bool InitializeConnection();
+    void ProcessPacket(
+        const std::vector<uint8_t> &packet, AAPAttempt attempt, const Callbacks &callbacks);
+    void ReaderLoop(
+        AAPAttempt attempt, std::shared_ptr<AAPTransport> transport, std::stop_token stopToken,
+        Callbacks callbacks);
+    bool InitializeConnection(std::stop_token stopToken);
+    bool WaitCancellable(std::chrono::milliseconds delay, std::stop_token callerStop);
+    std::shared_ptr<AAPTransport>
+    ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, ConnectFailure &failure);
 
     // ATT path (blueprint 0.3): probe once after the handshake and route ATT
     // frames received on the AAP pipe.
     void StartAttProbe();
-    void ProcessAttFrame(const std::vector<uint8_t> &packet);
-
-    // MagicAAP connection method
-    bool ConnectViaMagicAAP(uint64_t deviceAddress);
+    void ProcessAttFrame(
+        const std::vector<uint8_t> &packet, AAPAttempt attempt, const Callbacks &callbacks);
 };
 
 } // namespace Core::AAP

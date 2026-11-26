@@ -21,7 +21,9 @@
 #include "ConnectionDiagnostics.h"
 #include "../Logger.h"
 
+#include <algorithm>
 #include <chrono>
+#include <thread>
 
 #if defined APD_OS_WIN
 
@@ -36,134 +38,238 @@ Manager::~Manager()
     Disconnect();
 }
 
-bool Manager::Connect(uint64_t deviceAddress)
+void Manager::CancelConnect()
 {
-    // First disconnect if already connected (without holding lock to avoid deadlock)
-    if (_connected) {
-        LOG(Warn, "AAP: Already connected, disconnecting first");
-        Disconnect();
+    std::stop_source connectStop;
+    {
+        std::lock_guard lock{_mutex};
+        connectStop = _connectStop;
+    }
+    connectStop.request_stop();
+
+    std::shared_ptr<AAPTransport> pending;
+    {
+        std::lock_guard lock{_pendingConnectMutex};
+        pending = _pendingTransport;
+    }
+    if (pending) {
+        pending->Close();
+    }
+}
+
+bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
+{
+    if (attempt.generation == 0 || stopToken.stop_requested()) {
+        return false;
     }
 
-    std::lock_guard<std::mutex> lock{_mutex};
+    std::unique_lock connectLock{_connectMutex};
+    Callbacks callbacks;
+    std::shared_ptr<AAPTransport> previousTransport;
+    std::jthread previousReader;
 
-    _lastConnectFailure.store(ConnectFailure::None);
-    // A fresh attempt starts a fresh step log (blueprint 1.4).
+    {
+        std::lock_guard lock{_mutex};
+        if (_connected) {
+            return _attempt.address == attempt.address && _attempt.generation == attempt.generation;
+        }
+        if (_connecting) {
+            return _attempt.address == attempt.address && _attempt.generation == attempt.generation;
+        }
+
+        _connecting = true;
+        _attempt = attempt;
+        _connectStop = std::stop_source{};
+        callbacks = _callbacks;
+
+        // A natural EOF intentionally leaves its reader joinable. Retire it before creating the
+        // replacement so assignment can never destroy a live thread.
+        _readerStop.request_stop();
+        previousReader = std::move(_readerThread);
+        previousTransport = _transport.exchange(nullptr);
+        _usingMagicAAP = false;
+    }
+
+    if (previousTransport) {
+        previousTransport->Close();
+    }
+    if (previousReader.joinable()) {
+        previousReader.request_stop();
+        previousReader.join();
+    }
+
+    if (stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
+        std::lock_guard lock{_mutex};
+        _connecting = false;
+        _lastConnectFailure.store(ConnectFailure::TransportError);
+        return false;
+    }
+
     Diagnostics::Recorder::Instance().Reset();
     Diagnostics::Recorder::Instance().Record(
         Diagnostics::Step::TransportConnect, true, "connect attempt started");
 
-    // P1 supports exactly two message transports. SEQPACKET is attempted first;
-    // the MagicAAP device interface is the only driver fallback.
-    LOG(Info, "AAP: Attempting L2CAP SEQPACKET connection to {:016X} on PSM {}", deviceAddress,
-        kPSM);
-    auto transport = CreateSeqPacketTransport();
+    ConnectFailure failure = ConnectFailure::None;
+    auto transport = ConnectTransport(attempt, stopToken, failure);
+    _lastConnectFailure.store(failure);
 
-    if (transport->Connect(deviceAddress, {})) {
-        _transport.store(transport);
-        _usingMagicAAP = false;
-        _connected = true;
+    {
+        std::lock_guard lock{_mutex};
+        if (_connectStop.get_token().stop_requested()) {
+            _connecting = false;
+            _lastConnectFailure.store(ConnectFailure::TransportError);
+        }
     }
-    else {
-        _lastConnectFailure.store(ConnectFailure::ServiceUnavailable);
-        if (ConnectViaMagicAAP(deviceAddress)) {
-            return true;
+    if (!transport) {
+        std::lock_guard lock{_mutex};
+        if (_connecting) {
+            _connecting = false;
         }
         LOG(Error, "AAP: All supported transport methods failed");
         return false;
     }
 
-    LOG(Info, "AAP: Connected successfully");
+    {
+        std::lock_guard lock{_mutex};
+        _transport.store(transport);
+        _usingMagicAAP = transport->Kind() == AAPTransportKind::MagicAAP;
+    }
+    LOG(Info, "AAP: Transport connected; starting handshake");
 
-    // Initialize the connection (send handshake, enable features, request notifications)
-    if (!InitializeConnection()) {
-        LOG(Error, "AAP: Failed to initialize connection");
-        // Clean up without calling Disconnect to avoid lock issues
-        _lastConnectFailure.store(ConnectFailure::HandshakeFailure);
-        _connected = false;
-        if (auto failedTransport = _transport.exchange(nullptr)) {
-            failedTransport->Close();
-        }
+    const bool initialized = InitializeConnection(stopToken);
+    const bool cancelled = stopToken.stop_requested() || _connectStop.get_token().stop_requested();
+    if (!initialized || cancelled) {
+        transport->Close();
+        std::lock_guard lock{_mutex};
+        _transport.store(std::shared_ptr<AAPTransport>{});
+        _usingMagicAAP = false;
+        _connecting = false;
+        _lastConnectFailure.store(
+            cancelled ? ConnectFailure::TransportError : ConnectFailure::HandshakeFailure);
         return false;
     }
 
-    // Start reader thread
-    _readerStop = std::stop_source{};
-    _readerExited = false;
-    _readerThread = std::thread(&Manager::ReaderLoop, this);
-
-    _lastConnectFailure.store(ConnectFailure::None);
-
-    if (_callbacks.onConnected) {
-        _callbacks.onConnected();
+    std::stop_source readerStop;
+    {
+        std::lock_guard lock{_mutex};
+        if (_connectStop.get_token().stop_requested()) {
+            _connecting = false;
+            _lastConnectFailure.store(ConnectFailure::TransportError);
+            transport->Close();
+            return false;
+        }
+        _readerStop = std::move(readerStop);
+        _readerThread =
+            std::jthread{[attempt, transport, callbacks, token = _readerStop.get_token(), this] {
+                ReaderLoop(attempt, transport, token, callbacks);
+            }};
+        _connected = true;
+        _connecting = false;
+        _lastConnectFailure.store(ConnectFailure::None);
     }
 
+    if (callbacks.onConnected) {
+        callbacks.onConnected(attempt);
+    }
     return true;
+}
+
+std::shared_ptr<AAPTransport>
+Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, ConnectFailure &failure)
+{
+    auto setPending = [this](const std::shared_ptr<AAPTransport> &transport) {
+        std::lock_guard lock{_pendingConnectMutex};
+        _pendingTransport = transport;
+    };
+    auto clearPending = [this](const std::shared_ptr<AAPTransport> &transport) {
+        std::lock_guard lock{_pendingConnectMutex};
+        if (_pendingTransport == transport) {
+            _pendingTransport.reset();
+        }
+    };
+
+    LOG(Info, "AAP: Attempting L2CAP SEQPACKET connection to {:016X} on PSM {}", attempt.address,
+        kPSM);
+    auto seqPacket = std::shared_ptr<AAPTransport>(CreateSeqPacketTransport().release());
+    setPending(seqPacket);
+    const bool seqConnected = seqPacket->Connect(attempt.address, stopToken);
+    clearPending(seqPacket);
+    if (seqConnected && !_connectStop.get_token().stop_requested() && !stopToken.stop_requested()) {
+        failure = ConnectFailure::None;
+        return seqPacket;
+    }
+    seqPacket->Close();
+    failure = ConnectFailure::ServiceUnavailable;
+
+    if (stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
+        failure = ConnectFailure::TransportError;
+        return nullptr;
+    }
+
+    if (!MagicAAPWinRT::MagicAAPWinRTClient::IsDriverInstalled()) {
+        LOG(Info, "AAP: MagicAAP driver not installed");
+        failure = ConnectFailure::DriverMissing;
+        Diagnostics::Recorder::Instance().Record(
+            Diagnostics::Step::DriverOpen, false, "driver not installed");
+        return nullptr;
+    }
+    if (!MagicAAPWinRT::MagicAAPWinRTClient::IsDriverRunning()) {
+        LOG(Warn, "AAP: MagicAAP driver installed but not running");
+        failure = ConnectFailure::DriverMissing;
+        Diagnostics::Recorder::Instance().Record(
+            Diagnostics::Step::DriverOpen, false, "driver not running");
+        return nullptr;
+    }
+    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::DriverOpen, true);
+
+    auto magicAAP = std::shared_ptr<AAPTransport>(CreateMagicAAPTransport().release());
+    setPending(magicAAP);
+    const bool magicConnected = magicAAP->Connect(attempt.address, stopToken);
+    clearPending(magicAAP);
+    if (magicConnected && !_connectStop.get_token().stop_requested() && !stopToken.stop_requested())
+    {
+        failure = ConnectFailure::None;
+        return magicAAP;
+    }
+    magicAAP->Close();
+    failure = ConnectFailure::TransportError;
+    return nullptr;
 }
 
 void Manager::Disconnect()
 {
-    // Move resources that may block into local variables while holding the lock,
-    // then perform blocking operations outside the lock to avoid deadlocks.
-    AAP::Callbacks::FnOnDisconnectedT callback;
+    CancelConnect();
+    std::lock_guard connectLock{_connectMutex};
+    Callbacks::FnOnDisconnectedT callback;
+    AAPAttempt attempt;
     std::shared_ptr<AAPTransport> transport;
-    std::thread localReaderThread;
+    std::jthread reader;
 
     {
-        std::lock_guard<std::mutex> lock{_mutex};
-
-        if (!_connected) {
-            return;
-        }
-
-        // Wake Receive before closing the transport it is using.
+        std::lock_guard lock{_mutex};
         _readerStop.request_stop();
-        _connected = false;
+        attempt = _attempt;
+        const bool wasConnected = _connected.exchange(false);
+        _connecting = false;
         _headTrackingActive = false;
-
-        transport = _transport.exchange(nullptr);
         _usingMagicAAP = false;
-
-        // Move reader thread out so we can join/detach outside the lock
-        if (_readerThread.joinable()) {
-            localReaderThread = std::move(_readerThread);
+        transport = _transport.exchange(nullptr);
+        reader = std::move(_readerThread);
+        if (wasConnected) {
+            callback = _callbacks.onDisconnected;
         }
-
-        // Copy callback to invoke later outside lock
-        callback = _callbacks.onDisconnected;
     }
 
-    // Perform potentially blocking operations without holding the mutex
+    // Fixed shutdown order: Close wakes Receive, request stop is already active, then join.
     if (transport) {
         transport->Close();
     }
-
-    // Wait for reader thread to exit up to 5 seconds; if it doesn't exit, detach it.
-    if (localReaderThread.joinable()) {
-        auto start = std::chrono::steady_clock::now();
-        auto timeout = std::chrono::seconds(5);
-        while (!_readerExited && (std::chrono::steady_clock::now() - start) < timeout) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-
-        if (_readerExited) {
-            try {
-                localReaderThread.join();
-            }
-            catch (...) {
-            }
-        }
-        else {
-            try {
-                localReaderThread.detach();
-            }
-            catch (...) {
-            }
-        }
+    if (reader.joinable()) {
+        reader.join();
     }
 
-    // Clear cached states under lock
     {
-        std::lock_guard<std::mutex> lock{_mutex};
+        std::lock_guard lock{_mutex};
         _noiseControlMode.reset();
         _conversationalAwarenessState.reset();
         _loudSoundReductionState.reset();
@@ -173,16 +279,27 @@ void Manager::Disconnect()
 
     LOG(Info, "AAP: Disconnected");
     Diagnostics::Recorder::Instance().Record(Diagnostics::Step::Disconnect, true);
-
-    // Invoke callback outside lock
     if (callback) {
-        callback();
+        callback(attempt);
     }
 }
 
 bool Manager::IsConnected() const
 {
     return _connected;
+}
+
+AAPAttempt Manager::GetLastAttempt() const
+{
+    std::lock_guard lock{_mutex};
+    return _attempt;
+}
+
+bool Manager::IsCurrentAttempt(AAPAttempt attempt) const
+{
+    std::lock_guard lock{_mutex};
+    return attempt.generation != 0 && _connected && _attempt.address == attempt.address &&
+           _attempt.generation == attempt.generation;
 }
 
 bool Manager::SetNoiseControlMode(NoiseControlMode mode)
@@ -448,14 +565,19 @@ void Manager::StartAttProbe()
         Att::kLoudSoundReductionHandle);
 }
 
-void Manager::ProcessAttFrame(const std::vector<uint8_t> &packet)
+void Manager::ProcessAttFrame(
+    const std::vector<uint8_t> &packet, AAPAttempt attempt, const Callbacks &callbacks)
 {
+    if (!IsCurrentAttempt(attempt)) {
+        return;
+    }
+
     // Read response (0x0B): we only ever issue one kind of read — handle 0x1B —
     // so the value belongs to loud sound reduction.
     if (Att::IsReadResponse(packet)) {
         auto previous = _attPathState.exchange(AttPathState::Confirmed);
-        if (previous != AttPathState::Confirmed && _callbacks.onAttProbeResult) {
-            _callbacks.onAttProbeResult(AttPathState::Confirmed);
+        if (previous != AttPathState::Confirmed && callbacks.onAttProbeResult) {
+            callbacks.onAttProbeResult(AttPathState::Confirmed, attempt);
         }
         Diagnostics::Recorder::Instance().Record(Diagnostics::Step::AttProbe, true, "confirmed");
         LOG(Info, "AAP: ATT path confirmed (read response, {} value bytes)", packet.size() - 1);
@@ -474,8 +596,8 @@ void Manager::ProcessAttFrame(const std::vector<uint8_t> &packet)
                     std::lock_guard<std::mutex> lock{_mutex};
                     _loudSoundReductionState = state;
                 }
-                if (_callbacks.onLoudSoundReductionChanged) {
-                    _callbacks.onLoudSoundReductionChanged(state.value());
+                if (callbacks.onLoudSoundReductionChanged) {
+                    callbacks.onLoudSoundReductionChanged(state.value(), attempt);
                 }
             }
         }
@@ -486,8 +608,8 @@ void Manager::ProcessAttFrame(const std::vector<uint8_t> &packet)
     // alive even though the value is unavailable.
     if (Att::IsErrorResponse(packet)) {
         auto previous = _attPathState.exchange(AttPathState::Confirmed);
-        if (previous != AttPathState::Confirmed && _callbacks.onAttProbeResult) {
-            _callbacks.onAttProbeResult(AttPathState::Confirmed);
+        if (previous != AttPathState::Confirmed && callbacks.onAttProbeResult) {
+            callbacks.onAttProbeResult(AttPathState::Confirmed, attempt);
         }
         LOG(Info, "AAP: ATT path confirmed (error response, opcode 0x{:02X}, code 0x{:02X})",
             packet.size() > 1 ? packet[1] : 0, packet.size() > 4 ? packet[4] : 0);
@@ -514,8 +636,8 @@ void Manager::ProcessAttFrame(const std::vector<uint8_t> &packet)
                 }
                 LOG(Info, "AAP: Loud sound reduction (ATT notify): {}",
                     static_cast<int>(state.value()));
-                if (_callbacks.onLoudSoundReductionChanged) {
-                    _callbacks.onLoudSoundReductionChanged(state.value());
+                if (callbacks.onLoudSoundReductionChanged) {
+                    callbacks.onLoudSoundReductionChanged(state.value(), attempt);
                 }
             }
         }
@@ -541,6 +663,23 @@ bool Manager::SendPacket(const std::vector<uint8_t> &packet)
 
 void Manager::ProcessPacket(const std::vector<uint8_t> &packet)
 {
+    AAPAttempt attempt;
+    Callbacks callbacks;
+    {
+        std::lock_guard lock{_mutex};
+        attempt = _attempt;
+        callbacks = _callbacks;
+    }
+    ProcessPacket(packet, attempt, callbacks);
+}
+
+void Manager::ProcessPacket(
+    const std::vector<uint8_t> &packet, AAPAttempt attempt, const Callbacks &callbacks)
+{
+    if (!IsCurrentAttempt(attempt)) {
+        return;
+    }
+
     const auto validation = AAPMessage::Validate(packet);
     if (validation != AAPMessage::ValidationResult::Valid) {
         LOG(Warn, "AAP: Rejected invalid {}-byte record before processing: {}", packet.size(),
@@ -553,7 +692,7 @@ void Manager::ProcessPacket(const std::vector<uint8_t> &packet)
     // routed to the ATT handlers first, so ATT responses can never be
     // misparsed as settings notifications.
     if (Att::IsAttFrame(packet)) {
-        ProcessAttFrame(packet);
+        ProcessAttFrame(packet, attempt, callbacks);
         return;
     }
 
@@ -567,8 +706,8 @@ void Manager::ProcessPacket(const std::vector<uint8_t> &packet)
             }
             LOG(Info, "AAP: Noise control mode changed to {}",
                 Helper::ToString(mode.value()).toStdString());
-            if (_callbacks.onNoiseControlChanged) {
-                _callbacks.onNoiseControlChanged(mode.value());
+            if (callbacks.onNoiseControlChanged) {
+                callbacks.onNoiseControlChanged(mode.value(), attempt);
             }
         }
         return;
@@ -584,8 +723,8 @@ void Manager::ProcessPacket(const std::vector<uint8_t> &packet)
             }
             LOG(Info, "AAP: Conversational awareness state: {}",
                 Helper::ToString(state.value()).toStdString());
-            if (_callbacks.onConversationalAwarenessChanged) {
-                _callbacks.onConversationalAwarenessChanged(state.value());
+            if (callbacks.onConversationalAwarenessChanged) {
+                callbacks.onConversationalAwarenessChanged(state.value(), attempt);
             }
         }
         return;
@@ -600,8 +739,8 @@ void Manager::ProcessPacket(const std::vector<uint8_t> &packet)
                 _personalizedVolumeState = state;
             }
             LOG(Info, "AAP: Personalized volume state: {}", static_cast<int>(state.value()));
-            if (_callbacks.onPersonalizedVolumeChanged) {
-                _callbacks.onPersonalizedVolumeChanged(state.value());
+            if (callbacks.onPersonalizedVolumeChanged) {
+                callbacks.onPersonalizedVolumeChanged(state.value(), attempt);
             }
         }
         return;
@@ -616,8 +755,8 @@ void Manager::ProcessPacket(const std::vector<uint8_t> &packet)
                 _automaticEarDetectionState = state;
             }
             LOG(Info, "AAP: Automatic ear detection: {}", state.value() ? "enabled" : "disabled");
-            if (_callbacks.onAutomaticEarDetectionChanged) {
-                _callbacks.onAutomaticEarDetectionChanged(state.value());
+            if (callbacks.onAutomaticEarDetectionChanged) {
+                callbacks.onAutomaticEarDetectionChanged(state.value(), attempt);
             }
         }
         return;
@@ -632,8 +771,8 @@ void Manager::ProcessPacket(const std::vector<uint8_t> &packet)
                 _loudSoundReductionState = state;
             }
             LOG(Info, "AAP: Loud sound reduction: {}", static_cast<int>(state.value()));
-            if (_callbacks.onLoudSoundReductionChanged) {
-                _callbacks.onLoudSoundReductionChanged(state.value());
+            if (callbacks.onLoudSoundReductionChanged) {
+                callbacks.onLoudSoundReductionChanged(state.value(), attempt);
             }
         }
         return;
@@ -648,8 +787,8 @@ void Manager::ProcessPacket(const std::vector<uint8_t> &packet)
                 _adaptiveTransparencyLevel = level;
             }
             LOG(Info, "AAP: Adaptive transparency level: {}", level.value());
-            if (_callbacks.onAdaptiveTransparencyLevelChanged) {
-                _callbacks.onAdaptiveTransparencyLevelChanged(level.value());
+            if (callbacks.onAdaptiveTransparencyLevelChanged) {
+                callbacks.onAdaptiveTransparencyLevelChanged(level.value(), attempt);
             }
         }
         return;
@@ -658,8 +797,8 @@ void Manager::ProcessPacket(const std::vector<uint8_t> &packet)
     // Speaking level notification (conversational awareness active)
     if (IsSpeakingLevelNotification(packet)) {
         auto level = ParseSpeakingLevel(packet);
-        if (level.has_value() && _callbacks.onSpeakingLevelChanged) {
-            _callbacks.onSpeakingLevelChanged(level.value());
+        if (level.has_value() && callbacks.onSpeakingLevelChanged) {
+            callbacks.onSpeakingLevelChanged(level.value(), attempt);
         }
         return;
     }
@@ -667,8 +806,8 @@ void Manager::ProcessPacket(const std::vector<uint8_t> &packet)
     // Ear detection notification
     if (IsEarDetectionNotification(packet)) {
         auto earStatus = ParseEarDetection(packet);
-        if (earStatus.has_value() && _callbacks.onEarDetectionChanged) {
-            _callbacks.onEarDetectionChanged(earStatus->first, earStatus->second);
+        if (earStatus.has_value() && callbacks.onEarDetectionChanged) {
+            callbacks.onEarDetectionChanged(earStatus->first, earStatus->second, attempt);
         }
         return;
     }
@@ -679,8 +818,8 @@ void Manager::ProcessPacket(const std::vector<uint8_t> &packet)
         packet[2] == 0x04 && packet[3] == 0x00 && packet[4] == 0x17 && packet[5] == 0x00)
     {
         auto trackingData = ParseHeadTrackingData(packet);
-        if (trackingData.has_value() && _callbacks.onHeadTrackingData) {
-            _callbacks.onHeadTrackingData(trackingData.value());
+        if (trackingData.has_value() && callbacks.onHeadTrackingData) {
+            callbacks.onHeadTrackingData(trackingData.value(), attempt);
         }
         return;
     }
@@ -689,46 +828,69 @@ void Manager::ProcessPacket(const std::vector<uint8_t> &packet)
     LOG(Trace, "AAP: Received unknown packet ({} bytes)", packet.size());
 }
 
-void Manager::ReaderLoop()
+void Manager::ReaderLoop(
+    AAPAttempt attempt, std::shared_ptr<AAPTransport> transport, std::stop_token stopToken,
+    Callbacks callbacks)
 {
-    auto transport = _transport.load();
-    const auto stop = _readerStop.get_token();
-
-    while (transport && !stop.stop_requested() && _connected) {
-        auto packet = transport->Receive(stop);
+    while (transport && !stopToken.stop_requested()) {
+        auto packet = transport->Receive(stopToken);
         if (!packet.has_value()) {
-            if (!stop.stop_requested()) {
+            if (!stopToken.stop_requested()) {
                 LOG(Info, "AAP: Transport receive ended");
             }
             break;
         }
-        ProcessPacket(*packet);
+        ProcessPacket(*packet, attempt, callbacks);
     }
 
-    if (!stop.stop_requested() && _connected) {
-        // Connection was lost unexpectedly
-        AAP::Callbacks::FnOnDisconnectedT callback;
-        {
-            std::lock_guard<std::mutex> lock{_mutex};
-            _connected = false;
-            _usingMagicAAP = false;
-            callback = _callbacks.onDisconnected;
-        }
-        // Invoke callback outside the lock to avoid potential deadlocks
-        if (callback) {
-            callback();
-        }
+    if (stopToken.stop_requested()) {
+        return;
     }
 
-    // Mark reader exited so Disconnect can join safely
-    _readerExited = true;
+    AAPAttempt active;
+    Callbacks::FnOnDisconnectedT callback;
+    {
+        std::lock_guard lock{_mutex};
+        const bool current =
+            _attempt.address == attempt.address && _attempt.generation == attempt.generation;
+        if (!current || !_connected) {
+            return;
+        }
+        _connected = false;
+        _usingMagicAAP = false;
+        _transport.store(std::shared_ptr<AAPTransport>{});
+        active = _attempt;
+        callback = _callbacks.onDisconnected;
+    }
+
+    if (callback) {
+        callback(active);
+    }
+}
+
+bool Manager::WaitCancellable(std::chrono::milliseconds delay, std::stop_token callerStop)
+{
+    const auto deadline = std::chrono::steady_clock::now() + delay;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (callerStop.stop_requested() || _connectStop.get_token().stop_requested()) {
+            return false;
+        }
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now());
+        std::this_thread::sleep_for(std::min(remaining, std::chrono::milliseconds{10}));
+    }
+    return !callerStop.stop_requested() && !_connectStop.get_token().stop_requested();
 }
 
 // Protocol timing constants
 constexpr auto kPacketProcessingDelay = std::chrono::milliseconds(100);
 
-bool Manager::InitializeConnection()
+bool Manager::InitializeConnection(std::stop_token stopToken)
 {
+    if (stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
+        return false;
+    }
+
     // Send handshake
     if (!SendPacket(Packets::Handshake)) {
         LOG(Error, "AAP: Failed to send handshake");
@@ -739,8 +901,9 @@ bool Manager::InitializeConnection()
     LOG(Info, "AAP: Sent handshake");
     Diagnostics::Recorder::Instance().Record(Diagnostics::Step::Handshake, true);
 
-    // Small delay to allow handshake to be processed
-    std::this_thread::sleep_for(kPacketProcessingDelay);
+    if (!WaitCancellable(kPacketProcessingDelay, stopToken)) {
+        return false;
+    }
 
     // Enable features (Conversational Awareness, Adaptive Transparency)
     if (!SendPacket(Packets::EnableFeatures)) {
@@ -750,7 +913,9 @@ bool Manager::InitializeConnection()
     LOG(Info, "AAP: Sent enable features");
     Diagnostics::Recorder::Instance().Record(Diagnostics::Step::FeatureFlags, true);
 
-    std::this_thread::sleep_for(kPacketProcessingDelay);
+    if (!WaitCancellable(kPacketProcessingDelay, stopToken)) {
+        return false;
+    }
 
     // Request notifications (battery, ear detection, noise control, etc.)
     if (!SendPacket(Packets::RequestNotifications)) {
@@ -776,65 +941,6 @@ bool Manager::IsMagicAAPDriverAvailable()
            MagicAAPWinRT::MagicAAPWinRTClient::IsDriverRunning();
 }
 
-bool Manager::ConnectViaMagicAAP(uint64_t deviceAddress)
-{
-    // Check if MagicAAP driver is available
-    if (!MagicAAPWinRT::MagicAAPWinRTClient::IsDriverInstalled()) {
-        LOG(Info, "AAP: MagicAAP driver not installed");
-        _lastConnectFailure.store(ConnectFailure::DriverMissing);
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::DriverOpen, false, "driver not installed");
-        return false;
-    }
-
-    if (!MagicAAPWinRT::MagicAAPWinRTClient::IsDriverRunning()) {
-        LOG(Warn, "AAP: MagicAAP driver installed but not running");
-        _lastConnectFailure.store(ConnectFailure::DriverMissing);
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::DriverOpen, false, "driver not running");
-        return false;
-    }
-
-    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::DriverOpen, true);
-
-    LOG(Info, "AAP: MagicAAP driver is available, attempting connection...");
-
-    // Only the MagicAAP device interface is supported. The existing WinRT
-    // RFCOMM methods remain in the client for other callers but are not a fallback.
-    auto transport = CreateMagicAAPTransport();
-    LOG(Info, "AAP: Trying MagicAAP device interface connection...");
-    if (!transport->Connect(deviceAddress, {})) {
-        _lastConnectFailure.store(ConnectFailure::TransportError);
-        return false;
-    }
-
-    _transport.store(transport);
-    _connected = true;
-    _usingMagicAAP = true;
-    LOG(Info, "AAP: Connected via MagicAAP device interface!");
-
-    if (!InitializeConnection()) {
-        LOG(Error, "AAP: Failed to initialize MagicAAP connection");
-        _lastConnectFailure.store(ConnectFailure::HandshakeFailure);
-        _connected = false;
-        _usingMagicAAP = false;
-        if (auto failedTransport = _transport.exchange(nullptr)) {
-            failedTransport->Close();
-        }
-        return false;
-    }
-
-    _readerStop = std::stop_source{};
-    _readerExited = false;
-    _readerThread = std::thread(&Manager::ReaderLoop, this);
-
-    _lastConnectFailure.store(ConnectFailure::None);
-    if (_callbacks.onConnected) {
-        _callbacks.onConnected();
-    }
-    return true;
-}
-
 } // namespace Core::AAP
 
 #else
@@ -846,14 +952,19 @@ Manager::~Manager()
 {
     Disconnect();
 }
-bool Manager::Connect(uint64_t)
+bool Manager::Connect(AAPAttempt, std::stop_token)
 {
     return false;
 }
+void Manager::CancelConnect() {}
 void Manager::Disconnect() {}
 bool Manager::IsConnected() const
 {
     return false;
+}
+AAPAttempt Manager::GetLastAttempt() const
+{
+    return {};
 }
 bool Manager::SetNoiseControlMode(NoiseControlMode)
 {
@@ -897,20 +1008,30 @@ AttPathState Manager::GetAttPathState() const
     return AttPathState::Unconfirmed;
 }
 void Manager::StartAttProbe() {}
-void Manager::ProcessAttFrame(const std::vector<uint8_t> &) {}
+bool Manager::IsCurrentAttempt(AAPAttempt) const
+{
+    return false;
+}
+void Manager::ProcessAttFrame(const std::vector<uint8_t> &, AAPAttempt, const Callbacks &) {}
 bool Manager::SendPacket(const std::vector<uint8_t> &)
 {
     return false;
 }
 void Manager::ProcessPacket(const std::vector<uint8_t> &) {}
-void Manager::ReaderLoop() {}
-bool Manager::InitializeConnection()
+void Manager::ProcessPacket(const std::vector<uint8_t> &, AAPAttempt, const Callbacks &) {}
+void Manager::ReaderLoop(AAPAttempt, std::shared_ptr<AAPTransport>, std::stop_token, Callbacks) {}
+bool Manager::WaitCancellable(std::chrono::milliseconds, std::stop_token)
 {
     return false;
 }
-bool Manager::ConnectViaMagicAAP(uint64_t)
+bool Manager::InitializeConnection(std::stop_token)
 {
     return false;
+}
+std::shared_ptr<AAPTransport>
+Manager::ConnectTransport(AAPAttempt, std::stop_token, ConnectFailure &)
+{
+    return nullptr;
 }
 
 } // namespace Core::AAP

@@ -323,6 +323,7 @@ set(
 
     "Source/Core/AirPodsAdvertisement.cpp"
     "Source/Core/AirPodsStateManager.cpp"
+    "Source/Core/AAPConnectionStateMachine.cpp"
     "Source/Core/AppleCP.cpp"
 )
 

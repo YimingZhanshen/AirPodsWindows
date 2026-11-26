@@ -297,25 +297,33 @@ std::optional<Device> FindDevice(uint64_t address)
 
 AdvertisementWatcher::AdvertisementWatcher()
 {
-    _bleWatcher.Received(std::bind(&AdvertisementWatcher::OnReceived, this, _2));
-    _bleWatcher.Stopped(std::bind(&AdvertisementWatcher::OnStopped, this, _2));
+    _tokenReceived = _bleWatcher.Received(std::bind(&AdvertisementWatcher::OnReceived, this, _2));
+    _tokenStopped = _bleWatcher.Stopped(std::bind(&AdvertisementWatcher::OnStopped, this, _2));
 }
 
 AdvertisementWatcher::~AdvertisementWatcher()
 {
-    if (!_stop) {
-        _destroy = true;
-        Stop();
-        std::unique_lock<std::mutex> lock{_conVarMutex};
-        _destroyConVar.wait_for(lock, 1s);
+    const bool wasRunning = !_stop.load();
+    _destroy = true;
+    _stopped = false;
+    Stop();
+
+    std::unique_lock<std::mutex> lock{_conVarMutex};
+    if (wasRunning) {
+        _destroyConVar.wait_for(lock, 1s, [this] { return _stopped.load(); });
     }
+
+    _bleWatcher.Received(_tokenReceived);
+    _bleWatcher.Stopped(_tokenStopped);
+    _tokenReceived = {};
+    _tokenStopped = {};
 }
 
 bool AdvertisementWatcher::Start()
 {
     try {
         _stop = false;
-        _lastStartTime = std::chrono::steady_clock::now();
+        _stopped = false;
 
         std::lock_guard<std::mutex> lock{_mutex};
         _bleWatcher.Start();
@@ -333,7 +341,6 @@ bool AdvertisementWatcher::Stop()
 {
     try {
         _stop = true;
-        _stopConVar.notify_all();
 
         std::lock_guard<std::mutex> lock{_mutex};
         _bleWatcher.Stop();
@@ -433,14 +440,9 @@ void AdvertisementWatcher::OnStopped(const BluetoothLEAdvertisementWatcherStoppe
     }
 
     CbStateChanged().Invoke(State::Stopped, optError);
+    _stopped = true;
 
-    if (!_destroy) {
-        do {
-            std::unique_lock<std::mutex> lock{_conVarMutex};
-            _stopConVar.wait_until(lock, _lastStartTime.load() + kRetryInterval);
-        } while (!_stop && !Start());
-    }
-    else {
+    if (_destroy) {
         _destroyConVar.notify_all();
     }
 }

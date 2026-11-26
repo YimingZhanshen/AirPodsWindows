@@ -84,6 +84,7 @@ private:
     };
 
     std::shared_ptr<SocketState> _socket;
+    std::shared_ptr<SocketState> _connectingSocket;
     std::mutex _ioMutex;
     bool _closed{false};
     bool _winsockInitialized{false};

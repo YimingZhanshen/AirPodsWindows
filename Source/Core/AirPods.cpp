@@ -110,10 +110,10 @@ void Details::EarDetectionTracker::Reset()
 
 Manager::Manager(QObject *parent) : QObject{parent}
 {
+    StartAAPConnectWorker();
     _stateMgr.SetOnDiscardState([this] {
         _lidTracker.OnLost(Details::LidTracker::Clock::now());
-        QMetaObject::invokeMethod(
-            this, [this] { emit Disconnected(); }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(this, [this] { emit Disconnected(); }, Qt::QueuedConnection);
     });
 
     _adWatcher.CbReceived() += [this](auto &&...args) {
@@ -121,10 +121,8 @@ Manager::Manager(QObject *parent) : QObject{parent}
         OnAdvertisementReceived(std::forward<decltype(args)>(args)...);
     };
 
-    _adWatcher.CbStateChanged() += [this](auto &&...args) {
-        std::lock_guard<std::mutex> lock{_mutex};
-        OnAdvWatcherStateChanged(std::forward<decltype(args)>(args)...);
-    };
+    _adWatcher.CbStateChanged() +=
+        [this](auto &&...args) { OnAdvWatcherStateChanged(std::forward<decltype(args)>(args)...); };
 
     SetupAAPCallbacks();
 }
@@ -133,46 +131,83 @@ void Manager::SetupAAPCallbacks()
 {
     AAP::Callbacks callbacks;
 
-    callbacks.onNoiseControlChanged = [this](AAP::NoiseControlMode mode) {
-        OnNoiseControlModeNotification(mode);
+    callbacks.onNoiseControlChanged = [this](AAP::NoiseControlMode mode, AAP::AAPAttempt attempt) {
+        OnNoiseControlModeNotification(mode, attempt);
     };
 
-    callbacks.onConversationalAwarenessChanged = [this](AAP::ConversationalAwarenessState state) {
-        OnConversationalAwarenessStateChanged(state);
+    callbacks.onConversationalAwarenessChanged =
+        [this](AAP::ConversationalAwarenessState state, AAP::AAPAttempt attempt) {
+            OnConversationalAwarenessStateChanged(state, attempt);
+        };
+
+    callbacks.onPersonalizedVolumeChanged =
+        [this](AAP::PersonalizedVolumeState state, AAP::AAPAttempt attempt) {
+            OnPersonalizedVolumeStateChanged(state, attempt);
+        };
+
+    callbacks.onLoudSoundReductionChanged =
+        [this](AAP::LoudSoundReductionState state, AAP::AAPAttempt attempt) {
+            OnLoudSoundReductionStateChanged(state, attempt);
+        };
+
+    callbacks.onAutomaticEarDetectionChanged = [this](bool enabled, AAP::AAPAttempt attempt) {
+        OnAutomaticEarDetectionNotification(enabled, attempt);
     };
 
-    callbacks.onPersonalizedVolumeChanged = [this](AAP::PersonalizedVolumeState state) {
-        OnPersonalizedVolumeStateChanged(state);
+    callbacks.onAdaptiveTransparencyLevelChanged = [this](uint8_t level, AAP::AAPAttempt attempt) {
+        OnAdaptiveTransparencyLevelNotification(level, attempt);
     };
 
-    callbacks.onLoudSoundReductionChanged = [this](AAP::LoudSoundReductionState state) {
-        OnLoudSoundReductionStateChanged(state);
+    callbacks.onSpeakingLevelChanged = [this](AAP::SpeakingLevel level, AAP::AAPAttempt attempt) {
+        OnSpeakingLevelChanged(level, attempt);
     };
 
-    callbacks.onAdaptiveTransparencyLevelChanged = [this](uint8_t level) {
-        OnAdaptiveTransparencyLevelNotification(level);
+    callbacks.onEarDetectionChanged =
+        [this](AAP::EarStatus primary, AAP::EarStatus secondary, AAP::AAPAttempt attempt) {
+            OnEarDetectionChanged(primary, secondary, attempt);
+        };
+
+    callbacks.onHeadTrackingData = [this](AAP::HeadTrackingData data, AAP::AAPAttempt attempt) {
+        OnHeadTrackingData(data, attempt);
     };
 
-    callbacks.onSpeakingLevelChanged = [this](AAP::SpeakingLevel level) {
-        OnSpeakingLevelChanged(level);
+    callbacks.onAttProbeResult = [this](AAP::AttPathState state, AAP::AAPAttempt attempt) {
+        OnAttProbeResult(state, attempt);
     };
 
-    callbacks.onEarDetectionChanged = [this](AAP::EarStatus primary, AAP::EarStatus secondary) {
-        OnEarDetectionChanged(primary, secondary);
-    };
+    callbacks.onConnected = [this](AAP::AAPAttempt attempt) { OnAAPConnected(attempt); };
 
-    callbacks.onHeadTrackingData = [this](AAP::HeadTrackingData data) { OnHeadTrackingData(data); };
-
-    callbacks.onConnected = [this]() { OnAAPConnected(); };
-
-    callbacks.onDisconnected = [this]() { OnAAPDisconnected(); };
+    callbacks.onDisconnected = [this](AAP::AAPAttempt attempt) { OnAAPDisconnected(attempt); };
 
     _aapMgr.SetCallbacks(std::move(callbacks));
 }
 
 Manager::~Manager()
 {
+    {
+        std::lock_guard lock{_aapWorkerMutex};
+        _aapShutdown = true;
+        _aapDesiredAddress.reset();
+        _aapRetryScheduled = false;
+    }
+    _aapWorkerCv.notify_all();
+    _aapMgr.CancelConnect();
+
+    if (_aapConnectWorker.joinable()) {
+        _aapConnectWorker.request_stop();
+        _aapConnectWorker.join();
+    }
+
+    DisconnectAAP();
     StopScanner();
+
+    {
+        std::lock_guard lock{_aapWorkerMutex};
+        _aapMgr.SetCallbacks({});
+    }
+
+    _adWatcher.CbReceived().UnregisterAll();
+    _adWatcher.CbStateChanged().UnregisterAll();
 
     _deviceLookupThread.request_stop();
     if (_deviceLookupThread.joinable()) {
@@ -180,39 +215,47 @@ Manager::~Manager()
     }
 }
 
-void Manager::StartScanner()
+bool Manager::StartScannerOnce()
 {
-    {
-        std::lock_guard<std::mutex> lock{_mutex};
-        if (!_boundDevice.has_value() || !_deviceConnected) {
+    if (!_scannerWanted.exchange(true)) {
+        bool deviceConnected;
+        bool hasDevice;
+        {
+            std::lock_guard<std::mutex> lock{_mutex};
+            deviceConnected = _deviceConnected;
+            hasDevice = _boundDevice.has_value();
+        }
+        if (!hasDevice || !deviceConnected) {
+            _scannerWanted = false;
             LOG(Info, "Skip Bluetooth AdvWatcher start because the bound device is disconnected.");
-            return;
+            return false;
         }
-        if (_scannerWanted) {
-            return;
-        }
-        _scannerWanted = true;
+    }
+
+    if (_scannerRunning) {
+        return true;
     }
 
     if (!_adWatcher.Start()) {
-        std::lock_guard<std::mutex> lock{_mutex};
-        _scannerWanted = false;
         LOG(Warn, "Bluetooth AdvWatcher start failed.");
+        return false;
     }
-    else {
-        LOG(Info, "Bluetooth AdvWatcher start succeeded.");
+    LOG(Info, "Bluetooth AdvWatcher start succeeded.");
+    return true;
+}
+
+void Manager::StartScanner()
+{
+    if (!StartScannerOnce() && _scannerWanted) {
+        ScheduleScannerRetry();
     }
 }
 
 void Manager::StopScanner()
 {
-    {
-        std::lock_guard<std::mutex> lock{_mutex};
-        if (!_scannerWanted) {
-            return;
-        }
-        _scannerWanted = false;
-    }
+    _scannerWanted = false;
+    StopScannerRetry();
+    _scannerRunning = false;
 
     if (!_adWatcher.Stop()) {
         LOG(Warn, "AsyncScanner::Stop() failed.");
@@ -220,6 +263,28 @@ void Manager::StopScanner()
     else {
         LOG(Info, "AsyncScanner::Stop() succeeded.");
     }
+}
+
+void Manager::ScheduleScannerRetry()
+{
+    std::lock_guard lock{_scannerRetryMutex};
+    if (!_scannerWanted || _scannerRunning) {
+        return;
+    }
+
+    _scannerRetryWorker.Start(std::chrono::milliseconds{3000}, [this] {
+        if (!_scannerWanted || _scannerRunning) {
+            return false;
+        }
+        StartScannerOnce();
+        return _scannerWanted && !_scannerRunning;
+    });
+}
+
+void Manager::StopScannerRetry()
+{
+    std::lock_guard lock{_scannerRetryMutex};
+    _scannerRetryWorker.Stop();
 }
 
 void Manager::OnRssiMinChanged(int16_t rssiMin)
@@ -252,12 +317,10 @@ void Manager::OnBoundDeviceAddressChanged(uint64_t address)
     _lidTracker.Reset();
     _earDetection.Reset();
 
-    // Disconnect AAP if connected
-    _aapMgr.Disconnect();
+    DisconnectAAP();
 
     emit DeviceConnectionChanged(false);
-    QMetaObject::invokeMethod(
-        this, [this] { StopScanner(); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(this, [this] { StopScanner(); }, Qt::QueuedConnection);
 
     if (address == 0) {
         LOG(Info, "Unbind device.");
@@ -352,7 +415,7 @@ void Manager::OnBoundDeviceConnectionStateChanged(Bluetooth::DeviceState state)
         _stateMgr.Disconnect();
         _lidTracker.Reset();
         _earDetection.Reset();
-        _aapMgr.Disconnect();
+        DisconnectAAP();
     }
 
     if (doConnect && _boundDevice.has_value()) {
@@ -373,12 +436,6 @@ void Manager::ConnectAAP()
         return;
     }
 
-    // Check if already connected or connecting
-    if (_aapMgr.IsConnected()) {
-        LOG(Info, "ConnectAAP: Already connected");
-        return;
-    }
-
     auto state = _stateMgr.GetCurrentState();
     auto modelToCheck = state.has_value() ? state->model : Model::Unknown;
     LOG(Info, "ConnectAAP: state.has_value={}, state.model={}, _modelOverride.has_value={}",
@@ -393,28 +450,171 @@ void Manager::ConnectAAP()
         SupportsANC(modelToCheck));
 
     if (SupportsANC(modelToCheck)) {
-        uint64_t address = _boundDevice->GetAddress();
-        LOG(Info, "Attempting AAP connection for ANC-capable device, address={:016X}", address);
+        const uint64_t address = _boundDevice->GetAddress();
+        LOG(Info, "Scheduling AAP connection for ANC-capable device, address={:016X}", address);
         Diagnostics::Recorder::Instance().Record(
             Diagnostics::Step::AdvertisementMatched, true,
             std::string{"model="} + std::to_string(static_cast<int>(modelToCheck)) +
                 " address=" + Diagnostics::Recorder::MaskAddress(address));
-
-        // Connect in a separate thread to avoid blocking the main thread
-        // Note: AAPManager::Connect() is thread-safe and handles its own locking
-        std::thread([this, address]() {
-            if (_aapMgr.Connect(address)) {
-                LOG(Info, "AAP connection established successfully");
-            }
-            else {
-                LOG(Warn, "AAP connection failed - ANC features will not be available");
-                emit AapConnectionFailedSafely(static_cast<int>(_aapMgr.GetLastConnectFailure()));
-            }
-        }).detach();
+        ScheduleAAPConnection(address);
     }
     else {
         LOG(Info, "ConnectAAP: Device does not support ANC");
     }
+}
+
+void Manager::StartAAPConnectWorker()
+{
+    _aapConnectWorker =
+        std::jthread{[this](std::stop_token stopToken) { AAPConnectLoop(stopToken); }};
+}
+
+void Manager::ScheduleAAPConnection(uint64_t address)
+{
+    {
+        std::lock_guard lock{_aapWorkerMutex};
+        if (_aapShutdown) {
+            return;
+        }
+        const bool changed = !_aapDesiredAddress || *_aapDesiredAddress != address;
+        _aapDesiredAddress = address;
+        if (changed) {
+            _aapRetryScheduled = false;
+            _aapRetryAt = {};
+        }
+    }
+    _aapWorkerCv.notify_all();
+}
+
+void Manager::DisconnectAAP()
+{
+    {
+        std::lock_guard lock{_aapWorkerMutex};
+        _aapDesiredAddress.reset();
+        _aapRetryScheduled = false;
+        _aapRetryAt = {};
+        _aapActiveAttempt = {};
+        _aapConnection.Stop();
+    }
+    _aapWorkerCv.notify_all();
+
+    // The connect worker may be blocked in the OS/driver connect. Cancel before waiting for it
+    // to unwind; this is also the cancellation path used during shutdown.
+    _aapMgr.CancelConnect();
+    _aapMgr.Disconnect();
+
+    {
+        std::lock_guard lock{_aapWorkerMutex};
+        _aapConnection.FinishStop();
+    }
+    _aapWorkerCv.notify_all();
+}
+
+void Manager::AAPConnectLoop(std::stop_token stopToken)
+{
+    while (!stopToken.stop_requested()) {
+        std::unique_lock lock{_aapWorkerMutex};
+        _aapWorkerCv.wait(lock, [this, &stopToken] {
+            return stopToken.stop_requested() || _aapShutdown || _aapDesiredAddress.has_value();
+        });
+        if (stopToken.stop_requested() || _aapShutdown) {
+            break;
+        }
+
+        bool ready = false;
+        while (!ready) {
+            if (!stopToken.stop_requested() && !_aapShutdown && _aapDesiredAddress) {
+                const auto state = _aapConnection.State();
+                if (state == AAP::AAPConnectionState::Idle) {
+                    ready = true;
+                }
+                else if (state == AAP::AAPConnectionState::Backoff) {
+                    ready = !_aapRetryScheduled || AAPClock::now() >= _aapRetryAt;
+                    if (!ready) {
+                        _aapWorkerCv.wait_until(lock, _aapRetryAt, [this, &stopToken] {
+                            return stopToken.stop_requested() || _aapShutdown ||
+                                   !_aapDesiredAddress || !_aapRetryScheduled ||
+                                   _aapConnection.State() != AAP::AAPConnectionState::Backoff ||
+                                   AAPClock::now() >= _aapRetryAt;
+                        });
+                        continue;
+                    }
+                }
+                else {
+                    _aapWorkerCv.wait(lock, [this, &stopToken] {
+                        return stopToken.stop_requested() || _aapShutdown || !_aapDesiredAddress ||
+                               _aapConnection.State() == AAP::AAPConnectionState::Idle ||
+                               _aapConnection.State() == AAP::AAPConnectionState::Backoff;
+                    });
+                    continue;
+                }
+            }
+            break;
+        }
+
+        if (!ready || !_aapDesiredAddress || stopToken.stop_requested() || _aapShutdown) {
+            continue;
+        }
+
+        const uint64_t address = *_aapDesiredAddress;
+        const auto begin = _aapConnection.Begin(address);
+        if (!begin.started) {
+            _aapWorkerCv.wait_for(lock, std::chrono::milliseconds{50});
+            continue;
+        }
+
+        _aapActiveAttempt = begin.attempt;
+        _aapConnectInProgress = true;
+        _aapRetryScheduled = false;
+        lock.unlock();
+
+        const bool connected = _aapMgr.Connect(begin.attempt, stopToken);
+        const bool reportFailure = !connected;
+        const auto failure = _aapMgr.GetLastConnectFailure();
+
+        lock.lock();
+        _aapConnectInProgress = false;
+        _aapActiveAttempt = {};
+        if (!stopToken.stop_requested() && !_aapShutdown) {
+            if (connected) {
+                if (_aapConnection.State() != AAP::AAPConnectionState::Connected) {
+                    _aapConnection.TransportConnected(begin.attempt);
+                    _aapConnection.Connected(begin.attempt, AAPClock::now());
+                }
+            }
+            else if (_aapDesiredAddress == address) {
+                const auto delay = _aapConnection.Lost(begin.attempt, AAPClock::now());
+                if (delay.has_value()) {
+                    _aapRetryAt = AAPClock::now() + *delay;
+                    _aapRetryScheduled = true;
+                    _aapWorkerCv.notify_all();
+                }
+            }
+        }
+
+        if (reportFailure) {
+            lock.unlock();
+            emit AapConnectionFailedSafely(static_cast<int>(failure));
+        }
+    }
+
+    std::lock_guard lock{_aapWorkerMutex};
+    _aapConnection.Stop();
+    _aapMgr.CancelConnect();
+    _aapConnection.FinishStop();
+}
+
+bool Manager::IsCurrentAAPAttempt(AAP::AAPAttempt attempt) const
+{
+    if (attempt.generation == 0) {
+        return false;
+    }
+    std::lock_guard lock{_aapWorkerMutex};
+    return (_aapConnectInProgress && _aapActiveAttempt.address == attempt.address &&
+            _aapActiveAttempt.generation == attempt.generation) ||
+           (_aapConnection.State() == AAP::AAPConnectionState::Connected && _aapMgr.IsConnected() &&
+            _aapMgr.GetLastAttempt().generation == attempt.generation &&
+            _aapMgr.GetLastAttempt().address == attempt.address);
 }
 
 bool Manager::SupportsANC(Model model)
@@ -530,18 +730,21 @@ void Manager::OnAdvWatcherStateChanged(
 {
     switch (state) {
     case Bluetooth::AdvertisementWatcher::State::Started:
+        _scannerRunning = true;
         emit ScannerAvailabilityChanged(true);
         LOG(Info, "Bluetooth AdvWatcher started.");
         Diagnostics::Recorder::Instance().Record(Diagnostics::Step::ScannerStarted, true);
         break;
 
     case Bluetooth::AdvertisementWatcher::State::Stopped:
+        _scannerRunning = false;
         if (_scannerWanted) {
             emit ScannerAvailabilityChanged(false);
             LOG(Warn, "Bluetooth AdvWatcher stopped. Error: '{}'.", optError.value_or("nullopt"));
             Diagnostics::Recorder::Instance().Record(
                 Diagnostics::Step::ScannerStarted, false,
                 optError.value_or("stopped unexpectedly"));
+            ScheduleScannerRetry();
         }
         else {
             LOG(Info, "Bluetooth AdvWatcher stopped intentionally.");
@@ -705,44 +908,75 @@ void Manager::OnNoiseControlModeChanged(AAP::NoiseControlMode mode)
 
 // AAP callbacks
 
-void Manager::OnNoiseControlModeNotification(AAP::NoiseControlMode mode)
+void Manager::OnNoiseControlModeNotification(AAP::NoiseControlMode mode, AAP::AAPAttempt attempt)
 {
+    if (!IsCurrentAAPAttempt(attempt)) {
+        return;
+    }
     LOG(Info, "Noise control mode changed to: {}", Helper::ToString(mode).toStdString());
 
     // Track the current noise control mode
-    _currentNoiseControlMode = mode;
-
-    // Update the cached state in the state manager if we have a current state
-    auto state = _stateMgr.GetCurrentState();
-    if (state.has_value()) {
-        // Notify UI about noise control change
-        // The state will be updated when we next receive an advertisement
-    }
+    _currentNoiseControlMode = static_cast<int>(mode);
 }
 
-void Manager::OnConversationalAwarenessStateChanged(AAP::ConversationalAwarenessState state)
+void Manager::OnConversationalAwarenessStateChanged(
+    AAP::ConversationalAwarenessState state, AAP::AAPAttempt attempt)
 {
+    if (!IsCurrentAAPAttempt(attempt)) {
+        return;
+    }
     LOG(Info, "Conversational awareness state changed to: {}",
         Helper::ToString(state).toStdString());
 }
 
-void Manager::OnPersonalizedVolumeStateChanged(AAP::PersonalizedVolumeState state)
+void Manager::OnPersonalizedVolumeStateChanged(
+    AAP::PersonalizedVolumeState state, AAP::AAPAttempt attempt)
 {
+    if (!IsCurrentAAPAttempt(attempt)) {
+        return;
+    }
     LOG(Info, "Personalized volume state changed to: {}", static_cast<int>(state));
 }
 
-void Manager::OnLoudSoundReductionStateChanged(AAP::LoudSoundReductionState state)
+void Manager::OnLoudSoundReductionStateChanged(
+    AAP::LoudSoundReductionState state, AAP::AAPAttempt attempt)
 {
+    if (!IsCurrentAAPAttempt(attempt)) {
+        return;
+    }
     LOG(Info, "Loud sound reduction state changed to: {}", static_cast<int>(state));
 }
 
-void Manager::OnAdaptiveTransparencyLevelNotification(uint8_t level)
+void Manager::OnAutomaticEarDetectionNotification(bool enabled, AAP::AAPAttempt attempt)
 {
+    if (!IsCurrentAAPAttempt(attempt)) {
+        return;
+    }
+    LOG(Info, "Automatic ear detection notification: {}", enabled ? "enabled" : "disabled");
+}
+
+void Manager::OnAdaptiveTransparencyLevelNotification(uint8_t level, AAP::AAPAttempt attempt)
+{
+    if (!IsCurrentAAPAttempt(attempt)) {
+        return;
+    }
     LOG(Info, "Adaptive transparency level changed to: {}", level);
 }
 
-void Manager::OnEarDetectionChanged(AAP::EarStatus primary, AAP::EarStatus secondary)
+void Manager::OnAttProbeResult(AAP::AttPathState state, AAP::AAPAttempt attempt)
 {
+    if (!IsCurrentAAPAttempt(attempt)) {
+        return;
+    }
+    LOG(Info, "AAP ATT path state: {}", static_cast<int>(state));
+}
+
+void Manager::OnEarDetectionChanged(
+    AAP::EarStatus primary, AAP::EarStatus secondary, AAP::AAPAttempt attempt)
+{
+    if (!IsCurrentAAPAttempt(attempt)) {
+        return;
+    }
     LOG(Info, "Ear detection changed - Primary: {}, Secondary: {}", static_cast<int>(primary),
         static_cast<int>(secondary));
 
@@ -761,8 +995,11 @@ void Manager::OnEarDetectionChanged(AAP::EarStatus primary, AAP::EarStatus secon
     // Note: We don't auto-resume when put back in ear to avoid unexpected playback
 }
 
-void Manager::OnHeadTrackingData(AAP::HeadTrackingData data)
+void Manager::OnHeadTrackingData(AAP::HeadTrackingData data, AAP::AAPAttempt attempt)
 {
+    if (!IsCurrentAAPAttempt(attempt)) {
+        return;
+    }
     // This callback receives real-time head tracking sensor data
     // Can be used for spatial audio or other applications
     LOG(Trace, "Head tracking: o1={}, o2={}, o3={}, hAccel={}, vAccel={}", data.orientation1,
@@ -776,16 +1013,20 @@ void Manager::OnHeadTrackingData(AAP::HeadTrackingData data)
 // not literally 100%
 constexpr int kFullVolumePercent = 100; // Signal value to restore to original volume
 
-void Manager::OnSpeakingLevelChanged(AAP::SpeakingLevel level)
+void Manager::OnSpeakingLevelChanged(AAP::SpeakingLevel level, AAP::AAPAttempt attempt)
 {
+    if (!IsCurrentAAPAttempt(attempt)) {
+        return;
+    }
     if (!_conversationalAwarenessEnabled) {
         return;
     }
 
     // Disable conversational awareness in transparency mode to avoid volume restoration bugs
     // The AAP firmware in transparency mode doesn't reliably send restoration events
-    if (_currentNoiseControlMode.has_value() &&
-        _currentNoiseControlMode.value() == AAP::NoiseControlMode::Transparency)
+    if (auto mode = _currentNoiseControlMode.load();
+        mode >= 0 &&
+        static_cast<AAP::NoiseControlMode>(mode) == AAP::NoiseControlMode::Transparency)
     {
         LOG(Info, "Conversational awareness disabled in transparency mode to avoid volume bugs");
         return;
@@ -817,20 +1058,46 @@ void Manager::OnSpeakingLevelChanged(AAP::SpeakingLevel level)
     }
 }
 
-void Manager::OnAAPConnected()
+void Manager::OnAAPConnected(AAP::AAPAttempt attempt)
 {
-    LOG(Info, "AAP connection established - ANC features available");
+    {
+        std::lock_guard lock{_aapWorkerMutex};
+        if (!_aapConnection.IsCurrent(attempt) || _aapShutdown) {
+            return;
+        }
+        _aapConnection.TransportConnected(attempt);
+        _aapConnection.Connected(attempt, AAPClock::now());
+        _aapRetryScheduled = false;
+    }
 
+    LOG(Info, "AAP connection established - ANC features available");
     emit AapConnectionStateChangedSafely(true);
 
-    // Apply user's conversational awareness preference
+    // Apply user's conversational awareness preference. The preference fields are written
+    // from settings callbacks on this same worker thread, so no queued reordering is needed.
     if (_conversationalAwarenessEnabled) {
         _aapMgr.SetConversationalAwareness(true);
     }
 }
 
-void Manager::OnAAPDisconnected()
+void Manager::OnAAPDisconnected(AAP::AAPAttempt attempt)
 {
+    std::optional<std::chrono::milliseconds> retryDelay;
+    {
+        std::lock_guard lock{_aapWorkerMutex};
+        if (_aapConnection.IsCurrent(attempt)) {
+            retryDelay = _aapConnection.Lost(attempt, AAPClock::now());
+            if (retryDelay.has_value()) {
+                _aapRetryAt = AAPClock::now() + *retryDelay;
+                _aapRetryScheduled = true;
+            }
+            else {
+                _aapRetryScheduled = false;
+            }
+        }
+    }
+    _aapWorkerCv.notify_all();
+
     LOG(Info, "AAP connection lost - ANC features unavailable");
     emit AapConnectionStateChangedSafely(false);
 }

@@ -124,15 +124,13 @@ public:
     bool Stop() override;
 
 private:
-    static constexpr inline auto kRetryInterval = 3s;
-
     WinrtBluetoothAdv::BluetoothLEAdvertisementWatcher _bleWatcher;
     std::mutex _mutex;
 
-    std::atomic<bool> _stop{false}, _destroy{false};
-    std::atomic<std::chrono::steady_clock::time_point> _lastStartTime;
+    winrt::event_token _tokenReceived, _tokenStopped;
+    std::atomic<bool> _stop{false}, _destroy{false}, _stopped{false};
     std::mutex _conVarMutex;
-    std::condition_variable _stopConVar, _destroyConVar;
+    std::condition_variable _destroyConVar;
 
     void OnReceived(const WinrtBluetoothAdv::BluetoothLEAdvertisementReceivedEventArgs &args);
     void OnStopped(const WinrtBluetoothAdv::BluetoothLEAdvertisementWatcherStoppedEventArgs &args);

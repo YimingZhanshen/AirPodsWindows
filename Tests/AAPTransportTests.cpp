@@ -597,10 +597,12 @@ private slots:
         Core::AAP::Manager manager;
         int trackingCallbacks = 0;
         Core::AAP::Callbacks callbacks;
-        callbacks.onHeadTrackingData = [&trackingCallbacks](const Core::AAP::HeadTrackingData &) {
-            ++trackingCallbacks;
-        };
+        callbacks.onHeadTrackingData = [&trackingCallbacks](
+                                           const Core::AAP::HeadTrackingData &,
+                                           const Core::AAP::AAPAttempt &) { ++trackingCallbacks; };
         manager.SetCallbacks(std::move(callbacks));
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
         manager._headTrackingActive = true;
 
         // The parser only needs 56 bytes, but the documented sensor record is at
@@ -624,10 +626,12 @@ private slots:
         Core::AAP::Manager manager;
         int trackingCallbacks = 0;
         Core::AAP::Callbacks callbacks;
-        callbacks.onHeadTrackingData = [&trackingCallbacks](const Core::AAP::HeadTrackingData &) {
-            ++trackingCallbacks;
-        };
+        callbacks.onHeadTrackingData = [&trackingCallbacks](
+                                           const Core::AAP::HeadTrackingData &,
+                                           const Core::AAP::AAPAttempt &) { ++trackingCallbacks; };
         manager.SetCallbacks(std::move(callbacks));
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
         manager._headTrackingActive = true;
 
         std::vector<uint8_t> unknownAap(70, 0x00);
@@ -644,10 +648,12 @@ private slots:
         Core::AAP::Manager manager;
         int trackingCallbacks = 0;
         Core::AAP::Callbacks callbacks;
-        callbacks.onHeadTrackingData = [&trackingCallbacks](const Core::AAP::HeadTrackingData &) {
-            ++trackingCallbacks;
-        };
+        callbacks.onHeadTrackingData = [&trackingCallbacks](
+                                           const Core::AAP::HeadTrackingData &,
+                                           const Core::AAP::AAPAttempt &) { ++trackingCallbacks; };
         manager.SetCallbacks(std::move(callbacks));
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
         manager._headTrackingActive = true;
 
         std::vector<uint8_t> attWrite(70, 0x00);
@@ -664,6 +670,7 @@ private slots:
         QVERIFY(transport->Connect(1, {}));
         transport->SetSendLimit(5);
         manager._transport.store(transport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
         manager._connected = true;
 
         QVERIFY(!manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Off));
