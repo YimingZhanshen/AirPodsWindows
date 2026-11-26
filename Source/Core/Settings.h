@@ -103,9 +103,6 @@ void SetRepository(std::unique_ptr<Repository> repository);
         Impl::OnApply(&OnApply_loud_sound_reduction),                                              \
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Protects your hearing by reducing loud sounds.")})                 \
     callback(uint8_t, adaptive_transparency_level, {25}, Impl::Deprecated())                       \
-    callback(uint8_t, ppe_cap_level, {25},                                                         \
-        Impl::OnApply(&OnApply_ppe_cap_level),                                                     \
-        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Caps how loud loud sounds get, for hearing protection (0-100).")}) \
     callback(uint32_t, noise_control_mode, {1},                                                    \
         Impl::OnApply(&OnApply_noise_control_mode),                                                \
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).")}) \
@@ -132,7 +129,10 @@ void SetRepository(std::unique_ptr<Repository> repository);
     callback(TaskbarStatusBehavior, battery_on_taskbar, {TaskbarStatusBehavior::Disable},          \
         Impl::OnApply(&OnApply_battery_on_taskbar))                                                \
     callback(bool, popup_on_lid_open, {true},                                                      \
-        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Shows the battery window when you open the case, without taking focus from the app in use. When off, open it from the tray icon.")})
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Shows the battery window when you open the case, without taking focus from the app in use. When off, open it from the tray icon.")}) \
+    callback(uint8_t, ppe_cap_level, {25},                                                         \
+        Impl::OnApply(&OnApply_ppe_cap_level),                                                     \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Caps how loud loud sounds get, for hearing protection (0-100).")})
 // clang-format on
 
 struct Fields {
@@ -295,7 +295,6 @@ void OnApply_conversational_awareness(const Fields &newFields);
 void OnApply_conversational_awareness_volume_percent(const Fields &newFields);
 void OnApply_personalized_volume(const Fields &newFields);
 void OnApply_loud_sound_reduction(const Fields &newFields);
-void OnApply_ppe_cap_level(const Fields &newFields);
 void OnApply_noise_control_mode(const Fields &newFields);
 void OnApply_rssi_min(const Fields &newFields);
 void OnApply_device_address(const Fields &newFields);
@@ -304,6 +303,7 @@ void OnApply_tray_quick_connect_enabled(const Fields &newFields);
 void OnApply_audio_auto_connect_enabled(const Fields &newFields);
 void OnApply_tray_quick_connect_device_id(const Fields &newFields);
 void OnApply_battery_on_taskbar(const Fields &newFields);
+void OnApply_ppe_cap_level(const Fields &newFields);
 
 struct MetaFields {
 #define DECLARE_META_FIELD(type, name, dft, ...)                                                   \

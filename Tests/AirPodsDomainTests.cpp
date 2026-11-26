@@ -4,9 +4,11 @@
 #include <cmath>
 #include <cstdint>
 #include <map>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
+#include <boost/pfr.hpp>
 #include <QtTest>
 #include <QFile>
 #include <QImage>
@@ -242,6 +244,7 @@ private Q_SLOTS:
     void PropagatesQuickConnectSettings();
     void PreservesForkSettingsAndAddsPlaybackAutoConnect();
     void KeepsPpeCapIndependentFromLegacyAdaptiveTransparency();
+    void AppendsPpeCapAfterExistingSettingsFields();
     void PersistsPpeCapLevelRoundTrip();
     void RejectsNullSettingsRepository();
     void ParsesUpdateVersions();
@@ -889,6 +892,21 @@ void AirPodsDomainTests::KeepsPpeCapIndependentFromLegacyAdaptiveTransparency()
         QCOMPARE(memory->Read("ppe_cap_level").toUInt(), uint32_t{25});
     }
     Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
+}
+
+void AirPodsDomainTests::AppendsPpeCapAfterExistingSettingsFields()
+{
+    Core::Settings::MetaFields fields;
+    std::vector<std::string_view> names;
+    boost::pfr::for_each_field(
+        fields, [&](const auto &field) { names.push_back(field.GetName()); });
+
+    QVERIFY(names.size() >= 2);
+    const auto nameAt = [&](size_t index) {
+        return QString::fromUtf8(names[index].data(), int(names[index].size()));
+    };
+    QCOMPARE(nameAt(names.size() - 2), QString{"popup_on_lid_open"});
+    QCOMPARE(nameAt(names.size() - 1), QString{"ppe_cap_level"});
 }
 
 void AirPodsDomainTests::PersistsPpeCapLevelRoundTrip()
