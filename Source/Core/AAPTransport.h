@@ -129,7 +129,10 @@ private:
     void SignalEof();
 
     mutable std::mutex _clientMutex;
-    std::unique_ptr<Core::MagicAAPWinRT::MagicAAPWinRTClient> _client;
+    // Startup and Close retain independent snapshots. The driver operation runs
+    // without _clientMutex, while the shared owner keeps the client alive until
+    // both startup and receiver shutdown have finished.
+    std::shared_ptr<Core::MagicAAPWinRT::MagicAAPWinRTClient> _client;
     std::atomic<Core::MagicAAPWinRT::MagicAAPBindStatus> _lastBindStatus{
         Core::MagicAAPWinRT::MagicAAPBindStatus::NoMatch};
     std::mutex _queueMutex;

@@ -124,7 +124,12 @@ private:
 
     std::atomic<bool> _connected{false};
     std::atomic<bool> _stopReceiver{false};
+    std::atomic<uint64_t> _connectionGeneration{0};
     std::thread _receiverThread;
+    // Serializes potentially blocking device-interface startups. Committed
+    // session state and callbacks use _mutex, which is never held while a driver
+    // enumeration/open is in progress.
+    std::mutex _connectMutex;
     mutable std::mutex _mutex;
     std::wstring _lastError;
     MagicAAPCallbackSession _sessions;

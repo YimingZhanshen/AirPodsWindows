@@ -17,11 +17,14 @@
 //
 
 #include <chrono>
+#include <condition_variable>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stop_token>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #if defined(APD_OS_WIN)
@@ -210,6 +213,91 @@ public:
     {
         return Core::AAP::AAPTransportKind::MagicAAP;
     }
+};
+
+// Models a driver open that only observes its stop token. Close deliberately does
+// not release it, so the test proves Manager cancellation reaches the driver
+// rather than merely retiring the pending transport after startup finishes.
+class BlockingMagicAAPTransport final : public Core::AAP::AAPTransport
+{
+public:
+    bool Connect(uint64_t address, std::stop_token stop) override
+    {
+        std::unique_lock<std::mutex> lock{_mutex};
+        _address = address;
+        ++_connectWaiters;
+        _condition.notify_all();
+        _condition.wait_for(
+            lock, std::chrono::seconds(5), [&] { return stop.stop_requested() || _released; });
+        --_connectWaiters;
+        // A late driver failure must not overwrite intentional cancellation with
+        // OpenFailed diagnostics in the Manager.
+        _status = Core::MagicAAPWinRT::MagicAAPBindStatus::OpenFailed;
+        return false;
+    }
+
+    bool Send(std::span<const uint8_t>, std::stop_token) override
+    {
+        return false;
+    }
+
+    std::optional<std::vector<uint8_t>> Receive(std::stop_token) override
+    {
+        return std::nullopt;
+    }
+
+    void Close() override
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        ++_closeCalls;
+        _condition.notify_all();
+    }
+
+    Core::AAP::AAPTransportKind Kind() const override
+    {
+        return Core::AAP::AAPTransportKind::MagicAAP;
+    }
+
+    Core::MagicAAPWinRT::MagicAAPBindStatus LastBindStatus() const override
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        return _status;
+    }
+
+    bool WaitForConnectWaiter(std::chrono::milliseconds timeout)
+    {
+        std::unique_lock<std::mutex> lock{_mutex};
+        return _condition.wait_for(lock, timeout, [this] { return _connectWaiters > 0; });
+    }
+
+    void ReleaseStartup()
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        _released = true;
+        _condition.notify_all();
+    }
+
+    uint64_t LastAddress() const
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        return _address;
+    }
+
+    size_t CloseCalls() const
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        return _closeCalls;
+    }
+
+private:
+    mutable std::mutex _mutex;
+    std::condition_variable _condition;
+    size_t _connectWaiters{0};
+    size_t _closeCalls{0};
+    uint64_t _address{0};
+    bool _released{false};
+    Core::MagicAAPWinRT::MagicAAPBindStatus _status{
+        Core::MagicAAPWinRT::MagicAAPBindStatus::NoMatch};
 };
 #endif
 
@@ -842,6 +930,96 @@ private slots:
         manager.Disconnect();
         QVERIFY(!manager.IsConnected());
         QVERIFY(!manager._readerThread.joinable());
+    }
+
+    void ManagerMagicAAPStartupCancellationAllowsImmediateRebind_data()
+    {
+        QTest::addColumn<bool>("disconnect");
+        QTest::newRow("cancel-connect") << false;
+        QTest::newRow("disconnect") << true;
+    }
+
+    void ManagerMagicAAPStartupCancellationAllowsImmediateRebind()
+    {
+        using Core::AAP::AAPAttempt;
+        using Core::AAP::AAPTransportKind;
+        using Core::AAP::ConnectFailure;
+        QFETCH(bool, disconnect);
+
+        Core::AAP::Manager manager;
+        auto seqPacket = std::make_shared<UnavailableSeqPacketTransport>();
+        auto magicAAP = std::make_shared<BlockingMagicAAPTransport>();
+        manager._driverInstalledProbe = [] { return true; };
+        manager._driverRunningProbe = [] { return true; };
+        manager._transportFactory = [seqPacket, magicAAP](AAPTransportKind kind) {
+            if (kind == AAPTransportKind::SeqPacket) {
+                return std::shared_ptr<Core::AAP::AAPTransport>{seqPacket};
+            }
+            return std::shared_ptr<Core::AAP::AAPTransport>{magicAAP};
+        };
+        int connectedGenerations = 0;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onConnected = [&](const AAPAttempt &attempt) {
+            connectedGenerations = static_cast<int>(attempt.generation);
+        };
+        manager.SetCallbacks(std::move(callbacks));
+
+        constexpr uint64_t targetAddress = 0x340E22CC08A0ULL;
+        const AAPAttempt firstAttempt{targetAddress, 7};
+        Core::Diagnostics::Recorder::Instance().Reset();
+        auto connect =
+            std::async(std::launch::async, [&] { return manager.Connect(firstAttempt); });
+        const bool startupEntered = magicAAP->WaitForConnectWaiter(std::chrono::seconds(1));
+        if (!startupEntered) {
+            magicAAP->ReleaseStartup();
+        }
+        QVERIFY(startupEntered);
+
+        auto cancel = std::async(std::launch::async, [&] {
+            if (disconnect) {
+                manager.Disconnect();
+            }
+            else {
+                manager.CancelConnect();
+            }
+        });
+        const bool cancellationReturned =
+            cancel.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+        const bool startupReturned =
+            connect.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+
+        // Release the fake driver before joining even when the regression is
+        // present, so a failed assertion cannot strand a blocked future.
+        magicAAP->ReleaseStartup();
+        cancel.get();
+        const bool connected = connect.get();
+
+        QVERIFY(cancellationReturned);
+        QVERIFY(startupReturned);
+        QVERIFY(!connected);
+        QCOMPARE(manager.GetLastConnectFailure(), ConnectFailure::TransportError);
+        QCOMPARE(magicAAP->LastAddress(), targetAddress);
+        QVERIFY(magicAAP->CloseCalls() > 0);
+        QCOMPARE(connectedGenerations, 0);
+        const auto report = Core::Diagnostics::Recorder::Instance().BuildReport({});
+        QVERIFY(report.find("driver_open  FAILED") == std::string::npos);
+        QVERIFY(report.find("exact target interface open failed") == std::string::npos);
+
+        auto rebound = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transportFactory =
+            [rebound](AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            return rebound;
+        };
+        const AAPAttempt secondAttempt{targetAddress, 8};
+        QVERIFY(manager.Connect(secondAttempt));
+        QVERIFY(manager.IsConnected());
+        QCOMPARE(connectedGenerations, 8);
+        QCOMPARE(rebound->SendCalls(), size_t{4});
+
+        auto disconnectRebound = std::async(std::launch::async, [&] { manager.Disconnect(); });
+        QVERIFY(disconnectRebound.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+        disconnectRebound.get();
+        QVERIFY(!manager.IsConnected());
     }
 
     void CancelConnectBeforeAttemptStartsSuppressesThatGeneration()

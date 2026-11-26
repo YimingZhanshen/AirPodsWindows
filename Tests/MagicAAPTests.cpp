@@ -442,6 +442,98 @@ private slots:
         QVERIFY(!GetHandleInformation(handle, &flags));
     }
 
+    void DisconnectDuringBlockingOpenPreventsConnectionCommit()
+    {
+        Core::MagicAAPWinRT::MagicAAPWinRTClient client;
+        const auto target = MakeDevice(L"340E22CC08A0", kTargetContainer);
+        HANDLE handle = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        QVERIFY(handle != nullptr);
+        client._driverInstalledProbe = [] { return true; };
+        client._driverRunningProbe = [] { return true; };
+        client._interfaceEnumerator = [target] { return std::vector{target}; };
+        std::promise<void> openerEntered;
+        std::promise<void> releaseOpener;
+        auto entered = openerEntered.get_future();
+        auto release = releaseOpener.get_future();
+        std::atomic<int> receiverStarts{0};
+        client._interfaceOpener = [&](const MagicAAPDeviceInterface &) -> void * {
+            openerEntered.set_value();
+            release.wait();
+            return handle;
+        };
+        client._receiverThreadStarter = [&](const auto &) {
+            ++receiverStarts;
+            return std::thread{};
+        };
+
+        auto connect = std::async(
+            std::launch::async, [&] { return client.ConnectViaDeviceInterface(kTarget); });
+        const bool openerBlocked =
+            entered.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+        auto disconnect = std::async(std::launch::async, [&] { client.Disconnect(); });
+        const bool disconnectReturned =
+            disconnect.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+
+        // Always release the driver seam before joining, including on the broken
+        // implementation where Disconnect waits for the startup mutex.
+        releaseOpener.set_value();
+        const auto status = connect.get();
+        disconnect.get();
+
+        QVERIFY(openerBlocked);
+        QVERIFY(disconnectReturned);
+        QCOMPARE(status, MagicAAPBindStatus::Cancelled);
+        QCOMPARE(receiverStarts.load(), 0);
+        QVERIFY(!client.IsConnected());
+        QCOMPARE(client._sessions.Current(), uint64_t{0});
+        DWORD flags = 0;
+        QVERIFY(!GetHandleInformation(handle, &flags));
+    }
+
+    void DisconnectDuringReceiverStartRollsBackPublishedSession()
+    {
+        Core::MagicAAPWinRT::MagicAAPWinRTClient client;
+        const auto target = MakeDevice(L"340E22CC08A0", kTargetContainer);
+        HANDLE handle = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        QVERIFY(handle != nullptr);
+        client._driverInstalledProbe = [] { return true; };
+        client._driverRunningProbe = [] { return true; };
+        client._interfaceEnumerator = [target] { return std::vector{target}; };
+        client._interfaceOpener = [&](const MagicAAPDeviceInterface &) -> void * { return handle; };
+        std::promise<void> receiverEntered;
+        std::promise<void> releaseReceiver;
+        auto entered = receiverEntered.get_future();
+        auto release = releaseReceiver.get_future();
+        std::atomic<int> receiverStarts{0};
+        client._receiverThreadStarter = [&](const auto &) {
+            ++receiverStarts;
+            receiverEntered.set_value();
+            release.wait();
+            return std::thread{};
+        };
+
+        auto connect = std::async(
+            std::launch::async, [&] { return client.ConnectViaDeviceInterface(kTarget); });
+        const bool receiverBlocked =
+            entered.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+        auto disconnect = std::async(std::launch::async, [&] { client.Disconnect(); });
+        const bool disconnectReturned =
+            disconnect.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+
+        releaseReceiver.set_value();
+        const auto status = connect.get();
+        disconnect.get();
+
+        QVERIFY(receiverBlocked);
+        QVERIFY(disconnectReturned);
+        QCOMPARE(status, MagicAAPBindStatus::Cancelled);
+        QCOMPARE(receiverStarts.load(), 1);
+        QVERIFY(!client.IsConnected());
+        QCOMPARE(client._sessions.Current(), uint64_t{0});
+        DWORD flags = 0;
+        QVERIFY(!GetHandleInformation(handle, &flags));
+    }
+
     void EnumerationExceptionIsAContainedTransportFailure()
     {
         Core::MagicAAPWinRT::MagicAAPWinRTClient client;

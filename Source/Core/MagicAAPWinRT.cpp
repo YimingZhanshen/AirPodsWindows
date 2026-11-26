@@ -391,14 +391,33 @@ bool MagicAAPWinRTClient::ConnectById(const std::wstring &deviceId)
 
 void MagicAAPWinRTClient::Disconnect()
 {
+    // Invalidate an in-flight bind before touching any committed resource. The
+    // startup keeps its not-yet-committed handle local, so it can observe this
+    // generation change and retire the handle without waiting for Disconnect.
+    _connectionGeneration.fetch_add(1);
     _stopReceiver.store(true);
 
-    if (_receiverThread.joinable()) {
-        _receiverThread.join();
+    // A device-interface startup owns this mutex while the driver may block. Do
+    // not wait for it: the generation check makes that startup self-retire. When
+    // there is no startup, retain the normal stop -> join -> cleanup ordering so
+    // a receiver can never use a closed or reused device handle.
+    std::unique_lock<std::mutex> connectLock(_connectMutex, std::try_to_lock);
+    if (!connectLock.owns_lock()) {
+        return;
+    }
+
+    std::thread receiver;
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        _sessions.Close();
+        _connected.store(false);
+        receiver = std::move(_receiverThread);
+    }
+    if (receiver.joinable()) {
+        receiver.join();
     }
 
     std::lock_guard<std::mutex> lock(_mutex);
-    _sessions.Close();
     CleanupWinRTObjects();
     CleanupDeviceHandle();
     _connected.store(false);
@@ -805,25 +824,54 @@ std::vector<MagicAAPDeviceInterface> MagicAAPWinRTClient::EnumerateInterfaces()
 MagicAAPBindStatus
 MagicAAPWinRTClient::ConnectViaDeviceInterface(uint64_t bluetoothAddress, std::stop_token stop)
 {
-    std::lock_guard<std::mutex> lock(_mutex);
-    if (_connected.load()) {
-        SetError(L"Already connected");
-        return MagicAAPBindStatus::TransportError;
+    // Only one startup may enumerate/open at a time. Unlike _mutex, this lock
+    // does not prevent Disconnect from invalidating the attempt immediately.
+    std::lock_guard<std::mutex> connectLock(_connectMutex);
+    uint64_t generation = 0;
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        if (_connected.load()) {
+            SetError(L"Already connected");
+            return MagicAAPBindStatus::TransportError;
+        }
+        generation = _connectionGeneration.fetch_add(1) + 1;
     }
     if (stop.stop_requested()) {
+        std::lock_guard<std::mutex> lock(_mutex);
         SetError(L"Connection cancelled");
         return MagicAAPBindStatus::Cancelled;
     }
 
+    auto setError = [this](std::wstring error) {
+        std::lock_guard<std::mutex> lock(_mutex);
+        SetError(std::move(error));
+    };
+    const auto cancelled = [&] {
+        return stop.stop_requested() || generation != _connectionGeneration.load();
+    };
+    MagicAAPDeviceHandle handle = nullptr;
+
     try {
         if (!_driverInstalledProbe() || !_driverRunningProbe()) {
-            SetError(L"MagicAAP driver is not installed or not running");
+            if (cancelled()) {
+                setError(L"Connection cancelled");
+                return MagicAAPBindStatus::Cancelled;
+            }
+            setError(L"MagicAAP driver is not installed or not running");
             return MagicAAPBindStatus::DriverMissing;
         }
 
+        if (cancelled()) {
+            setError(L"Connection cancelled");
+            return MagicAAPBindStatus::Cancelled;
+        }
         auto interfaces = _interfaceEnumerator();
+        if (cancelled()) {
+            setError(L"Connection cancelled");
+            return MagicAAPBindStatus::Cancelled;
+        }
         if (interfaces.empty()) {
-            SetError(L"MagicAAP published no device interfaces; reinstall or restart the driver");
+            setError(L"MagicAAP published no device interfaces; reinstall or restart the driver");
             return MagicAAPBindStatus::TransportError;
         }
 
@@ -831,63 +879,121 @@ MagicAAPWinRTClient::ConnectViaDeviceInterface(uint64_t bluetoothAddress, std::s
         auto outcome = BindToTargetInterface(
             interfaces, bluetoothAddress,
             [&](const MagicAAPDeviceInterface &device) -> MagicAAPDeviceHandle {
-                if (stop.stop_requested()) {
+                if (cancelled()) {
                     return nullptr;
                 }
-                const auto handle = _interfaceOpener(device);
-                if (handle == nullptr) {
+                const auto opened = _interfaceOpener(device);
+                if (opened == nullptr) {
                     openError = ::GetLastError();
                     spdlog::warn(
                         "[MagicAAPWinRT] Exact target interface open failed: {}", openError);
                 }
-                return handle;
+                return opened;
             },
             stop);
 
+        // Disconnect can retire the attempt while the opener is blocked. Check
+        // before interpreting a late OpenFailed/Connected result or publishing
+        // any handle/session as the active connection.
+        if (cancelled()) {
+            if (outcome.handle) {
+                CloseHandle(static_cast<HANDLE>(outcome.handle));
+            }
+            setError(L"Connection cancelled");
+            return MagicAAPBindStatus::Cancelled;
+        }
+
         switch (outcome.status) {
         case MagicAAPBindStatus::NoMatch:
-            SetError(L"No MagicAAP interface proves the bound Bluetooth address and ContainerId; "
+            setError(L"No MagicAAP interface proves the bound Bluetooth address and ContainerId; "
                      L"update the MagicAAP driver and reconnect");
             break;
         case MagicAAPBindStatus::OpenFailed:
-            SetError(
+            setError(
                 L"The exact MagicAAP target interface could not be opened (Win32 error " +
                 std::to_wstring(openError) + L"); no other device was selected");
             break;
         case MagicAAPBindStatus::Cancelled:
-            SetError(L"Connection cancelled");
+            setError(L"Connection cancelled");
             break;
         case MagicAAPBindStatus::Connected:
             break;
         default:
-            SetError(L"MagicAAP transport error");
+            setError(L"MagicAAP transport error");
             break;
         }
 
+        if (cancelled()) {
+            if (outcome.handle) {
+                CloseHandle(static_cast<HANDLE>(outcome.handle));
+            }
+            setError(L"Connection cancelled");
+            return MagicAAPBindStatus::Cancelled;
+        }
         if (outcome.status != MagicAAPBindStatus::Connected) {
             return outcome.status;
         }
-        if (stop.stop_requested()) {
-            CloseHandle(static_cast<HANDLE>(outcome.handle));
-            SetError(L"Connection cancelled");
-            return MagicAAPBindStatus::Cancelled;
+
+        handle = outcome.handle;
+        std::thread cancelledReceiver;
+        bool retiredAfterStart = false;
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            if (cancelled()) {
+                CloseHandle(static_cast<HANDLE>(handle));
+                handle = nullptr;
+                SetError(L"Connection cancelled");
+                return MagicAAPBindStatus::Cancelled;
+            }
+
+            // Commit the handle and callback snapshot under the same lock that
+            // Disconnect uses to retire a session. StartReceiverSession publishes
+            // the monotonic session before the receiver thread can run.
+            _deviceHandle = handle;
+            handle = nullptr;
+            _usingDeviceInterface = true;
+            _connected.store(true);
+            _stopReceiver.store(false);
+            spdlog::info(
+                "[MagicAAPWinRT] Exact target device bound; starting receiver ({} candidate "
+                "path(s), "
+                "{} open attempt(s))",
+                outcome.candidateCount, outcome.openAttempts);
+            if (!StartReceiverSession()) {
+                return MagicAAPBindStatus::TransportError;
+            }
+
+            // Disconnect can invalidate this generation while the receiver is
+            // starting. Revalidate after thread creation so a late cancellation
+            // can never be published as a successful connection.
+            if (cancelled()) {
+                retiredAfterStart = true;
+                _sessions.Close();
+                _connected.store(false);
+                _stopReceiver.store(true);
+                cancelledReceiver = std::move(_receiverThread);
+            }
         }
 
-        _deviceHandle = outcome.handle;
-        _usingDeviceInterface = true;
-        _connected.store(true);
-        _stopReceiver.store(false);
-        spdlog::info(
-            "[MagicAAPWinRT] Exact target device bound; starting receiver ({} candidate path(s), "
-            "{} open attempt(s))",
-            outcome.candidateCount, outcome.openAttempts);
-        if (!StartReceiverSession()) {
-            return MagicAAPBindStatus::TransportError;
+        if (retiredAfterStart) {
+            // The receiver must stop using the device handle before cleanup.
+            if (cancelledReceiver.joinable()) {
+                cancelledReceiver.join();
+            }
+            std::lock_guard<std::mutex> lock(_mutex);
+            CleanupWinRTObjects();
+            CleanupDeviceHandle();
+            SetError(L"Connection cancelled");
+            return MagicAAPBindStatus::Cancelled;
         }
 
         return MagicAAPBindStatus::Connected;
     }
     catch (const std::exception &) {
+        if (handle) {
+            CloseHandle(static_cast<HANDLE>(handle));
+        }
+        std::lock_guard<std::mutex> lock(_mutex);
         RollbackConnection();
         SetError(L"MagicAAP device-interface connection failed");
         spdlog::error("[MagicAAPWinRT] Device-interface connection failed");

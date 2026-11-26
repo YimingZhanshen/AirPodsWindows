@@ -30,6 +30,49 @@
 
     #include "MagicAAPWinRT.h"
 
+namespace {
+
+// One transport attempt observes caller cancellation, Manager cancellation, and
+// its retired generation through a single stop_token. Generation cancellation
+// is polled at attempt boundaries; Manager::CancelConnect also requests the
+// shared Manager source, which wakes a driver already blocked in Connect.
+class TransportAttemptCancellation
+{
+public:
+    TransportAttemptCancellation(
+        std::stop_token callerStop, std::stop_source managerStop, uint64_t generation,
+        const std::atomic<uint64_t> &cancelledGeneration)
+        : _stop{}, _callerCallback{callerStop, [this] noexcept { _stop.request_stop(); }},
+          _managerCallback{managerStop.get_token(), [this] noexcept { _stop.request_stop(); }},
+          _generation{generation}, _cancelledGeneration{cancelledGeneration}
+    {
+        IsRequested();
+    }
+
+    std::stop_token Token()
+    {
+        IsRequested();
+        return _stop.get_token();
+    }
+
+    bool IsRequested()
+    {
+        if (_cancelledGeneration.load() == _generation) {
+            _stop.request_stop();
+        }
+        return _stop.stop_requested();
+    }
+
+private:
+    std::stop_source _stop;
+    std::stop_callback<std::function<void()>> _callerCallback;
+    std::stop_callback<std::function<void()>> _managerCallback;
+    uint64_t _generation;
+    const std::atomic<uint64_t> &_cancelledGeneration;
+};
+
+} // namespace
+
 namespace Core::AAP {
 
 Manager::Manager()
@@ -127,12 +170,16 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
     auto transport = ConnectTransport(attempt, stopToken, failure);
     _lastConnectFailure.store(failure);
 
-    {
-        std::lock_guard lock{_mutex};
-        if (cancelled()) {
-            _connecting = false;
-            _lastConnectFailure.store(ConnectFailure::TransportError);
+    if (cancelled()) {
+        if (transport) {
+            transport->Close();
         }
+        std::lock_guard lock{_mutex};
+        if (_connecting) {
+            _connecting = false;
+        }
+        _lastConnectFailure.store(ConnectFailure::TransportError);
+        return false;
     }
     if (!transport) {
         std::lock_guard lock{_mutex};
@@ -203,10 +250,9 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
         }
     };
 
-    const auto cancelled = [&] {
-        return stopToken.stop_requested() || _connectStop.get_token().stop_requested() ||
-               _cancelledGeneration.load() == attempt.generation;
-    };
+    TransportAttemptCancellation attemptCancellation{
+        stopToken, _connectStop, attempt.generation, _cancelledGeneration};
+    const auto cancelled = [&] { return attemptCancellation.IsRequested(); };
 
     LOG(Info, "AAP: Attempting L2CAP SEQPACKET connection to {} on PSM {}",
         Diagnostics::Recorder::MaskAddress(attempt.address), kPSM);
@@ -214,7 +260,7 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
                          ? _transportFactory(AAPTransportKind::SeqPacket)
                          : std::shared_ptr<AAPTransport>(CreateSeqPacketTransport().release());
     setPending(seqPacket);
-    const bool seqConnected = seqPacket->Connect(attempt.address, stopToken);
+    const bool seqConnected = seqPacket->Connect(attempt.address, attemptCancellation.Token());
     clearPending(seqPacket);
     if (seqConnected && !cancelled()) {
         failure = ConnectFailure::None;
@@ -229,13 +275,25 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
     }
 
     if (!_driverInstalledProbe()) {
+        if (cancelled()) {
+            failure = ConnectFailure::TransportError;
+            return nullptr;
+        }
         LOG(Info, "AAP: MagicAAP driver not installed");
         failure = ConnectFailure::DriverMissing;
         Diagnostics::Recorder::Instance().Record(
             Diagnostics::Step::DriverOpen, false, "driver not installed");
         return nullptr;
     }
+    if (cancelled()) {
+        failure = ConnectFailure::TransportError;
+        return nullptr;
+    }
     if (!_driverRunningProbe()) {
+        if (cancelled()) {
+            failure = ConnectFailure::TransportError;
+            return nullptr;
+        }
         LOG(Warn, "AAP: MagicAAP driver installed but not running");
         failure = ConnectFailure::DriverMissing;
         Diagnostics::Recorder::Instance().Record(
@@ -251,22 +309,33 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
                        : std::shared_ptr<AAPTransport>(CreateMagicAAPTransport().release());
         if (magicAAP) {
             setPending(magicAAP);
-            magicConnected = magicAAP->Connect(attempt.address, stopToken);
+            magicConnected = magicAAP->Connect(attempt.address, attemptCancellation.Token());
         }
     }
     catch (const std::exception &) {
         // A transport constructor/startup exception is still a failed driver
-        // open and must take the same diagnostic path as a returned failure.
+        // open unless cancellation won the race with startup.
         magicConnected = false;
     }
     clearPending(magicAAP);
-    if (magicConnected && !cancelled()) {
+    if (cancelled()) {
+        if (magicAAP) {
+            magicAAP->Close();
+        }
+        failure = ConnectFailure::TransportError;
+        return nullptr;
+    }
+    if (magicConnected) {
         Diagnostics::Recorder::Instance().Record(Diagnostics::Step::DriverOpen, true);
         failure = ConnectFailure::None;
         return magicAAP;
     }
     if (magicAAP) {
         magicAAP->Close();
+    }
+    if (cancelled()) {
+        failure = ConnectFailure::TransportError;
+        return nullptr;
     }
     const auto bindStatus =
         magicAAP ? magicAAP->LastBindStatus() : MagicAAPWinRT::MagicAAPBindStatus::TransportError;
