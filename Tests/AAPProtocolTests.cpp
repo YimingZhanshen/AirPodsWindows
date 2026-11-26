@@ -1176,7 +1176,10 @@ private slots:
         QCOMPARE(outcomes.Wait()->settlement, AAPCommandSettlement::Confirmed);
         QCOMPARE(broker.Confirmed(confirmed.kind), std::optional<uint32_t>{25});
 
-        QVERIFY(broker.RecordDesired(replayed).accepted);
+        // RecordDesired is bookkeeping only: it never reports an applied value.
+        QVERIFY(!broker.RecordDesired(replayed).accepted);
+        QCOMPARE(
+            broker.Desired(AAPCommandKind::SetAdaptiveNoiseLevel), std::optional<uint32_t>{70});
         broker.EndSession();
         QVERIFY(!broker.Confirmed(confirmed.kind).has_value());
         broker.BeginSession(2);
@@ -1336,7 +1339,9 @@ private slots:
             },
             [&](const AAPCommandOutcome &outcome) { outcomes.Push(outcome); }, config);
         liveBroker = &broker;
-        QVERIFY(broker.RecordDesired({AAPCommandKind::SetAdaptiveNoiseLevel, 60}).accepted);
+        QVERIFY(!broker.RecordDesired({AAPCommandKind::SetAdaptiveNoiseLevel, 60}).accepted);
+        QCOMPARE(
+            broker.Desired(AAPCommandKind::SetAdaptiveNoiseLevel), std::optional<uint32_t>{60});
         broker.ReplayDesiredState(
             1, [](AAPCommandKind kind) { return kind != AAPCommandKind::SetAdaptiveNoiseLevel; });
         QVERIFY(broker.WaitForIdle(std::chrono::seconds{1}));
@@ -1531,6 +1536,145 @@ private slots:
             std::lock_guard lock{sentMutex};
             QCOMPARE(sent.size(), kAAPCommandKindCount * 2);
         }
+    }
+
+    void DisconnectedStopSupersedesReconnectReplay()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        ManualGate gate;
+        std::promise<void> blockerStarted;
+        auto blockerFuture = blockerStarted.get_future();
+        std::atomic<bool> blockerAnnounced{false};
+        std::mutex sentMutex;
+        std::vector<AAPCommand> sent;
+        std::vector<uint64_t> generations;
+        AAPCommandBroker broker(
+            [&](const AAPCommand &command, uint64_t generation, std::stop_token stop) {
+                {
+                    std::lock_guard lock{sentMutex};
+                    sent.push_back(command);
+                    generations.push_back(generation);
+                }
+                if (command.kind == AAPCommandKind::SetNoiseControl) {
+                    if (!blockerAnnounced.exchange(true)) {
+                        blockerStarted.set_value();
+                    }
+                    gate.Wait(stop);
+                }
+                return true;
+            },
+            {}, UnverifiableConfig(clock));
+        const AAPCommand start{AAPCommandKind::SetHeadTracking, 0x01};
+        const AAPCommand stop{AAPCommandKind::SetHeadTracking, 0x00};
+        // Start is desired while offline. A blocker keeps the reconnect's replay queued while
+        // the transport owner opens generation 8 but the intent still believes it is offline.
+        QVERIFY(!broker.Submit(start).accepted);
+        broker.BeginSession(7);
+        QVERIFY(broker.Submit({AAPCommandKind::SetNoiseControl, 0x01}).accepted);
+        broker.ReplayDesiredState(7);
+        QVERIFY(blockerFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        broker.ReplayDesiredState(8);
+        QCOMPARE(broker.Desired(start.kind), std::optional<uint32_t>{0x01});
+        QCOMPARE(broker.QueuedCount(), size_t{2});
+
+        const auto disconnectedStop = broker.RecordDesired(stop);
+        QVERIFY(!disconnectedStop.accepted);
+        QCOMPARE(disconnectedStop.failure, std::optional(AAPCommandFailure::TransportClosed));
+        QCOMPARE(broker.Desired(start.kind), std::optional<uint32_t>{0x00});
+        QCOMPARE(broker.QueuedCount(), size_t{1});
+
+        gate.Open();
+        QVERIFY(broker.WaitForIdle(std::chrono::seconds{1}));
+        {
+            std::lock_guard lock{sentMutex};
+            QCOMPARE(
+                sent, (std::vector<AAPCommand>{
+                          {AAPCommandKind::SetNoiseControl, 0x01},
+                          {AAPCommandKind::SetNoiseControl, 0x01}}));
+            QCOMPARE(generations, (std::vector<uint64_t>{7, 8}));
+        }
+
+        // The cancelled replay Start must not survive into the next reconnect either.
+        broker.EndSession();
+        broker.ReplayDesiredState(9);
+        QVERIFY(broker.WaitForIdle(std::chrono::seconds{1}));
+        {
+            std::lock_guard lock{sentMutex};
+            QCOMPARE(
+                sent, (std::vector<AAPCommand>{
+                          {AAPCommandKind::SetNoiseControl, 0x01},
+                          {AAPCommandKind::SetNoiseControl, 0x01},
+                          {AAPCommandKind::SetNoiseControl, 0x01},
+                          stop}));
+            QCOMPARE(generations, (std::vector<uint64_t>{7, 8, 9, 9}));
+        }
+    }
+
+    void OfflineSameDesireCancelsQueuedReplay()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        std::atomic<unsigned> sends{0};
+        AAPCommandBroker broker(
+            [&](const AAPCommand &, uint64_t, std::stop_token) {
+                ++sends;
+                return true;
+            },
+            {}, UnverifiableConfig(clock));
+        const AAPCommand start{AAPCommandKind::SetHeadTracking, 0x01};
+        broker.BeginSession(7);
+        QVERIFY(broker.Submit(start).accepted);
+        QCOMPARE(broker.QueuedCount(), size_t{1});
+
+        // The transport owner has already moved offline while the broker session is still
+        // observable. Re-recording the same desired value must cancel its stale wire work.
+        const auto result = broker.RecordDesired(start);
+        QVERIFY(!result.accepted);
+        QCOMPARE(result.failure, std::optional(AAPCommandFailure::TransportClosed));
+        QCOMPARE(broker.Desired(start.kind), std::optional<uint32_t>{0x01});
+        QCOMPARE(broker.QueuedCount(), size_t{0});
+
+        broker.EndSession();
+        broker.ReplayDesiredState(8);
+        QVERIFY(broker.WaitForIdle(std::chrono::seconds{1}));
+        QCOMPARE(sends.load(), 0U);
+    }
+
+    void DisconnectedStopSupersedesInFlightStart()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        OutcomeQueue outcomes;
+        ManualGate gate;
+        std::promise<void> started;
+        auto startedFuture = started.get_future();
+        std::atomic<unsigned> calls{0};
+        AAPCommandBroker broker(
+            [&](const AAPCommand &, uint64_t, std::stop_token stop) {
+                if (++calls == 1) {
+                    started.set_value();
+                    gate.Wait(stop);
+                }
+                return false;
+            },
+            [&](const AAPCommandOutcome &outcome) { outcomes.Push(outcome); },
+            UnverifiableConfig(clock));
+        broker.BeginSession(7);
+        QVERIFY(broker.Submit({AAPCommandKind::SetHeadTracking, 0x01}).accepted);
+        QVERIFY(startedFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QVERIFY(!broker.RecordDesired({AAPCommandKind::SetHeadTracking, 0x00}).accepted);
+        gate.Open();
+        QVERIFY(broker.WaitForIdle(std::chrono::seconds{1}));
+
+        const auto outcome = outcomes.Wait();
+        QVERIFY(outcome.has_value());
+        QCOMPARE(outcome->command, (AAPCommand{AAPCommandKind::SetHeadTracking, 0x01}));
+        QCOMPARE(outcome->settlement, AAPCommandSettlement::Superseded);
+        QCOMPARE(outcome->failure, std::optional(AAPCommandFailure::Superseded));
+        QCOMPARE(calls.load(), 1U);
+        QCOMPARE(broker.Desired(AAPCommandKind::SetHeadTracking), std::optional<uint32_t>{0});
+        QCOMPARE(broker.QueuedCount(), size_t{0});
     }
 
     void RapidSliderSubmissionsKeepOnlyLastQueuedValue()

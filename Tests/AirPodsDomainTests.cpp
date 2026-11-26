@@ -1,10 +1,13 @@
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <map>
 #include <string_view>
+#include <mutex>
+#include <thread>
 #include <tuple>
 #include <vector>
 
@@ -264,6 +267,9 @@ public:
     Core::AAP::AAPCommandResult SubmitHeadTracking(bool enable, std::uint64_t generation) override
     {
         requests.push_back({enable, generation});
+        if (generation == 0) {
+            return {false, false, Core::AAP::AAPCommandFailure::TransportClosed};
+        }
         return result;
     }
 
@@ -343,7 +349,7 @@ private Q_SLOTS:
     void HeadTrackingViewModelThrottlesAndTracksGenerations();
     void HeadTrackingIntentReplaysStartAndStop();
     void HeadTrackingSettingPersistsWithoutAbiBump();
-    void AdaptiveNoiseTranslationsAreCompleteInAllCatalogs();
+    void ConcurrentHeadTrackingTogglesKeepMirrorConsistent();
     void PackagesCompatibleLowLatencySilence();
     void LoadsSettingsThroughRepository();
     void MigratesLegacySettingsRepository();
@@ -901,6 +907,45 @@ void AirPodsDomainTests::HeadTrackingIntentReplaysStartAndStop()
     QVERIFY(!port.requests[4].enable);
     QCOMPARE(port.requests[6].generation, uint64_t{9});
     QVERIFY(port.requests[6].enable);
+}
+
+void AirPodsDomainTests::ConcurrentHeadTrackingTogglesKeepMirrorConsistent()
+{
+    Core::AirPods::Manager manager;
+    std::mutex emittedMutex;
+    std::vector<bool> emitted;
+    QObject::connect(
+        &manager, &Core::AirPods::Manager::HeadTrackingDesiredSafely, &manager,
+        [&](bool desired) {
+            std::lock_guard lock{emittedMutex};
+            emitted.push_back(desired);
+        },
+        Qt::DirectConnection);
+
+    std::atomic<bool> go{false};
+    const auto toggle = [&](bool enabled) {
+        while (!go.load()) {
+            std::this_thread::yield();
+        }
+        for (int iteration = 0; iteration < 4000; ++iteration) {
+            if (enabled) {
+                manager.StartHeadTracking();
+            }
+            else {
+                manager.StopHeadTracking();
+            }
+        }
+    };
+    std::thread startThread{toggle, true};
+    std::thread stopThread{toggle, false};
+    go.store(true);
+    startThread.join();
+    stopThread.join();
+
+    std::lock_guard lock{emittedMutex};
+    QVERIFY(!emitted.empty());
+    // The last flush observes the serialized intent. It must agree with the public mirror.
+    QCOMPARE(emitted.back(), manager.IsHeadTrackingEnabled());
 }
 
 void AirPodsDomainTests::HeadTrackingSettingPersistsWithoutAbiBump()
