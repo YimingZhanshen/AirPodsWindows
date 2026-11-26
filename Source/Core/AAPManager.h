@@ -29,6 +29,7 @@
 #include "AAP.h"
 #include "AAPAtt.h"
 #include "AAPBattery.h"
+#include "AAPCommandBroker.h"
 #include "AAPConnectionStateMachine.h"
 #include "AAPTransport.h"
 #include "Base.h"
@@ -82,6 +83,9 @@ struct Callbacks {
     using FnOnConnectedT = std::function<void(AAPAttempt)>;
     using FnOnDisconnectedT = std::function<void(AAPAttempt)>;
     using FnOnAttProbeResultT = std::function<void(AttPathState, AAPAttempt)>;
+    // Blueprint 2.7: every command the broker tracked reaches a terminal settlement. Fired on
+    // the broker worker thread, so receivers must not touch widgets directly.
+    using FnOnCommandSettledT = std::function<void(const AAPCommandOutcome &, AAPAttempt)>;
 
     FnOnNoiseControlChangedT onNoiseControlChanged;
     FnOnConversationalAwarenessChangedT onConversationalAwarenessChanged;
@@ -96,6 +100,7 @@ struct Callbacks {
     FnOnConnectedT onConnected;
     FnOnDisconnectedT onDisconnected;
     FnOnAttProbeResultT onAttProbeResult;
+    FnOnCommandSettledT onCommandSettled;
 };
 
 //////////////////////////////////////////////////
@@ -150,6 +155,19 @@ public:
     // Cached battery snapshot of the current session (opcode 0x0004). Cleared when
     // a connect starts and when the session ends; consumers fuse it over BLE values.
     std::optional<AAPBatterySnapshot> GetBatterySnapshot() const;
+
+    // Confirmed command path (blueprint 2.7). The setters above stay the raw wire primitive;
+    // settings callers should use SubmitCommand so a value is only reported as applied once the
+    // firmware echoes or reads it back, and so a reconnect re-applies what the user asked for.
+    AAPCommandResult SubmitCommand(AAPCommand command, std::stop_token stopToken = {});
+    std::optional<uint32_t> DesiredCommand(AAPCommandKind kind) const;
+    std::optional<uint32_t> ConfirmedCommand(AAPCommandKind kind) const;
+    // Protocol evidence currently available for one concrete command value (degrades with the
+    // ATT probe, so an unreachable readback never turns into a false timeout).
+    AAPConfirmMode CommandMode(AAPCommandKind kind, uint32_t value) const;
+    // Blocks until the broker has nothing queued or in flight. Only for tests and shutdown
+    // drain; never call it from a thread that owns the wire.
+    bool WaitForCommandsIdle(std::chrono::milliseconds timeout);
 
     // Callbacks
     void SetCallbacks(Callbacks callbacks);
@@ -223,12 +241,21 @@ private:
     std::mutex _pendingConnectMutex;
     std::shared_ptr<AAPTransport> _pendingTransport;
 
+    // Blueprint 2.7: desired state, serialization and echo confirmation. Declared last so its
+    // destructor joins the command worker before any member the sender can reach is destroyed.
+    std::unique_ptr<AAPCommandBroker> _commandBroker;
+
     // Internal methods
     bool SendPacket(const std::vector<uint8_t> &packet);
     bool SendPacket(
         const std::shared_ptr<AAPTransport> &transport, const std::vector<uint8_t> &packet,
         std::stop_token stopToken);
     bool IsCurrentAttempt(AAPAttempt attempt) const;
+    // Command broker seams (blueprint 2.7): the broker owns serialization and the desired
+    // state, this layer supplies the wire encoding and the protocol evidence.
+    bool SendCommand(const AAPCommand &command, uint64_t generation, std::stop_token stopToken);
+    void HandleCommandSettled(const AAPCommandOutcome &outcome);
+    void RouteCommandEcho(AAPCommand command, AAPAttempt attempt);
     void ProcessPacket(const std::vector<uint8_t> &packet);
     void ProcessPacket(
         const std::vector<uint8_t> &packet, AAPAttempt attempt, const Callbacks &callbacks);

@@ -683,6 +683,65 @@ private slots:
         manager._transport.store(nullptr);
     }
 
+    void ManagerCommandIsConfirmedBySettingsEcho()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 9};
+        manager._connected = true;
+        std::promise<Core::AAP::AAPCommandOutcome> settled;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onCommandSettled = [&](const Core::AAP::AAPCommandOutcome &outcome,
+                                         const Core::AAP::AAPAttempt &) {
+            settled.set_value(outcome);
+        };
+        manager.SetCallbacks(std::move(callbacks));
+        const Core::AAP::AAPCommand command{Core::AAP::AAPCommandKind::SetNoiseControl, 0x02};
+        QVERIFY(manager.SubmitCommand(command).accepted);
+        manager.ProcessPacket({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02, 0x00, 0x00, 0x00});
+        auto future = settled.get_future();
+        QVERIFY(future.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QCOMPARE(future.get().settlement, Core::AAP::AAPCommandSettlement::Confirmed);
+        QCOMPARE(manager.ConfirmedCommand(command.kind), std::optional<uint32_t>{0x02});
+        manager._connected = false;
+        manager._transport.store(nullptr);
+    }
+
+    void ManagerLoudSoundReductionUsesAttReadback()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 10};
+        manager._connected = true;
+        manager._attPathState.store(Core::AAP::AttPathState::Confirmed);
+        std::promise<Core::AAP::AAPCommandOutcome> settled;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onCommandSettled = [&](const Core::AAP::AAPCommandOutcome &outcome,
+                                         const Core::AAP::AAPAttempt &) {
+            settled.set_value(outcome);
+        };
+        manager.SetCallbacks(std::move(callbacks));
+        const Core::AAP::AAPCommand command{Core::AAP::AAPCommandKind::SetLoudSoundReduction, 0x01};
+        QVERIFY(manager.SubmitCommand(command).accepted);
+        QCOMPARE(
+            manager.CommandMode(command.kind, command.value), Core::AAP::AAPConfirmMode::Readback);
+        manager.ProcessAttFrame({0x0B, 0x01}, manager._attempt, callbacks);
+        auto future = settled.get_future();
+        QVERIFY(future.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QCOMPARE(future.get().settlement, Core::AAP::AAPCommandSettlement::Confirmed);
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        const auto records = transport->SentRecords();
+        QCOMPARE(records.size(), size_t{2});
+        QCOMPARE(records[0], (std::vector<uint8_t>{0x12, 0x1B, 0x00, 0x01}));
+        QCOMPARE(records[1], (std::vector<uint8_t>{0x0A, 0x1B, 0x00}));
+        manager._connected = false;
+        manager._transport.store(nullptr);
+    }
+
     void ManagerConnectInitializesBeforeConnectionGateOpens()
     {
         Core::AAP::Manager manager;

@@ -263,6 +263,8 @@ public:
     void OnPersonalizedVolumeChanged(bool enable);
     void OnLoudSoundReductionChanged(bool enable);
     void OnPpeCapLevelChanged(uint8_t level);
+    void OnAdaptiveNoiseLevelChanged(uint8_t level);
+    void OnHeadTrackingChanged(bool enabled);
     void OnNoiseControlModeChanged(AAP::NoiseControlMode mode);
 
     // AAP Protocol features
@@ -276,6 +278,7 @@ public:
     std::optional<AAP::LoudSoundReductionState> GetLoudSoundReductionState() const;
     bool SetPpeCapLevel(uint8_t level);
     std::optional<uint8_t> GetPpeCapLevel() const;
+
     bool SetAdaptiveNoiseLevel(uint8_t level);
     bool IsAAPConnected() const;
 
@@ -313,6 +316,7 @@ private:
     std::atomic<bool> _personalizedVolumeEnabled{false};
     std::atomic<bool> _loudSoundReductionEnabled{false};
     std::atomic<uint8_t> _ppeCapLevel{AAP::kPpeCapLevelDefault};
+    std::atomic<uint8_t> _adaptiveNoiseLevel{50};
     std::atomic<int> _currentNoiseControlMode{-1};
     // AAP-over-BLE battery fusion. `_batteryFusionMutex` guards the three fields
     // below and is always a leaf lock: it may be taken while `_mutex` or
@@ -374,6 +378,7 @@ private:
     OnLoudSoundReductionStateChanged(AAP::LoudSoundReductionState state, AAP::AAPAttempt attempt);
     void OnAutomaticEarDetectionNotification(bool enabled, AAP::AAPAttempt attempt);
     void OnPpeCapLevelNotification(uint8_t level, AAP::AAPAttempt attempt);
+    void OnAAPCommandSettled(const AAP::AAPCommandOutcome &outcome, AAP::AAPAttempt attempt);
     void OnSpeakingLevelChanged(AAP::SpeakingLevel level, AAP::AAPAttempt attempt);
     void OnEarDetectionChanged(
         AAP::EarStatus primary, AAP::EarStatus secondary, AAP::AAPAttempt attempt);
@@ -415,6 +420,7 @@ Q_SIGNALS:
     // Payload is Core::AAP::ConnectFailure cast to int (registered metatypes
     // stay free of AAP enums).
     void AapConnectionFailedSafely(int failure);
+    void AapCommandFailedSafely(int kind, uint32_t rollbackValue);
 };
 
 std::vector<Core::Bluetooth::Device> GetDevices();

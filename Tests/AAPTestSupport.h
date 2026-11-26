@@ -32,9 +32,39 @@
 #include <utility>
 #include <vector>
 
+#include "Source/Core/AAPCommandBroker.h"
 #include "Source/Core/AAPTransport.h"
 
 namespace AAPTestSupport {
+
+// Deterministic broker clock. The broker's AdvanceTimeForTesting seam advances it and wakes the
+// echo wait; tests never sleep waiting for the production two-second deadline.
+class ManualClock
+{
+public:
+    using TimePoint = std::chrono::steady_clock::time_point;
+
+    ManualClock()
+    {
+        _now = TimePoint{};
+    }
+
+    TimePoint Now() const
+    {
+        std::lock_guard lock{_mutex};
+        return _now;
+    }
+
+    void Advance(std::chrono::milliseconds delta)
+    {
+        std::lock_guard lock{_mutex};
+        _now += delta;
+    }
+
+private:
+    mutable std::mutex _mutex;
+    TimePoint _now;
+};
 
 // Records are injected whole. The send limit models a failed atomic write, not a
 // byte stream: callers must never retry the unwritten suffix as another record.

@@ -192,6 +192,17 @@ Manager::Manager(QObject *parent) : QObject{parent}
         [this](auto &&...args) { OnAdvWatcherStateChanged(std::forward<decltype(args)>(args)...); };
 
     SetupAAPCallbacks();
+
+    // Seed a complete snapshot before any connection. Settings::Load may replace these values;
+    // every replacement is coalesced by kind and the final snapshot is replayed after reconnect.
+    _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetNoiseControl, 0x01});
+    _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetConversationalAwareness, 0x02});
+    _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetPersonalizedVolume, 0x02});
+    _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetLoudSoundReduction, 0x00});
+    _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetPpeCapLevel, _ppeCapLevel.load()});
+    _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetAdaptiveNoiseLevel, _adaptiveNoiseLevel.load()});
+    _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetAutomaticEarDetection, 0x01});
+    _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetHeadTracking, 0x00});
 }
 
 void Manager::SetupAAPCallbacks()
@@ -245,6 +256,11 @@ void Manager::SetupAAPCallbacks()
     callbacks.onAttProbeResult = [this](AAP::AttPathState state, AAP::AAPAttempt attempt) {
         OnAttProbeResult(state, attempt);
     };
+
+    callbacks.onCommandSettled =
+        [this](const AAP::AAPCommandOutcome &outcome, AAP::AAPAttempt attempt) {
+            OnAAPCommandSettled(outcome, attempt);
+        };
 
     callbacks.onConnected = [this](AAP::AAPAttempt attempt) { OnAAPConnected(attempt); };
 
@@ -366,8 +382,13 @@ void Manager::OnRssiMinChanged(int16_t rssiMin)
 
 void Manager::OnAutomaticEarDetectionChanged(bool enable)
 {
-    std::lock_guard<std::mutex> lock{_mutex};
-    _automaticEarDetection = enable;
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        _automaticEarDetection = enable;
+    }
+    _aapMgr.SubmitCommand(
+        {AAP::AAPCommandKind::SetAutomaticEarDetection,
+         static_cast<uint32_t>(enable ? 0x01 : 0x02)});
 }
 
 void Manager::OnBoundDeviceAddressChanged(uint64_t address)
@@ -883,7 +904,11 @@ void Manager::OnAdvWatcherStateChanged(
 
 bool Manager::SetNoiseControlMode(AAP::NoiseControlMode mode)
 {
-    return _aapMgr.SetNoiseControlMode(mode);
+    return _aapMgr
+        .SubmitCommand(
+            {AAP::AAPCommandKind::SetNoiseControl,
+             static_cast<uint32_t>(Helper::ToUnderlying(mode))})
+        .accepted;
 }
 
 std::optional<AAP::NoiseControlMode> Manager::GetNoiseControlMode() const
@@ -893,7 +918,11 @@ std::optional<AAP::NoiseControlMode> Manager::GetNoiseControlMode() const
 
 bool Manager::SetConversationalAwareness(bool enable)
 {
-    return _aapMgr.SetConversationalAwareness(enable);
+    return _aapMgr
+        .SubmitCommand(
+            {AAP::AAPCommandKind::SetConversationalAwareness,
+             static_cast<uint32_t>(enable ? 0x01 : 0x02)})
+        .accepted;
 }
 
 std::optional<AAP::ConversationalAwarenessState> Manager::GetConversationalAwarenessState() const
@@ -903,7 +932,11 @@ std::optional<AAP::ConversationalAwarenessState> Manager::GetConversationalAware
 
 bool Manager::SetPersonalizedVolume(bool enable)
 {
-    return _aapMgr.SetPersonalizedVolume(enable);
+    return _aapMgr
+        .SubmitCommand(
+            {AAP::AAPCommandKind::SetPersonalizedVolume,
+             static_cast<uint32_t>(enable ? 0x01 : 0x02)})
+        .accepted;
 }
 
 std::optional<AAP::PersonalizedVolumeState> Manager::GetPersonalizedVolumeState() const
@@ -913,7 +946,11 @@ std::optional<AAP::PersonalizedVolumeState> Manager::GetPersonalizedVolumeState(
 
 bool Manager::SetLoudSoundReduction(bool enable)
 {
-    return _aapMgr.SetLoudSoundReduction(enable);
+    return _aapMgr
+        .SubmitCommand(
+            {AAP::AAPCommandKind::SetLoudSoundReduction,
+             static_cast<uint32_t>(enable ? 0x01 : 0x00)})
+        .accepted;
 }
 
 std::optional<AAP::LoudSoundReductionState> Manager::GetLoudSoundReductionState() const
@@ -923,7 +960,10 @@ std::optional<AAP::LoudSoundReductionState> Manager::GetLoudSoundReductionState(
 
 bool Manager::SetPpeCapLevel(uint8_t level)
 {
-    return _aapMgr.SetPpeCapLevel(level);
+    return _aapMgr
+        .SubmitCommand(
+            {AAP::AAPCommandKind::SetPpeCapLevel, AAP::NormalizePpeCapLevel(level)})
+        .accepted;
 }
 
 std::optional<uint8_t> Manager::GetPpeCapLevel() const
@@ -933,7 +973,9 @@ std::optional<uint8_t> Manager::GetPpeCapLevel() const
 
 bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
 {
-    return _aapMgr.SetAdaptiveNoiseLevel(level);
+    return _aapMgr
+        .SubmitCommand({AAP::AAPCommandKind::SetAdaptiveNoiseLevel, std::min<uint8_t>(level, 100)})
+        .accepted;
 }
 
 bool Manager::IsAAPConnected() const
@@ -958,12 +1000,12 @@ AAP::ConnectFailure Manager::GetLastAAPConnectFailure() const
 
 bool Manager::StartHeadTracking()
 {
-    return _aapMgr.StartHeadTracking();
+    return _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetHeadTracking, 0x01}).accepted;
 }
 
 bool Manager::StopHeadTracking()
 {
-    return _aapMgr.StopHeadTracking();
+    return _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetHeadTracking, 0x00}).accepted;
 }
 
 bool Manager::IsHeadTrackingActive() const
@@ -973,12 +1015,13 @@ bool Manager::IsHeadTrackingActive() const
 
 void Manager::OnConversationalAwarenessChanged(bool enable)
 {
-    std::lock_guard<std::mutex> lock{_mutex};
-    _conversationalAwarenessEnabled = enable;
-
-    if (_aapMgr.IsConnected()) {
-        _aapMgr.SetConversationalAwareness(enable);
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        _conversationalAwarenessEnabled = enable;
     }
+    _aapMgr.SubmitCommand(
+        {AAP::AAPCommandKind::SetConversationalAwareness,
+         static_cast<uint32_t>(enable ? 0x01 : 0x02)});
 }
 
 void Manager::OnConversationalAwarenessVolumePercentChanged(uint8_t percent)
@@ -992,43 +1035,49 @@ void Manager::OnConversationalAwarenessVolumePercentChanged(uint8_t percent)
 
 void Manager::OnPersonalizedVolumeChanged(bool enable)
 {
-    std::lock_guard<std::mutex> lock{_mutex};
-    _personalizedVolumeEnabled = enable;
-
-    if (_aapMgr.IsConnected()) {
-        _aapMgr.SetPersonalizedVolume(enable);
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        _personalizedVolumeEnabled = enable;
     }
+    _aapMgr.SubmitCommand(
+        {AAP::AAPCommandKind::SetPersonalizedVolume, static_cast<uint32_t>(enable ? 0x01 : 0x02)});
 }
 
 void Manager::OnLoudSoundReductionChanged(bool enable)
 {
-    std::lock_guard<std::mutex> lock{_mutex};
-    _loudSoundReductionEnabled = enable;
-
-    if (_aapMgr.IsConnected()) {
-        _aapMgr.SetLoudSoundReduction(enable);
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        _loudSoundReductionEnabled = enable;
     }
+    _aapMgr.SubmitCommand(
+        {AAP::AAPCommandKind::SetLoudSoundReduction, static_cast<uint32_t>(enable ? 0x01 : 0x00)});
 }
 
 void Manager::OnPpeCapLevelChanged(uint8_t level)
 {
-    std::lock_guard<std::mutex> lock{_mutex};
     // Clamp at the domain boundary so a non-UI caller cannot bypass the 0-100 range.
     const auto normalized = AAP::NormalizePpeCapLevel(level);
     _ppeCapLevel = normalized;
+    _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetPpeCapLevel, normalized});
+}
 
-    if (_aapMgr.IsConnected()) {
-        _aapMgr.SetPpeCapLevel(normalized);
-    }
+void Manager::OnAdaptiveNoiseLevelChanged(uint8_t level)
+{
+    _adaptiveNoiseLevel = std::min<uint8_t>(level, 100);
+    _aapMgr.SubmitCommand({AAP::AAPCommandKind::SetAdaptiveNoiseLevel, _adaptiveNoiseLevel.load()});
+}
+
+void Manager::OnHeadTrackingChanged(bool enabled)
+{
+    _aapMgr.SubmitCommand(
+        {AAP::AAPCommandKind::SetHeadTracking, static_cast<uint32_t>(enabled ? 0x01 : 0x00)});
 }
 
 void Manager::OnNoiseControlModeChanged(AAP::NoiseControlMode mode)
 {
-    std::lock_guard<std::mutex> lock{_mutex};
-
-    if (_aapMgr.IsConnected()) {
-        _aapMgr.SetNoiseControlMode(mode);
-    }
+    _currentNoiseControlMode = static_cast<int>(mode);
+    _aapMgr.SubmitCommand(
+        {AAP::AAPCommandKind::SetNoiseControl, static_cast<uint32_t>(Helper::ToUnderlying(mode))});
 }
 
 // AAP callbacks
@@ -1086,6 +1135,18 @@ void Manager::OnPpeCapLevelNotification(uint8_t level, AAP::AAPAttempt attempt)
         return;
     }
     LOG(Info, "PPE cap level notification: {}", level);
+}
+
+void Manager::OnAAPCommandSettled(const AAP::AAPCommandOutcome &outcome, AAP::AAPAttempt attempt)
+{
+    if (!IsCurrentAAPAttempt(attempt) || !outcome.rollBackDesired) {
+        return;
+    }
+    // Worker threads never touch settings/widgets. UINT32_MAX means no confirmed baseline exists,
+    // so a receiver must refresh rather than inventing a rollback value.
+    emit AapCommandFailedSafely(
+        static_cast<int>(outcome.command.kind),
+        outcome.rollbackValue.value_or(std::numeric_limits<uint32_t>::max()));
 }
 
 void Manager::OnAttProbeResult(AAP::AttPathState state, AAP::AAPAttempt attempt)
@@ -1301,11 +1362,7 @@ void Manager::OnAAPConnected(AAP::AAPAttempt attempt)
     LOG(Info, "AAP connection established - ANC features available");
     emit AapConnectionStateChangedSafely(true);
 
-    // Apply user's conversational awareness preference. The preference fields are written
-    // from settings callbacks on this same worker thread, so no queued reordering is needed.
-    if (_conversationalAwarenessEnabled) {
-        _aapMgr.SetConversationalAwareness(true);
-    }
+    // The broker replays the complete desired snapshot; never fire an extra direct write here.
 }
 
 void Manager::OnAAPDisconnected(AAP::AAPAttempt attempt)

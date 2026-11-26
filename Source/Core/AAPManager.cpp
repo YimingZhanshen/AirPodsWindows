@@ -31,7 +31,16 @@
 
 namespace Core::AAP {
 
-Manager::Manager() = default;
+Manager::Manager()
+{
+    // The broker owns serialization and desired state; this layer only answers it with the wire
+    // encoding, the connection gate, and the protocol evidence that arrives on the reader.
+    _commandBroker = std::make_unique<AAPCommandBroker>(
+        [this](const AAPCommand &command, uint64_t generation, std::stop_token stopToken) {
+            return SendCommand(command, generation, stopToken);
+        },
+        [this](const AAPCommandOutcome &outcome) { HandleCommandSettled(outcome); });
+}
 
 Manager::~Manager()
 {
@@ -181,6 +190,11 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         _lastConnectFailure.store(ConnectFailure::None);
     }
 
+    // The session is live: the broker may now put commands on the wire, and everything the user
+    // asked for while we were disconnected goes out again in a fixed order.
+    _commandBroker->BeginSession(attempt.generation);
+    _commandBroker->ReplayDesiredState(attempt.generation);
+
     if (callbacks.onConnected) {
         callbacks.onConnected(attempt);
     }
@@ -289,12 +303,18 @@ void Manager::Disconnect()
         reader.join();
     }
 
+    // Close the broker session after the reader is pinned and joined; desired values survive.
+    _commandBroker->EndSession();
+
     {
         std::lock_guard lock{_mutex};
         _noiseControlMode.reset();
         _conversationalAwarenessState.reset();
+        _personalizedVolumeState.reset();
+        _automaticEarDetectionState.reset();
         _loudSoundReductionState.reset();
         _batterySnapshot.reset();
+        _ppeCapLevel.reset();
         _attPathState.store(AttPathState::Unknown);
         _attProbeDeadlineMs.store(0);
     }
@@ -459,7 +479,6 @@ bool Manager::SetPpeCapLevel(uint8_t level)
     // Docs/AAP-Protocol-Spec.md §7. Values outside the documented range (including stale
     // pre-P5 inputs from the old 0-50 adaptive-transparency UI) clamp at the domain edge.
     level = NormalizePpeCapLevel(level);
-
     auto packet = Packets::BuildPpeCapLevelPacket(level);
     if (!SendPacket(packet)) {
         return false;
@@ -540,6 +559,244 @@ bool Manager::IsHeadTrackingActive() const
     return _headTrackingActive;
 }
 
+AAPCommandResult Manager::SubmitCommand(AAPCommand command, std::stop_token stopToken)
+{
+    CommandMode(command.kind, command.value);
+    return _commandBroker->Submit(command, stopToken);
+}
+
+std::optional<uint32_t> Manager::DesiredCommand(AAPCommandKind kind) const
+{
+    return _commandBroker->Desired(kind);
+}
+
+std::optional<uint32_t> Manager::ConfirmedCommand(AAPCommandKind kind) const
+{
+    return _commandBroker->Confirmed(kind);
+}
+
+AAPConfirmMode Manager::CommandMode(AAPCommandKind kind, uint32_t value) const
+{
+    // ATT-on-AAP is unverified on Windows. Without a proven read path, silence cannot distinguish
+    // an applied LSR write from an ignored one, so do not manufacture a timeout/rollback.
+    if (kind == AAPCommandKind::SetLoudSoundReduction &&
+        GetAttPathState() != AttPathState::Confirmed)
+    {
+        _commandBroker->SetConfirmMode(kind, AAPConfirmMode::Unverifiable);
+    }
+    return _commandBroker->Mode(kind, value);
+}
+
+bool Manager::WaitForCommandsIdle(std::chrono::milliseconds timeout)
+{
+    return _commandBroker->WaitForIdle(timeout);
+}
+
+bool Manager::SendCommand(const AAPCommand &command, uint64_t generation, std::stop_token stopToken)
+{
+    std::shared_ptr<AAPTransport> transport;
+    {
+        std::lock_guard lock{_mutex};
+        if (!_connected || _attempt.generation != generation || stopToken.stop_requested()) {
+            return false;
+        }
+        transport = _transport.load();
+    }
+
+    std::vector<uint8_t> packet;
+    switch (command.kind) {
+    case AAPCommandKind::SetNoiseControl:
+        if (command.value < 0x01 || command.value > 0x04) {
+            return false;
+        }
+        packet = Packets::BuildNoiseControlPacket(static_cast<NoiseControlMode>(command.value));
+        break;
+    case AAPCommandKind::SetConversationalAwareness:
+        if (command.value < 0x01 || command.value > 0x02) {
+            return false;
+        }
+        packet = Packets::BuildConversationalAwarenessPacket(command.value == 0x01);
+        break;
+    case AAPCommandKind::SetPersonalizedVolume:
+        if (command.value < 0x01 || command.value > 0x02) {
+            return false;
+        }
+        packet = Packets::BuildPersonalizedVolumePacket(command.value == 0x01);
+        break;
+    case AAPCommandKind::SetLoudSoundReduction:
+        if (command.value > 0x01) {
+            return false;
+        }
+        packet = Packets::BuildLoudSoundReductionPacket(command.value == 0x01);
+        break;
+    case AAPCommandKind::SetPpeCapLevel:
+        packet =
+            Packets::BuildPpeCapLevelPacket(static_cast<uint8_t>(std::min(command.value, 100U)));
+        break;
+    case AAPCommandKind::SetAdaptiveNoiseLevel:
+        packet =
+            Packets::BuildAdaptiveNoisePacket(static_cast<uint8_t>(std::min(command.value, 100U)));
+        break;
+    case AAPCommandKind::SetAutomaticEarDetection:
+        if (command.value < 0x01 || command.value > 0x02) {
+            return false;
+        }
+        packet = Packets::BuildAutomaticEarDetectionPacket(command.value == 0x01);
+        break;
+    case AAPCommandKind::SetHeadTracking:
+        if (command.value > 0x01) {
+            return false;
+        }
+        packet = command.value ? Packets::StartHeadTracking : Packets::StopHeadTracking;
+        break;
+    default:
+        return false;
+    }
+
+    if (!SendPacket(transport, packet, stopToken)) {
+        return false;
+    }
+    if (command.kind == AAPCommandKind::SetLoudSoundReduction) {
+        // The write has no response. A read in the same serial slot supplies the readback; failure
+        // to issue that read is not proof that the already-written value was rejected.
+        SendPacket(transport, Att::BuildReadRequest(Att::kLoudSoundReductionHandle), stopToken);
+    }
+    if (command.kind == AAPCommandKind::SetHeadTracking) {
+        _headTrackingActive.store(command.value != 0);
+    }
+    return true;
+}
+
+void Manager::RouteCommandEcho(AAPCommand command, AAPAttempt attempt)
+{
+    if (IsCurrentAttempt(attempt)) {
+        _commandBroker->OnEcho(command, attempt.generation);
+    }
+}
+
+void Manager::HandleCommandSettled(const AAPCommandOutcome &outcome)
+{
+    const bool showValue = outcome.settlement == AAPCommandSettlement::Confirmed ||
+                           outcome.settlement == AAPCommandSettlement::AppliedUnconfirmed ||
+                           outcome.rollBackDesired;
+    const auto value = outcome.rollBackDesired ? outcome.rollbackValue
+                                               : std::optional<uint32_t>{outcome.command.value};
+    if (!showValue || !value.has_value()) {
+        Callbacks callbacks;
+        AAPAttempt attempt;
+        {
+            std::lock_guard lock{_mutex};
+            callbacks = _callbacks;
+            attempt = {_attempt.address, outcome.generation};
+            if (outcome.command.kind == AAPCommandKind::SetHeadTracking &&
+                (outcome.settlement == AAPCommandSettlement::TimedOut ||
+                 outcome.settlement == AAPCommandSettlement::Rejected))
+            {
+                _headTrackingActive.store(false);
+            }
+        }
+        if (callbacks.onCommandSettled) {
+            callbacks.onCommandSettled(outcome, attempt);
+        }
+        return;
+    }
+
+    AAPAttempt attempt{0, outcome.generation};
+    Callbacks callbacks;
+    std::optional<NoiseControlMode> noise;
+    std::optional<ConversationalAwarenessState> conversation;
+    std::optional<PersonalizedVolumeState> personalized;
+    std::optional<LoudSoundReductionState> loudSound;
+    std::optional<uint8_t> ppe;
+    std::optional<bool> earDetection;
+    {
+        std::lock_guard lock{_mutex};
+        attempt.address = _attempt.address;
+        callbacks = _callbacks;
+        switch (outcome.command.kind) {
+        case AAPCommandKind::SetNoiseControl:
+            if (*value >= 0x01 && *value <= 0x04) {
+                _noiseControlMode = static_cast<NoiseControlMode>(*value);
+                noise = _noiseControlMode;
+            }
+            break;
+        case AAPCommandKind::SetConversationalAwareness:
+            if (*value >= 0x01 && *value <= 0x02) {
+                _conversationalAwarenessState = *value == 0x01
+                                                    ? ConversationalAwarenessState::Enabled
+                                                    : ConversationalAwarenessState::Disabled;
+                conversation = _conversationalAwarenessState;
+            }
+            break;
+        case AAPCommandKind::SetPersonalizedVolume:
+            if (*value >= 0x01 && *value <= 0x02) {
+                _personalizedVolumeState = *value == 0x01 ? PersonalizedVolumeState::Enabled
+                                                          : PersonalizedVolumeState::Disabled;
+                personalized = _personalizedVolumeState;
+            }
+            break;
+        case AAPCommandKind::SetLoudSoundReduction:
+            _loudSoundReductionState = *value == 0x01 ? LoudSoundReductionState::Enabled
+                                                      : LoudSoundReductionState::Disabled;
+            loudSound = _loudSoundReductionState;
+            break;
+        case AAPCommandKind::SetPpeCapLevel:
+            _ppeCapLevel = static_cast<uint8_t>(std::min(*value, 100U));
+            ppe = _ppeCapLevel;
+            break;
+        case AAPCommandKind::SetAutomaticEarDetection:
+            if (*value >= 0x01 && *value <= 0x02) {
+                _automaticEarDetectionState = *value == 0x01;
+                earDetection = _automaticEarDetectionState;
+            }
+            break;
+        case AAPCommandKind::SetHeadTracking:
+            _headTrackingActive.store(*value != 0);
+            break;
+        default:
+            break;
+        }
+    }
+
+    switch (outcome.command.kind) {
+    case AAPCommandKind::SetNoiseControl:
+        if (callbacks.onNoiseControlChanged && noise) {
+            callbacks.onNoiseControlChanged(*noise, attempt);
+        }
+        break;
+    case AAPCommandKind::SetConversationalAwareness:
+        if (callbacks.onConversationalAwarenessChanged && conversation) {
+            callbacks.onConversationalAwarenessChanged(*conversation, attempt);
+        }
+        break;
+    case AAPCommandKind::SetPersonalizedVolume:
+        if (callbacks.onPersonalizedVolumeChanged && personalized) {
+            callbacks.onPersonalizedVolumeChanged(*personalized, attempt);
+        }
+        break;
+    case AAPCommandKind::SetLoudSoundReduction:
+        if (callbacks.onLoudSoundReductionChanged && loudSound) {
+            callbacks.onLoudSoundReductionChanged(*loudSound, attempt);
+        }
+        break;
+    case AAPCommandKind::SetPpeCapLevel:
+        if (callbacks.onPpeCapLevelChanged && ppe) {
+            callbacks.onPpeCapLevelChanged(*ppe, attempt);
+        }
+        break;
+    case AAPCommandKind::SetAutomaticEarDetection:
+        if (callbacks.onAutomaticEarDetectionChanged && earDetection) {
+            callbacks.onAutomaticEarDetectionChanged(*earDetection, attempt);
+        }
+        break;
+    default:
+        break;
+    }
+    if (callbacks.onCommandSettled) {
+        callbacks.onCommandSettled(outcome, attempt);
+    }
+}
+
 void Manager::SetCallbacks(Callbacks callbacks)
 {
     std::lock_guard<std::mutex> lock{_mutex};
@@ -603,6 +860,8 @@ void Manager::ProcessAttFrame(
     // so the value belongs to loud sound reduction.
     if (Att::IsReadResponse(packet)) {
         auto previous = _attPathState.exchange(AttPathState::Confirmed);
+        _commandBroker->SetConfirmMode(
+            AAPCommandKind::SetLoudSoundReduction, AAPConfirmMode::Readback);
         if (previous != AttPathState::Confirmed && callbacks.onAttProbeResult) {
             callbacks.onAttProbeResult(AttPathState::Confirmed, attempt);
         }
@@ -619,6 +878,10 @@ void Manager::ProcessAttFrame(
                 state = LoudSoundReductionState::Disabled;
             }
             if (state.has_value()) {
+                RouteCommandEcho(
+                    {AAPCommandKind::SetLoudSoundReduction,
+                     static_cast<uint32_t>(Helper::ToUnderlying(*state))},
+                    attempt);
                 {
                     std::lock_guard<std::mutex> lock{_mutex};
                     _loudSoundReductionState = state;
@@ -635,6 +898,8 @@ void Manager::ProcessAttFrame(
     // alive even though the value is unavailable.
     if (Att::IsErrorResponse(packet)) {
         auto previous = _attPathState.exchange(AttPathState::Confirmed);
+        _commandBroker->SetConfirmMode(
+            AAPCommandKind::SetLoudSoundReduction, AAPConfirmMode::Unverifiable);
         if (previous != AttPathState::Confirmed && callbacks.onAttProbeResult) {
             callbacks.onAttProbeResult(AttPathState::Confirmed, attempt);
         }
@@ -657,6 +922,10 @@ void Manager::ProcessAttFrame(
                 state = LoudSoundReductionState::Disabled;
             }
             if (state.has_value()) {
+                RouteCommandEcho(
+                    {AAPCommandKind::SetLoudSoundReduction,
+                     static_cast<uint32_t>(Helper::ToUnderlying(*state))},
+                    attempt);
                 {
                     std::lock_guard<std::mutex> lock{_mutex};
                     _loudSoundReductionState = state;
@@ -740,6 +1009,12 @@ void Manager::ProcessPacket(
                 std::lock_guard<std::mutex> lock{_mutex};
                 _noiseControlMode = mode;
             }
+            if (*mode != NoiseControlMode::Unknown) {
+                RouteCommandEcho(
+                    {AAPCommandKind::SetNoiseControl,
+                     static_cast<uint32_t>(Helper::ToUnderlying(*mode))},
+                    attempt);
+            }
             LOG(Info, "AAP: Noise control mode changed to {}",
                 Helper::ToString(mode.value()).toStdString());
             if (callbacks.onNoiseControlChanged) {
@@ -756,6 +1031,12 @@ void Manager::ProcessPacket(
             {
                 std::lock_guard<std::mutex> lock{_mutex};
                 _conversationalAwarenessState = state;
+            }
+            if (*state != ConversationalAwarenessState::Unknown) {
+                RouteCommandEcho(
+                    {AAPCommandKind::SetConversationalAwareness,
+                     static_cast<uint32_t>(Helper::ToUnderlying(*state))},
+                    attempt);
             }
             LOG(Info, "AAP: Conversational awareness state: {}",
                 Helper::ToString(state.value()).toStdString());
@@ -774,6 +1055,12 @@ void Manager::ProcessPacket(
                 std::lock_guard<std::mutex> lock{_mutex};
                 _personalizedVolumeState = state;
             }
+            if (*state != PersonalizedVolumeState::Unknown) {
+                RouteCommandEcho(
+                    {AAPCommandKind::SetPersonalizedVolume,
+                     static_cast<uint32_t>(Helper::ToUnderlying(*state))},
+                    attempt);
+            }
             LOG(Info, "AAP: Personalized volume state: {}", static_cast<int>(state.value()));
             if (callbacks.onPersonalizedVolumeChanged) {
                 callbacks.onPersonalizedVolumeChanged(state.value(), attempt);
@@ -790,6 +1077,10 @@ void Manager::ProcessPacket(
                 std::lock_guard<std::mutex> lock{_mutex};
                 _automaticEarDetectionState = state;
             }
+            RouteCommandEcho(
+                {AAPCommandKind::SetAutomaticEarDetection,
+                 static_cast<uint32_t>(state ? 0x01 : 0x02)},
+                attempt);
             LOG(Info, "AAP: Automatic ear detection: {}", state.value() ? "enabled" : "disabled");
             if (callbacks.onAutomaticEarDetectionChanged) {
                 callbacks.onAutomaticEarDetectionChanged(state.value(), attempt);
@@ -798,19 +1089,9 @@ void Manager::ProcessPacket(
         return;
     }
 
-    // Loud sound reduction notification
+    // Loud sound reduction uses ATT readback/notification, never control id 0x25.
     if (IsLoudSoundReductionNotification(packet)) {
-        auto state = ParseLoudSoundReductionState(packet);
-        if (state.has_value()) {
-            {
-                std::lock_guard<std::mutex> lock{_mutex};
-                _loudSoundReductionState = state;
-            }
-            LOG(Info, "AAP: Loud sound reduction: {}", static_cast<int>(state.value()));
-            if (callbacks.onLoudSoundReductionChanged) {
-                callbacks.onLoudSoundReductionChanged(state.value(), attempt);
-            }
-        }
+        LOG(Trace, "AAP: Ignoring VolumeSwipe record 0x25 (not loud sound reduction)");
         return;
     }
 
@@ -822,6 +1103,7 @@ void Manager::ProcessPacket(
                 std::lock_guard<std::mutex> lock{_mutex};
                 _ppeCapLevel = level;
             }
+            RouteCommandEcho({AAPCommandKind::SetPpeCapLevel, *level}, attempt);
             LOG(Info, "AAP: PPE cap level: {}", level.value());
             if (callbacks.onPpeCapLevelChanged) {
                 callbacks.onPpeCapLevelChanged(level.value(), attempt);
@@ -871,8 +1153,11 @@ void Manager::ProcessPacket(
         packet[2] == 0x04 && packet[3] == 0x00 && packet[4] == 0x17 && packet[5] == 0x00)
     {
         auto trackingData = ParseHeadTrackingData(packet);
-        if (trackingData.has_value() && callbacks.onHeadTrackingData) {
-            callbacks.onHeadTrackingData(trackingData.value(), attempt);
+        if (trackingData.has_value()) {
+            RouteCommandEcho({AAPCommandKind::SetHeadTracking, 0x01}, attempt);
+            if (callbacks.onHeadTrackingData) {
+                callbacks.onHeadTrackingData(trackingData.value(), attempt);
+            }
         }
         return;
     }
@@ -917,6 +1202,7 @@ void Manager::ReaderLoop(
         callback = _callbacks.onDisconnected;
     }
 
+    _commandBroker->EndSession();
     if (callback) {
         callback(active);
     }
@@ -1006,7 +1292,11 @@ bool Manager::IsMagicAAPDriverAvailable()
 // Stub implementation for non-Windows platforms
 namespace Core::AAP {
 
-Manager::Manager() {}
+Manager::Manager()
+{
+    _commandBroker = std::make_unique<AAPCommandBroker>(
+        [](const AAPCommand &, uint64_t, std::stop_token) { return false; });
+}
 Manager::~Manager()
 {
     Disconnect();
@@ -1073,6 +1363,7 @@ bool Manager::SetPpeCapLevel(uint8_t)
 {
     return false;
 }
+
 std::optional<uint8_t> Manager::GetPpeCapLevel() const
 {
     return std::nullopt;
@@ -1094,6 +1385,26 @@ bool Manager::IsHeadTrackingActive() const
     return false;
 }
 void Manager::SetCallbacks(Callbacks) {}
+AAPCommandResult Manager::SubmitCommand(AAPCommand command, std::stop_token stopToken)
+{
+    return _commandBroker->Submit(command, stopToken);
+}
+std::optional<uint32_t> Manager::DesiredCommand(AAPCommandKind kind) const
+{
+    return _commandBroker->Desired(kind);
+}
+std::optional<uint32_t> Manager::ConfirmedCommand(AAPCommandKind kind) const
+{
+    return _commandBroker->Confirmed(kind);
+}
+AAPConfirmMode Manager::CommandMode(AAPCommandKind kind, uint32_t value) const
+{
+    return _commandBroker->Mode(kind, value);
+}
+bool Manager::WaitForCommandsIdle(std::chrono::milliseconds timeout)
+{
+    return _commandBroker->WaitForIdle(timeout);
+}
 bool Manager::IsMagicAAPDriverAvailable()
 {
     return false;

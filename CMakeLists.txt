@@ -326,6 +326,7 @@ set(
     "Source/Core/AAPConnectionStateMachine.cpp"
     "Source/Core/AAPBattery.cpp"
     "Source/Core/BatteryFusion.cpp"
+    "Source/Core/AAPCommandBroker.cpp"
     "Source/Core/AppleCP.cpp"
 )
 
