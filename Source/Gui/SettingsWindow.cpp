@@ -39,6 +39,7 @@
 
 #include "../Core/Debug.h"
 #include "../Core/ConnectionDiagnostics.h"
+#include "../Core/PpeCapLevel.h"
 #include "Widget/DriverStatusCard.h"
 
 using namespace std::chrono_literals;
@@ -615,8 +616,9 @@ void SettingsWindow::Update(const Fields &fields, bool trigger)
         _ui.cbNoiseControlMode->setCurrentIndex(noiseControlIndex);
     }
 
-    _ui.hsPpeCapLevel->setValue(fields.ppe_cap_level);
-    _ui.lblPpeCapLevelValue->setText(QString::number(fields.ppe_cap_level));
+    const auto normalizedPpeCapLevel = Core::AAP::NormalizePpeCapLevel(fields.ppe_cap_level);
+    _ui.hsPpeCapLevel->setValue(normalizedPpeCapLevel);
+    _ui.lblPpeCapLevelValue->setText(QString::number(normalizedPpeCapLevel));
 
     _ui.hsMaxReceivingRange->setValue(-fields.rssi_min);
 
