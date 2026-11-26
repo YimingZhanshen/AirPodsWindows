@@ -326,6 +326,8 @@ auto StateManager::UpdateState() -> std::optional<UpdateEvent>
 
 std::function<void()> StateManager::ResetAll()
 {
+    // The discard callback also resets Manager's derived ear tracker. A rebuilt BLE state must
+    // establish a new debounce baseline instead of completing a pre-gap candidate.
     auto onDiscardState = _cachedState.has_value() ? _onDiscardState : nullptr;
 
     _adv.left.reset();

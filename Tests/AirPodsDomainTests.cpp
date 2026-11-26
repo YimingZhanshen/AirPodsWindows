@@ -21,6 +21,7 @@
 #include <Config.h>
 #include "Source/Core/AirPods.h"
 #include "Source/Core/BatteryFusion.h"
+#include "Source/Core/EarDetectionDebounce.h"
 #include "Source/Core/Settings.h"
 #include "Source/Core/SettingsRepository.h"
 #include "Source/Core/Update.h"
@@ -29,6 +30,9 @@
 
 namespace {
 
+using Core::EarDetectionDebounce;
+using Core::EarDetectSensitivity;
+using Core::EarState;
 using Core::AirPods::Model;
 using Core::AirPods::Side;
 using Core::AirPods::Details::Advertisement;
@@ -56,6 +60,10 @@ public:
     void OnAutomaticEarDetectionChanged(bool enable) override
     {
         automaticEarDetection = enable;
+    }
+    void OnEarDetectSensitivityChanged(EarDetectSensitivity sensitivity) override
+    {
+        earDetectSensitivity = sensitivity;
     }
     void OnConversationalAwarenessChanged(bool enable) override
     {
@@ -102,6 +110,7 @@ public:
     void OnTaskbarBatteryChanged(Core::Settings::TaskbarStatusBehavior) override {}
 
     bool automaticEarDetection{false};
+    EarDetectSensitivity earDetectSensitivity{EarDetectSensitivity::Normal};
     bool conversationalAwareness{false};
     uint8_t conversationalAwarenessVolumePercent{};
     bool personalizedVolume{false};
@@ -274,6 +283,12 @@ private Q_SLOTS:
     void TracksLidWhilePodsAreOut();
     void LidPopupCooldownBlocksRapidRepeats();
     void EarDetectionTrackerSurvivesStateLoss();
+    void DebouncesRapidRemovalAndInsertion();
+    void SingleEarAlternationUsesFusedResult();
+    void EarDetectionFiltersJitter();
+    void FusesAapOverBleAndFallsBackOnReset();
+    void EarDetectionResetsAcrossStateLoss();
+    void EarDetectionSensitivityTimings();
     void PackagesCompatibleLowLatencySilence();
     void LoadsSettingsThroughRepository();
     void MigratesLegacySettingsRepository();
@@ -1358,22 +1373,147 @@ void AirPodsDomainTests::LidPopupCooldownBlocksRapidRepeats()
     QCOMPARE(tracker.Update(Lid::Closed, Lid::Opened, start + 124s), std::optional<bool>{true});
 }
 
-void AirPodsDomainTests::EarDetectionTrackerSurvivesStateLoss()
+void AirPodsDomainTests::DebouncesRapidRemovalAndInsertion()
+{
+    EarDetectionDebounce debounce;
+    QCOMPARE(debounce.Update(EarState::InEar, 0ms), EarState::Unknown);
+    QCOMPARE(debounce.Update(EarState::InEar, 299ms), EarState::Unknown);
+    QCOMPARE(debounce.Update(EarState::InEar, 300ms), EarState::InEar);
+
+    QCOMPARE(debounce.Update(EarState::OutOfEar, 310ms), EarState::InEar);
+    QCOMPARE(debounce.Update(EarState::InEar, 410ms), EarState::InEar);
+    QCOMPARE(debounce.Update(EarState::OutOfEar, 510ms), EarState::InEar);
+    QCOMPARE(debounce.Update(EarState::OutOfEar, 809ms), EarState::InEar);
+    QCOMPARE(debounce.Update(EarState::OutOfEar, 810ms), EarState::OutOfEar);
+
+    QCOMPARE(debounce.Update(EarState::InEar, 900ms), EarState::OutOfEar);
+    QCOMPARE(debounce.Update(EarState::InEar, 1199ms), EarState::OutOfEar);
+    QCOMPARE(debounce.Update(EarState::InEar, 1200ms), EarState::InEar);
+}
+
+void AirPodsDomainTests::SingleEarAlternationUsesFusedResult()
 {
     const auto makeState = [](bool leftInEar, bool rightInEar) {
         Core::AirPods::State state;
+        state.pods.left.battery = Core::AirPods::Battery{80};
+        state.pods.right.battery = Core::AirPods::Battery{70};
         state.pods.left.isInEar = leftInEar;
         state.pods.right.isInEar = rightInEar;
         return state;
     };
     EarDetectionTracker tracker;
-    QCOMPARE(tracker.Update(makeState(true, true)), std::optional<bool>{});
-    QCOMPARE(tracker.Update(makeState(true, false)), std::optional<bool>{false});
-    QCOMPARE(tracker.Update(makeState(true, false)), std::optional<bool>{});
-    QCOMPARE(tracker.Update(makeState(false, false)), std::optional<bool>{});
-    QCOMPARE(tracker.Update(makeState(true, true)), std::optional<bool>{true});
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 0ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 300ms), std::optional<EarState>{});
+    QCOMPARE(tracker.CurrentState(), EarState::InEar);
+
+    QCOMPARE(tracker.UpdateBle(makeState(false, true), 400ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(true, false), 500ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(false, true), 600ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(true, false), 700ms), std::optional<EarState>{});
+    QCOMPARE(tracker.CurrentState(), EarState::InEar);
+
+    QCOMPARE(tracker.UpdateBle(makeState(false, false), 800ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(false, false), 1099ms), std::optional<EarState>{});
+    QCOMPARE(
+        tracker.UpdateBle(makeState(false, false), 1100ms),
+        std::optional<EarState>{EarState::OutOfEar});
+}
+
+void AirPodsDomainTests::EarDetectionFiltersJitter()
+{
+    EarDetectionDebounce debounce{EarDetectSensitivity::High};
+    QCOMPARE(debounce.Update(EarState::InEar, 0ms), EarState::Unknown);
+    QCOMPARE(debounce.Update(EarState::InEar, 150ms), EarState::InEar);
+    for (int i = 0; i < 10; ++i) {
+        const auto now = std::chrono::milliseconds{200 + i * 100};
+        const auto candidate = i % 2 == 0 ? EarState::OutOfEar : EarState::InEar;
+        QCOMPARE(debounce.Update(candidate, now), EarState::InEar);
+    }
+    QCOMPARE(debounce.Update(EarState::Unknown, 1200ms), EarState::InEar);
+    QCOMPARE(debounce.Update(EarState::InEar, 1300ms), EarState::InEar);
+}
+
+void AirPodsDomainTests::FusesAapOverBleAndFallsBackOnReset()
+{
+    const auto makeState = [](bool leftInEar, bool rightInEar) {
+        Core::AirPods::State state;
+        state.pods.left.battery = Core::AirPods::Battery{80};
+        state.pods.right.battery = Core::AirPods::Battery{70};
+        state.pods.left.isInEar = leftInEar;
+        state.pods.right.isInEar = rightInEar;
+        return state;
+    };
+    EarDetectionTracker tracker;
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 0ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 300ms), std::optional<EarState>{});
+
+    // A current AAP report wins over a conflicting stale BLE report, but still debounces.
+    QCOMPARE(
+        tracker.UpdateAap(EarState::OutOfEar, EarState::OutOfEar, 400ms),
+        std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 500ms), std::optional<EarState>{});
+    QCOMPARE(
+        tracker.UpdateAap(EarState::OutOfEar, EarState::OutOfEar, 699ms),
+        std::optional<EarState>{});
+    QCOMPARE(
+        tracker.UpdateAap(EarState::OutOfEar, EarState::OutOfEar, 700ms),
+        std::optional<EarState>{EarState::OutOfEar});
+
+    tracker.ResetAap();
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 800ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 1099ms), std::optional<EarState>{});
+    QCOMPARE(
+        tracker.UpdateBle(makeState(true, true), 1100ms), std::optional<EarState>{EarState::InEar});
+
+    // An unknown AAP side falls back to BLE instead of forcing a false transition.
+    QCOMPARE(
+        tracker.UpdateAap(EarState::Unknown, EarState::InEar, 1200ms), std::optional<EarState>{});
+    QCOMPARE(tracker.CurrentState(), EarState::InEar);
+}
+
+void AirPodsDomainTests::EarDetectionResetsAcrossStateLoss()
+{
+    const auto makeState = [](bool leftInEar, bool rightInEar) {
+        Core::AirPods::State state;
+        state.pods.left.battery = Core::AirPods::Battery{80};
+        state.pods.right.battery = Core::AirPods::Battery{70};
+        state.pods.left.isInEar = leftInEar;
+        state.pods.right.isInEar = rightInEar;
+        return state;
+    };
+    EarDetectionTracker tracker;
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 0ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 300ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(false, false), 400ms), std::optional<EarState>{});
+
+    // A rebuilt StateManager must discard the old pending candidate and establish a new baseline.
     tracker.Reset();
-    QCOMPARE(tracker.Update(makeState(true, true)), std::optional<bool>{});
+    QCOMPARE(tracker.CurrentState(), EarState::Unknown);
+    QCOMPARE(tracker.UpdateBle(makeState(false, false), 500ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(false, false), 799ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(false, false), 800ms), std::optional<EarState>{});
+    QCOMPARE(tracker.CurrentState(), EarState::OutOfEar);
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 900ms), std::optional<EarState>{});
+    QCOMPARE(
+        tracker.UpdateBle(makeState(true, true), 1200ms), std::optional<EarState>{EarState::InEar});
+}
+
+void AirPodsDomainTests::EarDetectionSensitivityTimings()
+{
+    const std::array<std::pair<EarDetectSensitivity, std::chrono::milliseconds>, 3> cases{{
+        {EarDetectSensitivity::Low, 600ms},
+        {EarDetectSensitivity::Normal, 300ms},
+        {EarDetectSensitivity::High, 150ms},
+    }};
+    for (const auto &[sensitivity, delay] : cases) {
+        EarDetectionDebounce debounce{sensitivity};
+        QCOMPARE(EarDetectionDebounce::DebounceTime(sensitivity), delay);
+        QCOMPARE(debounce.Update(EarState::InEar, 0ms), EarState::Unknown);
+        QCOMPARE(debounce.Update(EarState::InEar, delay), EarState::InEar);
+        QCOMPARE(debounce.Update(EarState::OutOfEar, delay), EarState::InEar);
+        QCOMPARE(debounce.Update(EarState::OutOfEar, delay * 2 - 1ms), EarState::InEar);
+        QCOMPARE(debounce.Update(EarState::OutOfEar, delay * 2), EarState::OutOfEar);
+    }
 }
 
 void AirPodsDomainTests::LoadsSettingsThroughRepository()
@@ -1387,6 +1527,7 @@ void AirPodsDomainTests::LoadsSettingsThroughRepository()
     QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
     QVERIFY(Core::Settings::GetCurrent().auto_run);
     QCOMPARE(Core::Settings::GetCurrent().appearance_mode, Core::Settings::AppearanceMode::Dark);
+    QCOMPARE(Core::Settings::GetCurrent().ear_detect_sensitivity, EarDetectSensitivity::Normal);
 
     RecordingSettingsObserver observer;
     Core::Settings::SetApplyObserver(&observer);
@@ -1470,6 +1611,7 @@ void AirPodsDomainTests::PreservesForkSettingsAndAddsPlaybackAutoConnect()
     auto repository = std::make_unique<Core::Settings::MemoryRepository>();
     repository->Write("abi_version", Core::Settings::kFieldsAbiVersion);
     repository->Write("automatic_ear_detection", false);
+    repository->Write("ear_detect_sensitivity", QString{"High"});
     repository->Write("conversational_awareness", true);
     repository->Write("conversational_awareness_volume_percent", uint8_t{55});
     repository->Write("personalized_volume", true);
@@ -1488,6 +1630,7 @@ void AirPodsDomainTests::PreservesForkSettingsAndAddsPlaybackAutoConnect()
     Core::Settings::SetApplyObserver(&observer);
     Core::Settings::Apply();
     QVERIFY(!observer.automaticEarDetection);
+    QCOMPARE(observer.earDetectSensitivity, EarDetectSensitivity::High);
     QVERIFY(observer.conversationalAwareness);
     QCOMPARE(observer.conversationalAwarenessVolumePercent, uint8_t{55});
     QVERIFY(observer.personalizedVolume);
@@ -1511,6 +1654,7 @@ void AirPodsDomainTests::PreservesForkSettingsAndAddsPlaybackAutoConnect()
           "auto_run",
           "low_audio_latency",
           "automatic_ear_detection",
+          "ear_detect_sensitivity",
           "conversational_awareness",
           "conversational_awareness_volume_percent",
           "personalized_volume",

@@ -107,6 +107,16 @@ void OnApply_automatic_ear_detection(const Fields &newFields)
     });
 }
 
+void OnApply_ear_detect_sensitivity(const Fields &newFields)
+{
+    LOG(Info, "OnApply_ear_detect_sensitivity: {}",
+        static_cast<int>(newFields.ear_detect_sensitivity));
+
+    Impl::NotifyApplyObserver([&](ApplyObserver &observer) {
+        observer.OnEarDetectSensitivityChanged(newFields.ear_detect_sensitivity);
+    });
+}
+
 void OnApply_conversational_awareness(const Fields &newFields)
 {
     LOG(Info, "OnApply_conversational_awareness: {}", newFields.conversational_awareness);

@@ -38,6 +38,7 @@
 #include "AAP.h"
 #include "AAPManager.h"
 #include "BatteryFusion.h"
+#include "EarDetectionDebounce.h"
 #include "../Helper.h"
 
 class AirPodsDomainTests;
@@ -232,15 +233,28 @@ private:
     std::optional<Timestamp> _lastPopupAt;
 };
 
-// Keeps an ear-detection baseline even when StateManager drops and recreates its cached state.
+// Fuses current AAP readings over BLE per ear, then publishes only stable aggregate transitions.
+// The first stable result after construction/reset is a baseline and never triggers media control.
 class EarDetectionTracker
 {
 public:
-    std::optional<bool> Update(const State &state);
+    using Timestamp = std::chrono::steady_clock::time_point;
+
+    std::optional<EarState> UpdateBle(const State &state, Timestamp now);
+    std::optional<EarState> UpdateAap(EarState left, EarState right, Timestamp now);
+    void ResetAap();
     void Reset();
+    void SetSensitivity(EarDetectSensitivity sensitivity);
+    EarState CurrentState() const;
 
 private:
-    std::optional<bool> _lastBothInEar;
+    std::optional<EarState> UpdateCandidate(Timestamp now);
+
+    mutable std::mutex _mutex;
+    EarDetectionDebounce _debounce;
+    Helper::Sides<std::optional<EarState>> _ble;
+    Helper::Sides<std::optional<EarState>> _aap;
+    std::optional<EarState> _publishedState;
 };
 } // namespace Details
 
@@ -257,6 +271,7 @@ public:
 
     void OnRssiMinChanged(int16_t rssiMin);
     void OnAutomaticEarDetectionChanged(bool enable);
+    void OnEarDetectSensitivityChanged(EarDetectSensitivity sensitivity);
     void OnBoundDeviceAddressChanged(uint64_t address);
     void OnConversationalAwarenessChanged(bool enable);
     void OnConversationalAwarenessVolumePercentChanged(uint8_t percent);
@@ -308,6 +323,7 @@ private:
     bool _deviceConnected{false};
     std::atomic<bool> _scannerWanted{false};
     std::atomic<bool> _automaticEarDetection{false};
+    EarDetectSensitivity _earDetectSensitivity{EarDetectSensitivity::Normal};
     std::atomic<bool> _conversationalAwarenessEnabled{false};
     std::atomic<uint8_t> _conversationalAwarenessVolumePercent{40};
     std::atomic<bool> _personalizedVolumeEnabled{false};
@@ -359,7 +375,7 @@ private:
     void OnBoundDeviceConnectionStateChanged(Bluetooth::DeviceState state);
     void OnStateChanged(Details::StateManager::UpdateEvent updateEvent);
     void OnLidOpened(bool opened);
-    void OnBothInEar(bool isBothInEar);
+    void OnEarStateChanged(EarState state);
     bool OnAdvertisementReceived(const Bluetooth::AdvertisementWatcher::ReceivedData &data);
     void OnAdvWatcherStateChanged(
         Bluetooth::AdvertisementWatcher::State state, const std::optional<std::string> &optError);

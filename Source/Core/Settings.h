@@ -26,6 +26,7 @@
 #include <QLocale>
 
 #include "../Helper.h"
+#include "EarDetectionDebounce.h"
 
 namespace Core::Settings {
 
@@ -49,6 +50,7 @@ public:
     virtual void OnAutoRunChanged(bool enable) = 0;
     virtual void OnLowAudioLatencyChanged(bool enable) = 0;
     virtual void OnAutomaticEarDetectionChanged(bool enable) = 0;
+    virtual void OnEarDetectSensitivityChanged(EarDetectSensitivity sensitivity) = 0;
     virtual void OnConversationalAwarenessChanged(bool enable) = 0;
     virtual void OnConversationalAwarenessVolumePercentChanged(uint8_t percent) = 0;
     virtual void OnPersonalizedVolumeChanged(bool enable) = 0;
@@ -132,7 +134,10 @@ void SetRepository(std::unique_ptr<Repository> repository);
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Shows the battery window when you open the case, without taking focus from the app in use. When off, open it from the tray icon.")}) \
     callback(uint8_t, ppe_cap_level, {25},                                                         \
         Impl::OnApply(&OnApply_ppe_cap_level),                                                     \
-        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Caps how loud loud sounds get, for hearing protection (0-100).")})
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Caps how loud loud sounds get, for hearing protection (0-100).")}) \
+    callback(EarDetectSensitivity, ear_detect_sensitivity, {EarDetectSensitivity::Normal},           \
+        Impl::OnApply(&OnApply_ear_detect_sensitivity),                                           \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.")})
 // clang-format on
 
 struct Fields {
@@ -291,6 +296,7 @@ void OnApply_appearance_mode(const Fields &newFields);
 void OnApply_auto_run(const Fields &newFields);
 void OnApply_low_audio_latency(const Fields &newFields);
 void OnApply_automatic_ear_detection(const Fields &newFields);
+void OnApply_ear_detect_sensitivity(const Fields &newFields);
 void OnApply_conversational_awareness(const Fields &newFields);
 void OnApply_conversational_awareness_volume_percent(const Fields &newFields);
 void OnApply_personalized_volume(const Fields &newFields);
