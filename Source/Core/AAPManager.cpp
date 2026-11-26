@@ -17,6 +17,7 @@
 //
 
 #include "AAPManager.h"
+#include "AAPMessage.h"
 #include "ConnectionDiagnostics.h"
 #include "../Logger.h"
 
@@ -24,36 +25,15 @@
 
 #if defined APD_OS_WIN
 
-#include <WinSock2.h>
-#include <ws2bth.h>
-#include <BluetoothAPIs.h>
-#include <initguid.h>
-#include "MagicAAPWinRT.h"
-
-#pragma comment(lib, "Ws2_32.lib")
-#pragma comment(lib, "Bthprops.lib")
-
-// AAP Service UUID: 74ec2172-0bad-4d01-8f77-997b2be0722a
-// {74EC2172-0BAD-4D01-8F77-997B2BE0722A}
-DEFINE_GUID(AAP_SERVICE_UUID, 
-    0x74ec2172, 0x0bad, 0x4d01, 0x8f, 0x77, 0x99, 0x7b, 0x2b, 0xe0, 0x72, 0x2a);
+    #include "MagicAAPWinRT.h"
 
 namespace Core::AAP {
 
-Manager::Manager()
-{
-    // Initialize Winsock
-    WSADATA wsaData;
-    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (result != 0) {
-        LOG(Error, "WSAStartup failed: {}", result);
-    }
-}
+Manager::Manager() = default;
 
 Manager::~Manager()
 {
     Disconnect();
-    WSACleanup();
 }
 
 bool Manager::Connect(uint64_t deviceAddress)
@@ -72,100 +52,25 @@ bool Manager::Connect(uint64_t deviceAddress)
     Diagnostics::Recorder::Instance().Record(
         Diagnostics::Step::TransportConnect, true, "connect attempt started");
 
-    SOCKET sock = INVALID_SOCKET;
-    bool connected = false;
-    bool anySocketCreated = false;
+    // P1 supports exactly two message transports. SEQPACKET is attempted first;
+    // the MagicAAP device interface is the only driver fallback.
+    LOG(Info, "AAP: Attempting L2CAP SEQPACKET connection to {:016X} on PSM {}", deviceAddress,
+        kPSM);
+    auto transport = CreateSeqPacketTransport();
 
-    // Method 1: Try L2CAP with SOCK_SEQPACKET (datagram-oriented, more native for L2CAP)
-    LOG(Info, "AAP: Attempting L2CAP SEQPACKET connection to {:016X} on PSM {}", deviceAddress, kPSM);
-    sock = socket(AF_BTH, SOCK_SEQPACKET, BTHPROTO_L2CAP);
-    if (sock != INVALID_SOCKET) {
-        anySocketCreated = true;
-        SOCKADDR_BTH addr{};
-        addr.addressFamily = AF_BTH;
-        addr.btAddr = deviceAddress;
-        addr.port = kPSM;
-
-        if (connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != SOCKET_ERROR) {
-            connected = true;
-            LOG(Info, "AAP: L2CAP SEQPACKET connection successful");
-        } else {
-            int error = WSAGetLastError();
-            LOG(Warn, "AAP: L2CAP SEQPACKET failed: {}", error);
-            closesocket(sock);
-            sock = INVALID_SOCKET;
-        }
-    } else {
-        LOG(Warn, "AAP: Failed to create L2CAP SEQPACKET socket: {}", WSAGetLastError());
+    if (transport->Connect(deviceAddress, {})) {
+        _transport.store(transport);
+        _usingMagicAAP = false;
+        _connected = true;
     }
-
-    // Method 2: Try L2CAP with SOCK_STREAM
-    if (!connected) {
-        LOG(Info, "AAP: Attempting L2CAP STREAM connection");
-        sock = socket(AF_BTH, SOCK_STREAM, BTHPROTO_L2CAP);
-        if (sock != INVALID_SOCKET) {
-            anySocketCreated = true;
-            SOCKADDR_BTH addr{};
-            addr.addressFamily = AF_BTH;
-            addr.btAddr = deviceAddress;
-            addr.port = kPSM;
-
-            if (connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != SOCKET_ERROR) {
-                connected = true;
-                LOG(Info, "AAP: L2CAP STREAM connection successful");
-            } else {
-                int error = WSAGetLastError();
-                LOG(Warn, "AAP: L2CAP STREAM failed: {}", error);
-                closesocket(sock);
-                sock = INVALID_SOCKET;
-            }
-        }
-    }
-
-    // Method 3: Try RFCOMM with service UUID
-    if (!connected) {
-        LOG(Info, "AAP: Attempting RFCOMM with AAP UUID");
-        sock = socket(AF_BTH, SOCK_STREAM, BTHPROTO_RFCOMM);
-        if (sock != INVALID_SOCKET) {
-            anySocketCreated = true;
-            SOCKADDR_BTH addr{};
-            addr.addressFamily = AF_BTH;
-            addr.btAddr = deviceAddress;
-            addr.serviceClassId = AAP_SERVICE_UUID;
-            addr.port = BT_PORT_ANY;
-
-            if (connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != SOCKET_ERROR) {
-                connected = true;
-                LOG(Info, "AAP: RFCOMM connection successful");
-            } else {
-                int error = WSAGetLastError();
-                LOG(Warn, "AAP: RFCOMM failed: {}", error);
-                closesocket(sock);
-                sock = INVALID_SOCKET;
-            }
-        }
-    }
-
-    if (!connected || sock == INVALID_SOCKET) {
-        LOG(Info, "AAP: Traditional socket methods failed, trying MagicAAP WinRT...");
-
-        // Record the socket verdict first; ConnectViaMagicAAP overrides it with
-        // a more precise driver-side reason when it fails.
-        _lastConnectFailure.store(
-            anySocketCreated ? ConnectFailure::ServiceUnavailable : ConnectFailure::TransportError);
-
-        // Method 4: Try MagicAAP WinRT (requires MagicAAP driver)
+    else {
+        _lastConnectFailure.store(ConnectFailure::ServiceUnavailable);
         if (ConnectViaMagicAAP(deviceAddress)) {
-            // MagicAAP connection successful - don't need socket-based logic
             return true;
         }
-
-        LOG(Error, "AAP: All connection methods failed");
+        LOG(Error, "AAP: All supported transport methods failed");
         return false;
     }
-
-    _socket = reinterpret_cast<void*>(sock);
-    _connected = true;
 
     LOG(Info, "AAP: Connected successfully");
 
@@ -175,13 +80,14 @@ bool Manager::Connect(uint64_t deviceAddress)
         // Clean up without calling Disconnect to avoid lock issues
         _lastConnectFailure.store(ConnectFailure::HandshakeFailure);
         _connected = false;
-        closesocket(sock);
-        _socket = nullptr;
+        if (auto failedTransport = _transport.exchange(nullptr)) {
+            failedTransport->Close();
+        }
         return false;
     }
 
     // Start reader thread
-    _stopReader = false;
+    _readerStop = std::stop_source{};
     _readerExited = false;
     _readerThread = std::thread(&Manager::ReaderLoop, this);
 
@@ -199,8 +105,7 @@ void Manager::Disconnect()
     // Move resources that may block into local variables while holding the lock,
     // then perform blocking operations outside the lock to avoid deadlocks.
     AAP::Callbacks::FnOnDisconnectedT callback;
-    std::unique_ptr<MagicAAPWinRT::MagicAAPWinRTClient> magicClient;
-    void* socketPtr = nullptr;
+    std::shared_ptr<AAPTransport> transport;
     std::thread localReaderThread;
 
     {
@@ -210,20 +115,13 @@ void Manager::Disconnect()
             return;
         }
 
-        // Signal reader loop to stop
-        _stopReader = true;
+        // Wake Receive before closing the transport it is using.
+        _readerStop.request_stop();
         _connected = false;
         _headTrackingActive = false;
 
-        // Move magic client out so we can call its Disconnect() without holding _mutex
-        if (_magicAAPClient) {
-            magicClient = std::move(_magicAAPClient);
-        }
+        transport = _transport.exchange(nullptr);
         _usingMagicAAP = false;
-
-        // Move socket out for closing outside lock
-        socketPtr = _socket;
-        _socket = nullptr;
 
         // Move reader thread out so we can join/detach outside the lock
         if (_readerThread.joinable()) {
@@ -235,15 +133,8 @@ void Manager::Disconnect()
     }
 
     // Perform potentially blocking operations without holding the mutex
-    if (magicClient) {
-        magicClient->Disconnect();
-        magicClient.reset();
-    }
-
-    if (socketPtr != nullptr) {
-        SOCKET sock = reinterpret_cast<SOCKET>(socketPtr);
-        closesocket(sock);
-        socketPtr = nullptr;
+    if (transport) {
+        transport->Close();
     }
 
     // Wait for reader thread to exit up to 5 seconds; if it doesn't exit, detach it.
@@ -257,12 +148,15 @@ void Manager::Disconnect()
         if (_readerExited) {
             try {
                 localReaderThread.join();
-            } catch (...) {
             }
-        } else {
+            catch (...) {
+            }
+        }
+        else {
             try {
                 localReaderThread.detach();
-            } catch (...) {
+            }
+            catch (...) {
             }
         }
     }
@@ -554,7 +448,7 @@ void Manager::StartAttProbe()
         Att::kLoudSoundReductionHandle);
 }
 
-void Manager::ProcessAttFrame(const std::vector<uint8_t>& packet)
+void Manager::ProcessAttFrame(const std::vector<uint8_t> &packet)
 {
     // Read response (0x0B): we only ever issue one kind of read — handle 0x1B —
     // so the value belongs to loud sound reduction.
@@ -564,15 +458,15 @@ void Manager::ProcessAttFrame(const std::vector<uint8_t>& packet)
             _callbacks.onAttProbeResult(AttPathState::Confirmed);
         }
         Diagnostics::Recorder::Instance().Record(Diagnostics::Step::AttProbe, true, "confirmed");
-        LOG(Info, "AAP: ATT path confirmed (read response, {} value bytes)",
-            packet.size() - 1);
+        LOG(Info, "AAP: ATT path confirmed (read response, {} value bytes)", packet.size() - 1);
 
         auto value = Att::ParseReadResponse(packet);
         if (value.has_value() && !value->empty()) {
             std::optional<LoudSoundReductionState> state;
             if ((*value)[0] == 0x01) {
                 state = LoudSoundReductionState::Enabled;
-            } else if ((*value)[0] == 0x00) {
+            }
+            else if ((*value)[0] == 0x00) {
                 state = LoudSoundReductionState::Disabled;
             }
             if (state.has_value()) {
@@ -603,13 +497,14 @@ void Manager::ProcessAttFrame(const std::vector<uint8_t>& packet)
     // Handle Value Notification (0x1B) for the loud-sound-reduction handle.
     if (Att::IsNotification(packet)) {
         auto notification = Att::ParseNotification(packet);
-        if (notification.has_value() &&
-            notification->first == Att::kLoudSoundReductionHandle &&
-            !notification->second.empty()) {
+        if (notification.has_value() && notification->first == Att::kLoudSoundReductionHandle &&
+            !notification->second.empty())
+        {
             std::optional<LoudSoundReductionState> state;
             if (notification->second[0] == 0x01) {
                 state = LoudSoundReductionState::Enabled;
-            } else if (notification->second[0] == 0x00) {
+            }
+            else if (notification->second[0] == 0x00) {
                 state = LoudSoundReductionState::Disabled;
             }
             if (state.has_value()) {
@@ -628,41 +523,31 @@ void Manager::ProcessAttFrame(const std::vector<uint8_t>& packet)
     }
 }
 
-bool Manager::SendPacket(const std::vector<uint8_t>& packet)
+bool Manager::SendPacket(const std::vector<uint8_t> &packet)
 {
     if (!_connected) {
         return false;
     }
-    
-    // Use MagicAAP client if available
-    if (_usingMagicAAP && _magicAAPClient) {
-        bool success = _magicAAPClient->SendData(packet);
-        if (success) {
-            LOG(Trace, "AAP: Sent {} bytes via MagicAAP", packet.size());
-        }
-        return success;
-    }
 
-    // Use traditional socket
-    if (_socket == nullptr) {
+    auto transport = _transport.load();
+    if (!transport || !transport->Send(packet, {})) {
         return false;
     }
 
-    SOCKET sock = reinterpret_cast<SOCKET>(_socket);
-    int sent = send(sock, reinterpret_cast<const char*>(packet.data()),
-                    static_cast<int>(packet.size()), 0);
-
-    if (sent == SOCKET_ERROR) {
-        LOG(Error, "AAP: Failed to send packet: {}", WSAGetLastError());
-        return false;
-    }
-
-    LOG(Trace, "AAP: Sent {} bytes", sent);
+    LOG(Trace, "AAP: Sent {} bytes via {}", packet.size(),
+        transport->Kind() == AAPTransportKind::MagicAAP ? "MagicAAP" : "SEQPACKET");
     return true;
 }
 
-void Manager::ProcessPacket(const std::vector<uint8_t>& packet)
+void Manager::ProcessPacket(const std::vector<uint8_t> &packet)
 {
+    const auto validation = AAPMessage::Validate(packet);
+    if (validation != AAPMessage::ValidationResult::Valid) {
+        LOG(Warn, "AAP: Rejected invalid {}-byte record before processing: {}", packet.size(),
+            AAPMessage::Describe(validation));
+        return;
+    }
+
     // ATT frames on the AAP pipe (blueprint 0.3): anything that is not an
     // L2CAP AAP frame (`04 00 04 00` header) and matches a known ATT opcode is
     // routed to the ATT handlers first, so ATT responses can never be
@@ -680,7 +565,8 @@ void Manager::ProcessPacket(const std::vector<uint8_t>& packet)
                 std::lock_guard<std::mutex> lock{_mutex};
                 _noiseControlMode = mode;
             }
-            LOG(Info, "AAP: Noise control mode changed to {}", Helper::ToString(mode.value()).toStdString());
+            LOG(Info, "AAP: Noise control mode changed to {}",
+                Helper::ToString(mode.value()).toStdString());
             if (_callbacks.onNoiseControlChanged) {
                 _callbacks.onNoiseControlChanged(mode.value());
             }
@@ -696,7 +582,8 @@ void Manager::ProcessPacket(const std::vector<uint8_t>& packet)
                 std::lock_guard<std::mutex> lock{_mutex};
                 _conversationalAwarenessState = state;
             }
-            LOG(Info, "AAP: Conversational awareness state: {}", Helper::ToString(state.value()).toStdString());
+            LOG(Info, "AAP: Conversational awareness state: {}",
+                Helper::ToString(state.value()).toStdString());
             if (_callbacks.onConversationalAwarenessChanged) {
                 _callbacks.onConversationalAwarenessChanged(state.value());
             }
@@ -786,8 +673,11 @@ void Manager::ProcessPacket(const std::vector<uint8_t>& packet)
         return;
     }
 
-    // Head tracking data
-    if (_headTrackingActive && packet.size() >= 56) {
+    // Only opcode 0x0017 carries head-tracking data. Unknown AAP records are
+    // valid for diagnostics but must never fall through into this parser.
+    if (_headTrackingActive && packet.size() >= 56 && packet[0] == 0x04 && packet[1] == 0x00 &&
+        packet[2] == 0x04 && packet[3] == 0x00 && packet[4] == 0x17 && packet[5] == 0x00)
+    {
         auto trackingData = ParseHeadTrackingData(packet);
         if (trackingData.has_value() && _callbacks.onHeadTrackingData) {
             _callbacks.onHeadTrackingData(trackingData.value());
@@ -801,59 +691,27 @@ void Manager::ProcessPacket(const std::vector<uint8_t>& packet)
 
 void Manager::ReaderLoop()
 {
-    constexpr size_t bufferSize = 1024;
-    std::vector<char> buffer(bufferSize);
+    auto transport = _transport.load();
+    const auto stop = _readerStop.get_token();
 
-    while (!_stopReader && _connected) {
-        SOCKET sock = reinterpret_cast<SOCKET>(_socket);
-        
-        // Set socket to non-blocking mode for timeout handling
-        fd_set readSet;
-        FD_ZERO(&readSet);
-        FD_SET(sock, &readSet);
-
-        timeval timeout{};
-        timeout.tv_sec = 1;
-        timeout.tv_usec = 0;
-
-        int selectResult = select(0, &readSet, nullptr, nullptr, &timeout);
-        
-        if (selectResult == SOCKET_ERROR) {
-            LOG(Error, "AAP: Select error: {}", WSAGetLastError());
-            break;
-        }
-
-        if (selectResult == 0) {
-            // Timeout, continue loop
-            continue;
-        }
-
-        int received = recv(sock, buffer.data(), static_cast<int>(bufferSize), 0);
-        
-        if (received == SOCKET_ERROR) {
-            int error = WSAGetLastError();
-            if (error != WSAEWOULDBLOCK) {
-                LOG(Error, "AAP: Receive error: {}", error);
-                break;
+    while (transport && !stop.stop_requested() && _connected) {
+        auto packet = transport->Receive(stop);
+        if (!packet.has_value()) {
+            if (!stop.stop_requested()) {
+                LOG(Info, "AAP: Transport receive ended");
             }
-            continue;
-        }
-
-        if (received == 0) {
-            LOG(Info, "AAP: Connection closed by remote");
             break;
         }
-
-        std::vector<uint8_t> packet(buffer.begin(), buffer.begin() + received);
-        ProcessPacket(packet);
+        ProcessPacket(*packet);
     }
 
-    if (!_stopReader) {
+    if (!stop.stop_requested() && _connected) {
         // Connection was lost unexpectedly
         AAP::Callbacks::FnOnDisconnectedT callback;
         {
             std::lock_guard<std::mutex> lock{_mutex};
             _connected = false;
+            _usingMagicAAP = false;
             callback = _callbacks.onDisconnected;
         }
         // Invoke callback outside the lock to avoid potential deadlocks
@@ -874,7 +732,8 @@ bool Manager::InitializeConnection()
     // Send handshake
     if (!SendPacket(Packets::Handshake)) {
         LOG(Error, "AAP: Failed to send handshake");
-        Diagnostics::Recorder::Instance().Record(Diagnostics::Step::Handshake, false, "send failed");
+        Diagnostics::Recorder::Instance().Record(
+            Diagnostics::Step::Handshake, false, "send failed");
         return false;
     }
     LOG(Info, "AAP: Sent handshake");
@@ -927,7 +786,7 @@ bool Manager::ConnectViaMagicAAP(uint64_t deviceAddress)
             Diagnostics::Step::DriverOpen, false, "driver not installed");
         return false;
     }
-    
+
     if (!MagicAAPWinRT::MagicAAPWinRTClient::IsDriverRunning()) {
         LOG(Warn, "AAP: MagicAAP driver installed but not running");
         _lastConnectFailure.store(ConnectFailure::DriverMissing);
@@ -937,90 +796,42 @@ bool Manager::ConnectViaMagicAAP(uint64_t deviceAddress)
     }
 
     Diagnostics::Recorder::Instance().Record(Diagnostics::Step::DriverOpen, true);
-    
+
     LOG(Info, "AAP: MagicAAP driver is available, attempting connection...");
-    
-    // Create MagicAAP client
-    _magicAAPClient = std::make_unique<MagicAAPWinRT::MagicAAPWinRTClient>();
-    
-    // Set callbacks
-    _magicAAPClient->SetOnDataReceived([this](const std::vector<uint8_t>& data) {
-        ProcessPacket(data);
-    });
-    
-    _magicAAPClient->SetOnDisconnected([this]() {
-        LOG(Info, "AAP: MagicAAP connection lost");
-        AAP::Callbacks::FnOnDisconnectedT callback;
-        {
-            std::lock_guard<std::mutex> lock{_mutex};
-            _connected = false;
-            _usingMagicAAP = false;
-            callback = _callbacks.onDisconnected;
-        }
-        if (callback) {
-            callback();
-        }
-    });
-    
-    // First, try device interface connection (direct file I/O)
-    LOG(Info, "AAP: Trying device interface connection...");
-    if (_magicAAPClient->ConnectViaDeviceInterface(deviceAddress)) {
-        LOG(Info, "AAP: Connected via MagicAAP device interface!");
-        
-        _connected = true;
-        _usingMagicAAP = true;
-        
-        // Initialize the AAP protocol
-        if (!InitializeConnection()) {
-            LOG(Error, "AAP: Failed to initialize MagicAAP connection");
-            _lastConnectFailure.store(ConnectFailure::HandshakeFailure);
-            _magicAAPClient->Disconnect();
-            _magicAAPClient.reset();
-            _connected = false;
-            _usingMagicAAP = false;
-            return false;
-        }
-        
-        _lastConnectFailure.store(ConnectFailure::None);
-        if (_callbacks.onConnected) {
-            _callbacks.onConnected();
-        }
-        
-        return true;
-    }
-    
-    // Fallback: try WinRT RFCOMM connection
-    LOG(Info, "AAP: Device interface failed, trying WinRT RFCOMM...");
-    if (!_magicAAPClient->Connect(deviceAddress)) {
-        std::wstring errorW = _magicAAPClient->GetLastError();
-        std::string error(errorW.begin(), errorW.end());
-        LOG(Warn, "AAP: MagicAAP WinRT connection failed: {}", error);
+
+    // Only the MagicAAP device interface is supported. The existing WinRT
+    // RFCOMM methods remain in the client for other callers but are not a fallback.
+    auto transport = CreateMagicAAPTransport();
+    LOG(Info, "AAP: Trying MagicAAP device interface connection...");
+    if (!transport->Connect(deviceAddress, {})) {
         _lastConnectFailure.store(ConnectFailure::TransportError);
-        _magicAAPClient.reset();
         return false;
     }
-    
-    LOG(Info, "AAP: Connected via MagicAAP WinRT!");
-    
+
+    _transport.store(transport);
     _connected = true;
     _usingMagicAAP = true;
-    
-    // Initialize the AAP protocol
+    LOG(Info, "AAP: Connected via MagicAAP device interface!");
+
     if (!InitializeConnection()) {
         LOG(Error, "AAP: Failed to initialize MagicAAP connection");
         _lastConnectFailure.store(ConnectFailure::HandshakeFailure);
-        _magicAAPClient->Disconnect();
-        _magicAAPClient.reset();
         _connected = false;
         _usingMagicAAP = false;
+        if (auto failedTransport = _transport.exchange(nullptr)) {
+            failedTransport->Close();
+        }
         return false;
     }
-    
+
+    _readerStop = std::stop_source{};
+    _readerExited = false;
+    _readerThread = std::thread(&Manager::ReaderLoop, this);
+
     _lastConnectFailure.store(ConnectFailure::None);
     if (_callbacks.onConnected) {
         _callbacks.onConnected();
     }
-    
     return true;
 }
 
@@ -1031,28 +842,76 @@ bool Manager::ConnectViaMagicAAP(uint64_t deviceAddress)
 namespace Core::AAP {
 
 Manager::Manager() {}
-Manager::~Manager() { Disconnect(); }
-bool Manager::Connect(uint64_t) { return false; }
+Manager::~Manager()
+{
+    Disconnect();
+}
+bool Manager::Connect(uint64_t)
+{
+    return false;
+}
 void Manager::Disconnect() {}
-bool Manager::IsConnected() const { return false; }
-bool Manager::SetNoiseControlMode(NoiseControlMode) { return false; }
-std::optional<NoiseControlMode> Manager::GetNoiseControlMode() const { return std::nullopt; }
-bool Manager::SetConversationalAwareness(bool) { return false; }
-std::optional<ConversationalAwarenessState> Manager::GetConversationalAwarenessState() const { return std::nullopt; }
-bool Manager::SetAdaptiveNoiseLevel(uint8_t) { return false; }
-bool Manager::StartHeadTracking() { return false; }
-bool Manager::StopHeadTracking() { return false; }
-bool Manager::IsHeadTrackingActive() const { return false; }
+bool Manager::IsConnected() const
+{
+    return false;
+}
+bool Manager::SetNoiseControlMode(NoiseControlMode)
+{
+    return false;
+}
+std::optional<NoiseControlMode> Manager::GetNoiseControlMode() const
+{
+    return std::nullopt;
+}
+bool Manager::SetConversationalAwareness(bool)
+{
+    return false;
+}
+std::optional<ConversationalAwarenessState> Manager::GetConversationalAwarenessState() const
+{
+    return std::nullopt;
+}
+bool Manager::SetAdaptiveNoiseLevel(uint8_t)
+{
+    return false;
+}
+bool Manager::StartHeadTracking()
+{
+    return false;
+}
+bool Manager::StopHeadTracking()
+{
+    return false;
+}
+bool Manager::IsHeadTrackingActive() const
+{
+    return false;
+}
 void Manager::SetCallbacks(Callbacks) {}
-bool Manager::IsMagicAAPDriverAvailable() { return false; }
-AttPathState Manager::GetAttPathState() const { return AttPathState::Unconfirmed; }
+bool Manager::IsMagicAAPDriverAvailable()
+{
+    return false;
+}
+AttPathState Manager::GetAttPathState() const
+{
+    return AttPathState::Unconfirmed;
+}
 void Manager::StartAttProbe() {}
-void Manager::ProcessAttFrame(const std::vector<uint8_t>&) {}
-bool Manager::SendPacket(const std::vector<uint8_t>&) { return false; }
-void Manager::ProcessPacket(const std::vector<uint8_t>&) {}
+void Manager::ProcessAttFrame(const std::vector<uint8_t> &) {}
+bool Manager::SendPacket(const std::vector<uint8_t> &)
+{
+    return false;
+}
+void Manager::ProcessPacket(const std::vector<uint8_t> &) {}
 void Manager::ReaderLoop() {}
-bool Manager::InitializeConnection() { return false; }
-bool Manager::ConnectViaMagicAAP(uint64_t) { return false; }
+bool Manager::InitializeConnection()
+{
+    return false;
+}
+bool Manager::ConnectViaMagicAAP(uint64_t)
+{
+    return false;
+}
 
 } // namespace Core::AAP
 

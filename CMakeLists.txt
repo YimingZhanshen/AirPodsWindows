@@ -333,6 +333,7 @@ set(
     "Source/Core/Update.cpp"
     "Source/Core/AirPods.cpp"
     "Source/Core/AAPAtt.cpp"
+    "Source/Core/AAPMessage.cpp"
     "Source/Core/ConnectionDiagnostics.cpp"
     "Source/Core/QuickConnect.cpp"
     "Source/Core/PlaybackMonitor.cpp"
@@ -383,6 +384,7 @@ if (WIN32)
         "Source/Core/GlobalMedia_win.cpp"
         "Source/Core/PlaybackMonitor_win.cpp"
         "Source/Core/AAPManager.cpp"
+        "Source/Core/AAPTransport_win.cpp"
         "Source/Core/MagicAAPWinRT.cpp"
         "Source/Core/QuickConnect_win.cpp"
     )

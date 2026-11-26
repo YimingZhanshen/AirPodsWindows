@@ -36,18 +36,19 @@ namespace Core::MagicAAPWinRT {
 // AAP Service UUID: 74ec2172-0bad-4d01-8f77-997b2be0722a
 constexpr wchar_t AAP_SERVICE_UUID[] = L"{74EC2172-0BAD-4D01-8F77-997B2BE0722A}";
 
-class MagicAAPWinRTClient {
+class MagicAAPWinRTClient
+{
 public:
     MagicAAPWinRTClient();
     ~MagicAAPWinRTClient();
 
     // Non-copyable
-    MagicAAPWinRTClient(const MagicAAPWinRTClient&) = delete;
-    MagicAAPWinRTClient& operator=(const MagicAAPWinRTClient&) = delete;
+    MagicAAPWinRTClient(const MagicAAPWinRTClient &) = delete;
+    MagicAAPWinRTClient &operator=(const MagicAAPWinRTClient &) = delete;
 
     // Check if MagicAAP driver is installed
     static bool IsDriverInstalled();
-    
+
     // Check if MagicAAP driver is running
     static bool IsDriverRunning();
 
@@ -56,13 +57,13 @@ public:
 
     // Connect to device by Bluetooth address
     bool Connect(uint64_t bluetoothAddress);
-    
+
     // Connect to device by device ID
-    bool ConnectById(const std::wstring& deviceId);
-    
+    bool ConnectById(const std::wstring &deviceId);
+
     // Connect via MagicAAP device interface (direct file I/O)
     bool ConnectViaDeviceInterface(uint64_t bluetoothAddress);
-    
+
     // Enumerate MagicAAP device interfaces
     static std::vector<std::wstring> EnumerateMagicAAPDevices();
 
@@ -70,20 +71,28 @@ public:
     void Disconnect();
 
     // Check connection status
-    bool IsConnected() const { return _connected.load(); }
+    bool IsConnected() const
+    {
+        return _connected.load();
+    }
 
-    // Send raw data
-    bool SendData(const std::vector<uint8_t>& data);
+    // Send one complete record atomically. A partial device-interface write fails;
+    // the unwritten suffix is never retried as a second record.
+    bool SendData(const std::vector<uint8_t> &data);
 
-    // Callbacks
-    using OnDataReceivedCallback = std::function<void(const std::vector<uint8_t>&)>;
+    // Callbacks. In device-interface mode each data callback is exactly one
+    // successful ReadFile completion; P1 performs no stream reassembly.
+    using OnDataReceivedCallback = std::function<void(const std::vector<uint8_t> &)>;
     using OnDisconnectedCallback = std::function<void()>;
-    
+
     void SetOnDataReceived(OnDataReceivedCallback callback);
     void SetOnDisconnected(OnDisconnectedCallback callback);
 
     // Get last error message
-    std::wstring GetLastError() const { return _lastError; }
+    std::wstring GetLastError() const
+    {
+        return _lastError;
+    }
 
 private:
     std::atomic<bool> _connected{false};
@@ -91,19 +100,19 @@ private:
     std::thread _receiverThread;
     mutable std::mutex _mutex;
     std::wstring _lastError;
-    
+
     OnDataReceivedCallback _onDataReceived;
     OnDisconnectedCallback _onDisconnected;
-    
+
     // Opaque pointer to implementation (to avoid WinRT headers in header)
-    void* _impl{nullptr};
-    
+    void *_impl{nullptr};
+
     // Device handle for direct device interface connection
-    void* _deviceHandle{nullptr};
+    void *_deviceHandle{nullptr};
     bool _usingDeviceInterface{false};
-    
+
     void ReceiverLoop();
-    void SetError(const std::wstring& error);
+    void SetError(const std::wstring &error);
     void CleanupWinRTObjects();
     void CleanupDeviceHandle();
 };

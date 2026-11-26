@@ -27,13 +27,9 @@
 
 #include "AAP.h"
 #include "AAPAtt.h"
+#include "AAPTransport.h"
 #include "Base.h"
 #include "../Helper.h"
-
-// Forward declaration for MagicAAP WinRT client
-namespace Core::MagicAAPWinRT {
-    class MagicAAPWinRTClient;
-}
 
 namespace Core::AAP {
 
@@ -46,8 +42,8 @@ namespace Core::AAP {
 // the PSM 0x1001 driver pipe, so the path is probed once per connection with a
 // read request to handle 0x1B and the outcome is recorded here.
 enum class AttPathState : uint8_t {
-    Unknown,     // no probe sent yet (or connection torn down)
-    Pending,     // probe sent, waiting within the 500ms window
+    Unknown,    // no probe sent yet (or connection torn down)
+    Pending,    // probe sent, waiting within the 500ms window
     Confirmed,  // firmware answered (read response or error response)
     Unconfirmed // no ATT answer within the probe window
 };
@@ -55,11 +51,11 @@ enum class AttPathState : uint8_t {
 // Why the last Connect() attempt failed (blueprint 1.3): surfaced to the UI so
 // users see an actionable reason instead of a silent feature blackout.
 enum class ConnectFailure : uint8_t {
-    None,              // no failure recorded (connected, or never attempted)
-    DriverMissing,     // MagicAAP driver not installed or not running
-    ServiceUnavailable,// device reachable but does not expose the AAP service
-    TransportError,    // socket/driver transport could not be created or failed
-    HandshakeFailure,  // transport up, but the AAP handshake did not complete
+    None,               // no failure recorded (connected, or never attempted)
+    DriverMissing,      // MagicAAP driver not installed or not running
+    ServiceUnavailable, // device reachable but does not expose the AAP service
+    TransportError,     // socket/driver transport could not be created or failed
+    HandshakeFailure,   // transport up, but the AAP handshake did not complete
 };
 
 //////////////////////////////////////////////////
@@ -98,7 +94,8 @@ struct Callbacks {
 // AAP Manager - Manages L2CAP connection and protocol
 //
 
-class Manager {
+class Manager
+{
 public:
     Manager();
     ~Manager();
@@ -144,8 +141,11 @@ public:
     void SetCallbacks(Callbacks callbacks);
 
     // Check if connected via MagicAAP driver
-    bool IsConnectedViaMagicAAP() const { return _usingMagicAAP.load(); }
-    
+    bool IsConnectedViaMagicAAP() const
+    {
+        return _usingMagicAAP.load();
+    }
+
     // Static method to check if MagicAAP driver is available
     static bool IsMagicAAPDriverAvailable();
 
@@ -154,14 +154,21 @@ public:
     AttPathState GetAttPathState() const;
 
     // Reason the most recent Connect() attempt failed (blueprint 1.3).
-    ConnectFailure GetLastConnectFailure() const { return _lastConnectFailure.load(); }
+    ConnectFailure GetLastConnectFailure() const
+    {
+        return _lastConnectFailure.load();
+    }
 
 private:
+    // Hardware-free tests need to inject a transport and observe the validation
+    // gate; neither behavior is reachable through the public connection API.
+    friend class ::AAPTransportTests;
+
     mutable std::mutex _mutex;
     std::atomic<bool> _connected{false};
     std::atomic<bool> _headTrackingActive{false};
     std::atomic<bool> _usingMagicAAP{false};
-    
+
     // Cached states
     std::optional<NoiseControlMode> _noiseControlMode;
     std::optional<ConversationalAwarenessState> _conversationalAwarenessState;
@@ -179,33 +186,31 @@ private:
 
     // Why the last Connect() attempt failed; reset to None on success.
     std::atomic<ConnectFailure> _lastConnectFailure{ConnectFailure::None};
-    
+
     // Callbacks
     Callbacks _callbacks;
-    
-    // Platform-specific socket handle (implemented in platform-specific file)
-    void* _socket{nullptr};
-    
-    // MagicAAP WinRT client (used when driver is available)
-    std::unique_ptr<MagicAAPWinRT::MagicAAPWinRTClient> _magicAAPClient;
-    
+
+    // Atomic session snapshot: senders and the reader retain the transport even
+    // while Disconnect exchanges it. P2 still owns worker/generation lifecycle.
+    std::atomic<std::shared_ptr<AAPTransport>> _transport{std::shared_ptr<AAPTransport>{}};
+
     // Reader thread
     std::thread _readerThread;
-    std::atomic<bool> _stopReader{false};
+    std::stop_source _readerStop;
     // Indicates whether reader thread has exited
     std::atomic<bool> _readerExited{true};
-    
+
     // Internal methods
-    bool SendPacket(const std::vector<uint8_t>& packet);
-    void ProcessPacket(const std::vector<uint8_t>& packet);
+    bool SendPacket(const std::vector<uint8_t> &packet);
+    void ProcessPacket(const std::vector<uint8_t> &packet);
     void ReaderLoop();
     bool InitializeConnection();
 
     // ATT path (blueprint 0.3): probe once after the handshake and route ATT
     // frames received on the AAP pipe.
     void StartAttProbe();
-    void ProcessAttFrame(const std::vector<uint8_t>& packet);
-    
+    void ProcessAttFrame(const std::vector<uint8_t> &packet);
+
     // MagicAAP connection method
     bool ConnectViaMagicAAP(uint64_t deviceAddress);
 };
