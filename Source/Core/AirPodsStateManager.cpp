@@ -26,10 +26,38 @@
 using namespace std::chrono_literals;
 
 namespace Core::AirPods::Details {
+namespace {
 
-StateManager::StateManager()
+// Windows reports this RSSI when the radio has no measurement for the packet.
+constexpr int16_t kRssiUnavailable = -127;
+
+bool HasConflictingPodBatteries(const State &lhs, const State &rhs)
 {
-    _lostTimer.Start(10s, [this] {
+    const auto conflicts = [](const Battery &a, const Battery &b) {
+        // Broadcast batteries are quantized to 10% steps. Adjacent buckets can legitimately
+        // differ between pods; larger discrepancies cannot be merged as one current state.
+        return a.Available() && b.Available() &&
+               std::abs(static_cast<int>(a.Value()) - static_cast<int>(b.Value())) > 10;
+    };
+    return conflicts(lhs.pods.left.battery, rhs.pods.left.battery) ||
+           conflicts(lhs.pods.right.battery, rhs.pods.right.battery);
+}
+
+bool IsStrongerCompleteReport(const Advertisement &candidate, const Advertisement &cached)
+{
+    const auto &state = candidate.GetAdvState();
+    if (candidate.GetRssi() == kRssiUnavailable || cached.GetRssi() == kRssiUnavailable) {
+        return false;
+    }
+    return state.pods.left.battery.Available() && state.pods.right.battery.Available() &&
+           candidate.GetRssi() >= cached.GetRssi() + 10;
+}
+
+} // namespace
+
+StateManager::StateManager(Intervals intervals)
+{
+    _lostTimer.Start(intervals.lost, [this] {
         std::function<void()> onDiscardState;
         {
             std::lock_guard<std::mutex> lock{_mutex};
@@ -40,12 +68,12 @@ StateManager::StateManager()
         }
     });
 
-    _stateResetTimer.left.Start(10s, [this] {
+    _stateResetTimer.left.Start(intervals.stateReset, [this] {
         std::lock_guard<std::mutex> lock{_mutex};
         DoStateReset(Side::Left);
     });
 
-    _stateResetTimer.right.Start(10s, [this] {
+    _stateResetTimer.right.Start(intervals.stateReset, [this] {
         std::lock_guard<std::mutex> lock{_mutex};
         DoStateReset(Side::Right);
     });
@@ -84,6 +112,8 @@ void StateManager::Disconnect()
         std::lock_guard<std::mutex> lock{_mutex};
         LOG(Info, "StateManager: Disconnect.");
         onDiscardState = ResetAll();
+        _knownAddress.left.reset();
+        _knownAddress.right.reset();
     }
     if (onDiscardState) {
         onDiscardState();
@@ -104,18 +134,38 @@ void StateManager::SetOnDiscardState(std::function<void()> callback)
 
 bool StateManager::IsPossibleDesiredAdv(const Advertisement &adv) const
 {
-    const auto advRssi = adv.GetRssi();
-    if (advRssi < _rssiMin) {
-        LOG(Warn,
-            "IsPossibleDesiredAdv returns false. Reason: RSSI is less than the limit. "
-            "curr: '{}' min: '{}'",
-            advRssi, _rssiMin);
-        return false;
-    }
-
     const auto &advState = adv.GetAdvState();
     auto &lastAdv = advState.side == Side::Left ? _adv.left : _adv.right;
     auto &lastAnotherAdv = advState.side == Side::Left ? _adv.right : _adv.left;
+
+    // The RSSI floor prevents locking onto a stranger, but weak packets from an address we
+    // already track must still update ear state and keep the lost timer alive.
+    const auto advRssi = adv.GetRssi();
+    if (advRssi < _rssiMin) {
+        if (!IsKnownAddress(adv.GetAddress())) {
+            if (advRssi == kRssiUnavailable) {
+                LOG(Warn, "IsPossibleDesiredAdv returns false. Reason: RSSI unavailable (-127)");
+            }
+            else {
+                LOG(Warn,
+                    "IsPossibleDesiredAdv returns false. Reason: RSSI is less than the limit. "
+                    "curr: '{}' min: '{}'",
+                    advRssi, _rssiMin);
+            }
+            return false;
+        }
+        LOG(Trace,
+            "RSSI below limit but address matches tracked device, accepting. "
+            "curr: '{}' min: '{}'",
+            advRssi, _rssiMin);
+    }
+
+    const auto isPlausibleRssiDiff = [&](int16_t cachedRssi) {
+        if (advRssi == kRssiUnavailable || cachedRssi == kRssiUnavailable) {
+            return true;
+        }
+        return std::abs(advRssi - cachedRssi) <= 50;
+    };
 
     const auto hasDifferentModel = [&](const auto &cachedAdv) {
         if (!cachedAdv.has_value()) {
@@ -132,6 +182,16 @@ bool StateManager::IsPossibleDesiredAdv(const Advertisement &adv) const
 
     if (lastAdv.has_value() && lastAdv->first.GetAddress() != adv.GetAddress()) {
         const auto &lastAdvState = lastAdv->first.GetAdvState();
+
+        // A different source cannot erase a selected pod reading while that source is fresh.
+        if ((lastAdvState.pods.left.battery.Available() &&
+             !advState.pods.left.battery.Available()) ||
+            (lastAdvState.pods.right.battery.Available() &&
+             !advState.pods.right.battery.Available()))
+        {
+            LOG(Trace, "Ignore another source that would erase a selected pod battery.");
+            return false;
+        }
 
         Battery::ValueType leftBatteryDiff = 0, rightBatteryDiff = 0, caseBatteryDiff = 0;
         using SignedBatteryValue = std::make_signed_t<Battery::ValueType>;
@@ -153,17 +213,20 @@ bool StateManager::IsPossibleDesiredAdv(const Advertisement &adv) const
                 static_cast<SignedBatteryValue>(lastAdvState.caseBox.battery.Value()));
         }
 
-        if (leftBatteryDiff > 1 || rightBatteryDiff > 1 || caseBatteryDiff > 1) {
+        // Values are percentages now, so one broadcast bucket is 10. A clearly stronger
+        // complete report may replace a wrong startup source.
+        if ((leftBatteryDiff > 10 || rightBatteryDiff > 10 || caseBatteryDiff > 10) &&
+            !IsStrongerCompleteReport(adv, lastAdv->first))
+        {
             LOG(Warn,
                 "IsPossibleDesiredAdv returns false. Reason: BatteryDiff l='{}' r='{}' c='{}'",
                 leftBatteryDiff, rightBatteryDiff, caseBatteryDiff);
             return false;
         }
 
-        int16_t rssiDiff = std::abs(advRssi - lastAdv->first.GetRssi());
-        if (rssiDiff > 50) {
+        if (!isPlausibleRssiDiff(lastAdv->first.GetRssi())) {
             LOG(Warn, "IsPossibleDesiredAdv returns false. Reason: Current side rssiDiff '{}'",
-                rssiDiff);
+                std::abs(advRssi - lastAdv->first.GetRssi()));
             return false;
         }
 
@@ -171,10 +234,16 @@ bool StateManager::IsPossibleDesiredAdv(const Advertisement &adv) const
     }
 
     if (lastAnotherAdv.has_value()) {
-        int16_t rssiDiff = std::abs(advRssi - lastAnotherAdv->first.GetRssi());
-        if (rssiDiff > 50) {
+        if (HasConflictingPodBatteries(advState, lastAnotherAdv->first.GetAdvState())) {
+            if (IsStrongerCompleteReport(adv, lastAnotherAdv->first)) {
+                return true;
+            }
+            LOG(Trace, "Ignore conflicting battery reports from another advertisement source.");
+            return false;
+        }
+        if (!isPlausibleRssiDiff(lastAnotherAdv->first.GetRssi())) {
             LOG(Warn, "IsPossibleDesiredAdv returns false. Reason: Another side rssiDiff '{}'",
-                rssiDiff);
+                std::abs(advRssi - lastAnotherAdv->first.GetRssi()));
             return false;
         }
     }
@@ -182,17 +251,31 @@ bool StateManager::IsPossibleDesiredAdv(const Advertisement &adv) const
     return true;
 }
 
+bool StateManager::IsKnownAddress(Advertisement::AddressType address) const
+{
+    return _knownAddress.left == address || _knownAddress.right == address;
+}
+
 void StateManager::UpdateAdv(Advertisement adv)
 {
     _lostTimer.Reset();
 
     const auto &advState = adv.GetAdvState();
+    auto &peer = advState.side == Side::Left ? _adv.right : _adv.left;
+    if (peer.has_value() && HasConflictingPodBatteries(advState, peer->first.GetAdvState()) &&
+        IsStrongerCompleteReport(adv, peer->first))
+    {
+        // Do not keep using the discarded source for fields missing from the replacement.
+        peer.reset();
+    }
     if (advState.side == Side::Left) {
         _stateResetTimer.left.Reset();
+        _knownAddress.left = adv.GetAddress();
         _adv.left = std::make_pair(std::move(adv), Clock::now());
     }
     else if (advState.side == Side::Right) {
         _stateResetTimer.right.Reset();
+        _knownAddress.right = adv.GetAddress();
         _adv.right = std::make_pair(std::move(adv), Clock::now());
     }
 }
@@ -265,6 +348,43 @@ void StateManager::DoStateReset(Side side)
         LOG(Info, "StateManager: DoStateReset called. Side: {}", Helper::ToString(side));
         adv.reset();
     }
+}
+
+std::optional<bool> LidTracker::Update(std::optional<Lid> oldLid, Lid newLid, Timestamp now)
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+
+    std::optional<Lid> previous = oldLid;
+    if (!previous.has_value() && _lastLid.has_value() && _lostAt.has_value() &&
+        now - *_lostAt <= kMemory)
+    {
+        previous = _lastLid;
+    }
+    _lastLid = newLid;
+    _lostAt.reset();
+
+    if (newLid == Lid::Opened && previous != Lid::Opened) {
+        return true;
+    }
+    // A closed lid is only reported against a known earlier state, so the first state after
+    // binding does not hide a popup opened from the tray.
+    if (newLid == Lid::Closed && previous.has_value() && previous != Lid::Closed) {
+        return false;
+    }
+    return std::nullopt;
+}
+
+void LidTracker::OnLost(Timestamp now)
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    _lostAt = now;
+}
+
+void LidTracker::Reset()
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    _lastLid.reset();
+    _lostAt.reset();
 }
 
 } // namespace Core::AirPods::Details

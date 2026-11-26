@@ -76,8 +76,9 @@ void OnApply_appearance_mode(const Fields &newFields)
 {
     LOG(Info, "OnApply_appearance_mode: {}", newFields.appearance_mode);
 
-    Impl::NotifyApplyObserver(
-        [&](ApplyObserver &observer) { observer.OnAppearanceModeChanged(newFields.appearance_mode); });
+    Impl::NotifyApplyObserver([&](ApplyObserver &observer) {
+        observer.OnAppearanceModeChanged(newFields.appearance_mode);
+    });
 }
 
 void OnApply_auto_run(const Fields &newFields)
@@ -130,16 +131,18 @@ void OnApply_personalized_volume(const Fields &newFields)
 {
     LOG(Info, "OnApply_personalized_volume: {}", newFields.personalized_volume);
 
-    Impl::NotifyApplyObserver(
-        [&](ApplyObserver &observer) { observer.OnPersonalizedVolumeChanged(newFields.personalized_volume); });
+    Impl::NotifyApplyObserver([&](ApplyObserver &observer) {
+        observer.OnPersonalizedVolumeChanged(newFields.personalized_volume);
+    });
 }
 
 void OnApply_loud_sound_reduction(const Fields &newFields)
 {
     LOG(Info, "OnApply_loud_sound_reduction: {}", newFields.loud_sound_reduction);
 
-    Impl::NotifyApplyObserver(
-        [&](ApplyObserver &observer) { observer.OnLoudSoundReductionChanged(newFields.loud_sound_reduction); });
+    Impl::NotifyApplyObserver([&](ApplyObserver &observer) {
+        observer.OnLoudSoundReductionChanged(newFields.loud_sound_reduction);
+    });
 }
 
 void OnApply_adaptive_transparency_level(const Fields &newFields)
@@ -155,8 +158,9 @@ void OnApply_noise_control_mode(const Fields &newFields)
 {
     LOG(Info, "OnApply_noise_control_mode: {}", newFields.noise_control_mode);
 
-    Impl::NotifyApplyObserver(
-        [&](ApplyObserver &observer) { observer.OnNoiseControlModeChanged(newFields.noise_control_mode); });
+    Impl::NotifyApplyObserver([&](ApplyObserver &observer) {
+        observer.OnNoiseControlModeChanged(newFields.noise_control_mode);
+    });
 }
 
 void OnApply_rssi_min(const Fields &newFields)
@@ -191,6 +195,14 @@ void OnApply_tray_quick_connect_enabled(const Fields &newFields)
 
     Impl::NotifyApplyObserver([&](ApplyObserver &observer) {
         observer.OnTrayQuickConnectEnabledChanged(newFields.tray_quick_connect_enabled);
+    });
+}
+
+void OnApply_audio_auto_connect_enabled(const Fields &newFields)
+{
+    LOG(Info, "OnApply_audio_auto_connect_enabled: {}", newFields.audio_auto_connect_enabled);
+    Impl::NotifyApplyObserver([&](ApplyObserver &observer) {
+        observer.OnAudioAutoConnectEnabledChanged(newFields.audio_auto_connect_enabled);
     });
 }
 

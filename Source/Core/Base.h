@@ -87,6 +87,50 @@ enum class Model : uint32_t {
 
 enum class Side : uint32_t { Left, Right };
 
+// Over-ear headsets and W1 Beats advertise left/right/case fields but have only one battery.
+inline bool HasSingleBattery(Model model)
+{
+    switch (model) {
+    case Model::AirPods_Max:
+    case Model::AirPods_Max_USB_C:
+    case Model::Powerbeats_3:
+    case Model::Beats_X:
+    case Model::Beats_Solo3:
+        return true;
+    default:
+        return false;
+    }
+}
+
+inline bool HasChargingCase(Model model)
+{
+    return !HasSingleBattery(model);
+}
+
+inline bool IsW1Beats(Model model)
+{
+    switch (model) {
+    case Model::Powerbeats_3:
+    case Model::Beats_X:
+    case Model::Beats_Solo3:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// W1 Beats have no in-ear/on-head sensor; their status bits must not control media playback.
+inline bool HasEarDetection(Model model)
+{
+    return !IsW1Beats(model);
+}
+
+// Max has no case, but its historical lid/card behavior is preserved. W1 Beats have neither.
+inline bool ReportsLidState(Model model)
+{
+    return !IsW1Beats(model);
+}
+
 } // namespace Core::AirPods
 
 template <>
@@ -124,7 +168,7 @@ inline QString Helper::ToString<Core::AirPods::Model>(const Core::AirPods::Model
     case Core::AirPods::Model::Beats_X:
         return "BeatsX";
     case Core::AirPods::Model::Beats_Solo3:
-        return "BeatsSolo3";
+        return "Beats Solo3";
     case Core::AirPods::Model::Beats_Fit_Pro:
         return "Beats Fit Pro";
     default:

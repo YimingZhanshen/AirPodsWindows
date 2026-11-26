@@ -1,4 +1,5 @@
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <map>
 #include <tuple>
@@ -20,8 +21,11 @@ namespace {
 using Core::AirPods::Model;
 using Core::AirPods::Side;
 using Core::AirPods::Details::Advertisement;
+using Core::AirPods::Details::EarDetectionTracker;
+using Core::AirPods::Details::LidTracker;
 using Core::AirPods::Details::StateManager;
 using ReceivedData = Core::Bluetooth::AdvertisementWatcher::ReceivedData;
+using namespace std::chrono_literals;
 
 class RecordingSettingsObserver final : public Core::Settings::ApplyObserver
 {
@@ -38,13 +42,34 @@ public:
         ++autoRunChanges;
     }
     void OnLowAudioLatencyChanged(bool) override {}
-    void OnAutomaticEarDetectionChanged(bool) override {}
-    void OnConversationalAwarenessChanged(bool) override {}
-    void OnConversationalAwarenessVolumePercentChanged(uint8_t) override {}
-    void OnPersonalizedVolumeChanged(bool) override {}
-    void OnLoudSoundReductionChanged(bool) override {}
-    void OnAdaptiveTransparencyLevelChanged(uint8_t) override {}
-    void OnNoiseControlModeChanged(uint32_t) override {}
+    void OnAutomaticEarDetectionChanged(bool enable) override
+    {
+        automaticEarDetection = enable;
+    }
+    void OnConversationalAwarenessChanged(bool enable) override
+    {
+        conversationalAwareness = enable;
+    }
+    void OnConversationalAwarenessVolumePercentChanged(uint8_t percent) override
+    {
+        conversationalAwarenessVolumePercent = percent;
+    }
+    void OnPersonalizedVolumeChanged(bool enable) override
+    {
+        personalizedVolume = enable;
+    }
+    void OnLoudSoundReductionChanged(bool enable) override
+    {
+        loudSoundReduction = enable;
+    }
+    void OnAdaptiveTransparencyLevelChanged(uint8_t level) override
+    {
+        adaptiveTransparencyLevel = level;
+    }
+    void OnNoiseControlModeChanged(uint32_t mode) override
+    {
+        noiseControlMode = mode;
+    }
     void OnRssiMinChanged(int16_t) override {}
     void OnDeviceAddressChanged(uint64_t) override {}
     void OnTrayIconBatteryChanged(Core::Settings::TrayIconBatteryBehavior) override {}
@@ -53,6 +78,11 @@ public:
         quickConnectEnabled = enable;
         ++quickConnectEnabledChanges;
     }
+    void OnAudioAutoConnectEnabledChanged(bool enable) override
+    {
+        audioAutoConnectEnabled = enable;
+        ++audioAutoConnectChanges;
+    }
     void OnTrayQuickConnectDeviceChanged(const QString &deviceId) override
     {
         quickConnectDeviceId = deviceId;
@@ -60,6 +90,15 @@ public:
     }
     void OnTaskbarBatteryChanged(Core::Settings::TaskbarStatusBehavior) override {}
 
+    bool automaticEarDetection{false};
+    bool conversationalAwareness{false};
+    uint8_t conversationalAwarenessVolumePercent{};
+    bool personalizedVolume{false};
+    bool loudSoundReduction{false};
+    uint8_t adaptiveTransparencyLevel{};
+    uint32_t noiseControlMode{};
+    bool audioAutoConnectEnabled{false};
+    int audioAutoConnectChanges{0};
     bool autoRun{false};
     int autoRunChanges{0};
     Core::Settings::AppearanceMode appearanceMode{Core::Settings::AppearanceMode::System};
@@ -150,6 +189,18 @@ ReceivedData MakeAdvertisementData(
     return data;
 }
 
+ReceivedData MakeTraceAdvertisementData(
+    uint64_t address, int16_t rssi, uint8_t statusByte, uint8_t batteryByte = 0x88,
+    uint8_t chargingByte = 0x88, uint16_t modelId = 0x2024)
+{
+    auto data = MakeAdvertisementData(address, rssi, Side::Left, 8, 8, 8, modelId);
+    auto &packet = data.manufacturerDataMap.at(Core::AppleCP::VendorId);
+    packet[5] = statusByte;
+    packet[6] = batteryByte;
+    packet[7] = chargingByte;
+    return data;
+}
+
 } // namespace
 
 class AirPodsDomainTests : public QObject
@@ -162,17 +213,28 @@ private Q_SLOTS:
     void ResolvesAirPods5DisplayName();
     void RecognizesAirPodsMaxUsbC();
     void ResolvesAirPodsMaxUsbCDisplayName();
+    void PreservesForkAndAddsUpstreamModelMappings();
     void ParsesAdvertisementState();
+    void NormalizesSingleBatteryModels();
     void FiltersDuplicateAndWeakAdvertisements();
+    void AcceptsWeakAndUnknownRssiFromTrackedAddress();
+    void RemembersSideAddressAcrossStateReset();
+    void RejectsConflictingBatterySources();
+    void RecoversFromWeakerBatterySource();
+    void AcceptsAdjacentBatteryBucketsAfterAddressRotation();
     void MergesAdvertisementsFromBothSides();
     void RejectsAdvertisementsFromDifferentModels();
     void AcceptsKnownModelAfterUnknownAdvertisement();
+    void TracksLidAcrossShortGaps();
+    void TracksLidWhilePodsAreOut();
+    void EarDetectionTrackerSurvivesStateLoss();
     void PackagesCompatibleLowLatencySilence();
     void LoadsSettingsThroughRepository();
     void MigratesLegacySettingsRepository();
     void PreservesExistingSettingsDuringMigration();
     void RollsBackFailedSettingsMigration();
     void PropagatesQuickConnectSettings();
+    void PreservesForkSettingsAndAddsPlaybackAutoConnect();
     void RejectsNullSettingsRepository();
     void ParsesUpdateVersions();
     void ParsesGitHubReleaseMetadata();
@@ -280,7 +342,28 @@ void AirPodsDomainTests::ResolvesAirPods5DisplayName()
 void AirPodsDomainTests::RecognizesAirPodsMaxUsbC()
 {
     QCOMPARE(Core::AppleCP::AirPods::GetModel(0x201F), Model::AirPods_Max_USB_C);
+    QCOMPARE(Core::AppleCP::AirPods::GetModel(0x202D), Model::AirPods_Max_USB_C);
     QCOMPARE(Helper::ToString(Model::AirPods_Max_USB_C), QString{"AirPods Max (USB-C)"});
+}
+
+void AirPodsDomainTests::PreservesForkAndAddsUpstreamModelMappings()
+{
+    const std::vector<std::tuple<uint16_t, Model, QString>> models{
+        {0x201D, Model::Powerbeats_Pro_2, "Powerbeats Pro 2"},
+        {0x2027, Model::AirPods_Pro_3, "AirPods Pro 3"},
+        {0x2030, Model::AirPods_5, "AirPods 5"},
+        {0x2036, Model::AirPods_5, "AirPods 5"},
+        {0x2003, Model::Powerbeats_3, "Powerbeats 3"},
+        {0x2005, Model::Beats_X, "BeatsX"},
+        {0x2006, Model::Beats_Solo3, "Beats Solo3"},
+    };
+    for (const auto &[modelId, model, name] : models) {
+        QCOMPARE(Core::AppleCP::AirPods::GetModel(modelId), model);
+        QCOMPARE(Helper::ToString(model), name);
+        const Advertisement advertisement{
+            MakeAdvertisementData(0x1234, -45, Side::Left, 8, 7, 5, modelId)};
+        QCOMPARE(advertisement.GetAdvState().model, model);
+    }
 }
 
 void AirPodsDomainTests::ResolvesAirPodsMaxUsbCDisplayName()
@@ -323,6 +406,49 @@ void AirPodsDomainTests::ParsesAdvertisementState()
     QVERIFY(state.caseBox.isLidOpened);
 }
 
+void AirPodsDomainTests::NormalizesSingleBatteryModels()
+{
+    for (const auto model :
+         {Model::AirPods_Max, Model::AirPods_Max_USB_C, Model::Powerbeats_3, Model::Beats_X,
+          Model::Beats_Solo3})
+    {
+        QVERIFY(Core::AirPods::HasSingleBattery(model));
+        QVERIFY(!Core::AirPods::HasChargingCase(model));
+        for (const auto side : {Side::Left, Side::Right}) {
+            const uint8_t left = side == Side::Left ? 6 : 15;
+            const uint8_t right = side == Side::Left ? 15 : 6;
+            const Advertisement advertisement{MakeAdvertisementData(
+                0x1234, -45, side, left, right, 9,
+                model == Model::AirPods_Max         ? 0x200A
+                : model == Model::AirPods_Max_USB_C ? 0x201F
+                : model == Model::Powerbeats_3      ? 0x2003
+                : model == Model::Beats_X           ? 0x2005
+                                                    : 0x2006)};
+            const auto &state = advertisement.GetAdvState();
+            QCOMPARE(state.pods.left.battery.Value(), 60U);
+            QCOMPARE(state.pods.right.battery.Value(), 60U);
+            QVERIFY(!state.caseBox.battery.Available());
+            QVERIFY(!state.caseBox.isCharging);
+            if (Core::AirPods::IsW1Beats(model)) {
+                QVERIFY(!Core::AirPods::ReportsLidState(model));
+                QVERIFY(!Core::AirPods::HasEarDetection(model));
+                QVERIFY(!state.caseBox.isBothPodsInCase);
+                QVERIFY(!state.caseBox.isLidOpened);
+                QVERIFY(!state.pods.left.isInCase && !state.pods.right.isInCase);
+                QVERIFY(!state.pods.left.isInEar && !state.pods.right.isInEar);
+            }
+            else {
+                // Max keeps the fork's historical lid/card behavior despite having no case.
+                QVERIFY(Core::AirPods::ReportsLidState(model));
+                QVERIFY(state.caseBox.isBothPodsInCase);
+                QVERIFY(state.caseBox.isLidOpened);
+            }
+        }
+    }
+    QVERIFY(Core::AirPods::HasChargingCase(Model::AirPods_Pro_2));
+    QVERIFY(Core::AirPods::HasEarDetection(Model::AirPods_Pro_2));
+}
+
 void AirPodsDomainTests::FiltersDuplicateAndWeakAdvertisements()
 {
     StateManager manager;
@@ -341,6 +467,109 @@ void AirPodsDomainTests::FiltersDuplicateAndWeakAdvertisements()
         Advertisement{MakeAdvertisementData(0x1234, -90, Side::Left, 7, 7, 5)});
     QVERIFY(!weak.has_value());
     QCOMPARE(manager.GetCurrentState()->pods.left.battery.Value(), 80U);
+}
+
+void AirPodsDomainTests::AcceptsWeakAndUnknownRssiFromTrackedAddress()
+{
+    StateManager manager;
+    manager.OnRssiMinChanged(-80);
+    QVERIFY(manager.OnAdvReceived(Advertisement{MakeTraceAdvertisementData(0xAAAA, -76, 0x2B)})
+                .has_value());
+
+    auto weak = manager.OnAdvReceived(Advertisement{MakeTraceAdvertisementData(0xAAAA, -88, 0x23)});
+    QVERIFY(weak.has_value());
+    QVERIFY(weak->newState.pods.left.isInEar);
+    QVERIFY(!weak->newState.pods.right.isInEar);
+
+    auto unknown =
+        manager.OnAdvReceived(Advertisement{MakeTraceAdvertisementData(0xAAAA, -127, 0x29)});
+    QVERIFY(unknown.has_value());
+    QVERIFY(!unknown->newState.pods.left.isInEar);
+    QVERIFY(unknown->newState.pods.right.isInEar);
+
+    QVERIFY(!manager.OnAdvReceived(Advertisement{MakeTraceAdvertisementData(0xBBBB, -127, 0x2B)})
+                 .has_value());
+    QVERIFY(!manager.OnAdvReceived(Advertisement{MakeTraceAdvertisementData(0xBBBB, -90, 0x2B)})
+                 .has_value());
+
+    // An unknown RSSI cannot prove that another source is stronger or farther away.
+    auto otherSide = manager.OnAdvReceived(
+        Advertisement{MakeTraceAdvertisementData(0xCCCC, -70, 0x0B, 0x68, 0x88)});
+    QVERIFY(otherSide.has_value());
+    QCOMPARE(manager.GetCurrentState()->pods.left.battery.Value(), 60U);
+}
+
+void AirPodsDomainTests::RemembersSideAddressAcrossStateReset()
+{
+    StateManager manager{{.lost = 10s, .stateReset = 50ms}};
+    manager.OnRssiMinChanged(-80);
+    QVERIFY(manager.OnAdvReceived(Advertisement{MakeTraceAdvertisementData(0xAAAA, -76, 0x2B)})
+                .has_value());
+    QTest::qSleep(250);
+
+    auto weak = manager.OnAdvReceived(Advertisement{MakeTraceAdvertisementData(0xAAAA, -88, 0x21)});
+    QVERIFY(weak.has_value());
+    QVERIFY(!weak->newState.pods.left.isInEar);
+    QVERIFY(!weak->newState.pods.right.isInEar);
+
+    manager.Disconnect();
+    QVERIFY(!manager.OnAdvReceived(Advertisement{MakeTraceAdvertisementData(0xAAAA, -88, 0x2B)})
+                 .has_value());
+}
+
+void AirPodsDomainTests::RejectsConflictingBatterySources()
+{
+    StateManager manager;
+    manager.OnRssiMinChanged(-80);
+    auto left = MakeAdvertisementData(0x1111, -72, Side::Left, 4, 15, 15, 0x201B);
+    left.manufacturerDataMap.at(Core::AppleCP::VendorId)[5] = 0x22;
+    auto right = MakeAdvertisementData(0x2222, -55, Side::Right, 9, 9, 15, 0x201B);
+    right.manufacturerDataMap.at(Core::AppleCP::VendorId)[5] = 0x0B;
+    QVERIFY(manager.OnAdvReceived(Advertisement{right}).has_value());
+    for (int i = 0; i < 5; ++i) {
+        QVERIFY(!manager.OnAdvReceived(Advertisement{left}).has_value());
+        manager.OnAdvReceived(Advertisement{right});
+        QCOMPARE(manager.GetCurrentState()->pods.left.battery.Value(), 90U);
+        QCOMPARE(manager.GetCurrentState()->pods.right.battery.Value(), 90U);
+    }
+
+    // A genuine update from the selected source is still accepted.
+    right.manufacturerDataMap.at(Core::AppleCP::VendorId)[6] = 0x89;
+    manager.OnAdvReceived(Advertisement{right});
+    QCOMPARE(manager.GetCurrentState()->pods.left.battery.Value(), 80U);
+}
+
+void AirPodsDomainTests::RecoversFromWeakerBatterySource()
+{
+    StateManager manager;
+    manager.OnRssiMinChanged(-80);
+    auto partial = MakeAdvertisementData(0x1111, -72, Side::Left, 4, 15, 15, 0x201B);
+    auto complete = MakeAdvertisementData(0x2222, -50, Side::Right, 9, 9, 5, 0x201B);
+    complete.manufacturerDataMap.at(Core::AppleCP::VendorId)[7] |= 0x70;
+    QVERIFY(manager.OnAdvReceived(Advertisement{partial}).has_value());
+    auto update = manager.OnAdvReceived(Advertisement{complete});
+    QVERIFY(update.has_value());
+    QCOMPARE(update->newState.pods.left.battery.Value(), 90U);
+    QCOMPARE(update->newState.pods.right.battery.Value(), 90U);
+    QCOMPARE(update->newState.caseBox.battery.Value(), 50U);
+    QVERIFY(update->newState.pods.left.isCharging);
+    QVERIFY(update->newState.pods.right.isCharging);
+    QVERIFY(update->newState.caseBox.isCharging);
+    QVERIFY(!manager.OnAdvReceived(Advertisement{partial}).has_value());
+}
+
+void AirPodsDomainTests::AcceptsAdjacentBatteryBucketsAfterAddressRotation()
+{
+    StateManager manager;
+    manager.OnRssiMinChanged(-80);
+    manager.OnAdvReceived(Advertisement{MakeAdvertisementData(0x1111, -50, Side::Right, 8, 7, 5)});
+    auto rotated = MakeAdvertisementData(0x2222, -51, Side::Right, 9, 8, 6);
+    rotated.manufacturerDataMap.at(Core::AppleCP::VendorId)[7] |= 0x70;
+    auto update = manager.OnAdvReceived(Advertisement{rotated});
+    QVERIFY(update.has_value());
+    QCOMPARE(update->newState.pods.left.battery.Value(), 90U);
+    QCOMPARE(update->newState.pods.right.battery.Value(), 80U);
+    QCOMPARE(update->newState.caseBox.battery.Value(), 60U);
 }
 
 void AirPodsDomainTests::MergesAdvertisementsFromBothSides()
@@ -392,6 +621,63 @@ void AirPodsDomainTests::AcceptsKnownModelAfterUnknownAdvertisement()
         manager.OnAdvReceived(Advertisement{MakeAdvertisementData(0x2222, -46, Side::Right)});
     QVERIFY(known.has_value());
     QCOMPARE(known->newState.model, Model::AirPods_Pro_2);
+}
+
+void AirPodsDomainTests::TracksLidAcrossShortGaps()
+{
+    using Lid = LidTracker::Lid;
+    const LidTracker::Timestamp start{};
+    LidTracker tracker;
+
+    QCOMPARE(tracker.Update(std::nullopt, Lid::Opened, start), std::optional<bool>{true});
+    QCOMPARE(tracker.Update(Lid::Opened, Lid::Opened, start + 1s), std::nullopt);
+    tracker.OnLost(start + 40s);
+    QCOMPARE(tracker.Update(std::nullopt, Lid::Opened, start + 70s), std::nullopt);
+    QCOMPARE(tracker.Update(Lid::Opened, Lid::Closed, start + 80s), std::optional<bool>{false});
+    tracker.OnLost(start + 90s);
+    QCOMPARE(tracker.Update(std::nullopt, Lid::Opened, start + 95s), std::optional<bool>{true});
+    tracker.OnLost(start + 100s);
+    QCOMPARE(
+        tracker.Update(std::nullopt, Lid::Opened, start + 101s + LidTracker::kMemory),
+        std::optional<bool>{true});
+    tracker.OnLost(start + 200s);
+    tracker.Reset();
+    QCOMPARE(tracker.Update(std::nullopt, Lid::Opened, start + 201s), std::optional<bool>{true});
+}
+
+void AirPodsDomainTests::TracksLidWhilePodsAreOut()
+{
+    using Lid = LidTracker::Lid;
+    const LidTracker::Timestamp start{};
+    LidTracker tracker;
+
+    QCOMPARE(tracker.Update(std::nullopt, Lid::Opened, start), std::optional<bool>{true});
+    QCOMPARE(tracker.Update(Lid::Opened, Lid::Unobservable, start + 1s), std::nullopt);
+    QCOMPARE(tracker.Update(Lid::Unobservable, Lid::Unobservable, start + 2s), std::nullopt);
+    QCOMPARE(
+        tracker.Update(Lid::Unobservable, Lid::Closed, start + 3s), std::optional<bool>{false});
+    QCOMPARE(tracker.Update(Lid::Closed, Lid::Unobservable, start + 4s), std::nullopt);
+    QCOMPARE(tracker.Update(Lid::Unobservable, Lid::Opened, start + 5s), std::optional<bool>{true});
+    tracker.Reset();
+    QCOMPARE(tracker.Update(std::nullopt, Lid::Closed, start + 6s), std::nullopt);
+}
+
+void AirPodsDomainTests::EarDetectionTrackerSurvivesStateLoss()
+{
+    const auto makeState = [](bool leftInEar, bool rightInEar) {
+        Core::AirPods::State state;
+        state.pods.left.isInEar = leftInEar;
+        state.pods.right.isInEar = rightInEar;
+        return state;
+    };
+    EarDetectionTracker tracker;
+    QCOMPARE(tracker.Update(makeState(true, true)), std::optional<bool>{});
+    QCOMPARE(tracker.Update(makeState(true, false)), std::optional<bool>{false});
+    QCOMPARE(tracker.Update(makeState(true, false)), std::optional<bool>{});
+    QCOMPARE(tracker.Update(makeState(false, false)), std::optional<bool>{});
+    QCOMPARE(tracker.Update(makeState(true, true)), std::optional<bool>{true});
+    tracker.Reset();
+    QCOMPARE(tracker.Update(makeState(true, true)), std::optional<bool>{});
 }
 
 void AirPodsDomainTests::LoadsSettingsThroughRepository()
@@ -480,6 +766,70 @@ void AirPodsDomainTests::PropagatesQuickConnectSettings()
     QCOMPARE(observer.quickConnectDeviceChanges, 1);
 
     Core::Settings::SetApplyObserver(nullptr);
+    Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
+}
+
+void AirPodsDomainTests::PreservesForkSettingsAndAddsPlaybackAutoConnect()
+{
+    auto repository = std::make_unique<Core::Settings::MemoryRepository>();
+    repository->Write("abi_version", Core::Settings::kFieldsAbiVersion);
+    repository->Write("automatic_ear_detection", false);
+    repository->Write("conversational_awareness", true);
+    repository->Write("conversational_awareness_volume_percent", uint8_t{55});
+    repository->Write("personalized_volume", true);
+    repository->Write("loud_sound_reduction", true);
+    repository->Write("adaptive_transparency_level", uint8_t{35});
+    repository->Write("noise_control_mode", uint32_t{3});
+    repository->Write("tray_quick_connect_enabled", true);
+    repository->Write("audio_auto_connect_enabled", true);
+    auto *memoryRepository = repository.get();
+    Core::Settings::SetRepository(std::move(repository));
+    QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+
+    RecordingSettingsObserver observer;
+    Core::Settings::SetApplyObserver(&observer);
+    Core::Settings::Apply();
+    QVERIFY(!observer.automaticEarDetection);
+    QVERIFY(observer.conversationalAwareness);
+    QCOMPARE(observer.conversationalAwarenessVolumePercent, uint8_t{55});
+    QVERIFY(observer.personalizedVolume);
+    QVERIFY(observer.loudSoundReduction);
+    QCOMPARE(observer.adaptiveTransparencyLevel, uint8_t{35});
+    QCOMPARE(observer.noiseControlMode, uint32_t{3});
+    QVERIFY(observer.quickConnectEnabled);
+    QVERIFY(observer.audioAutoConnectEnabled);
+    QCOMPARE(observer.audioAutoConnectChanges, 1);
+    QVERIFY(Core::Settings::GetCurrent().popup_on_lid_open);
+    Core::Settings::SetApplyObserver(nullptr);
+
+    // Saving must retain every pre-U2 key and add both upstream keys, without an ABI bump.
+    QCOMPARE(Core::Settings::kFieldsAbiVersion, uint32_t{1});
+    Core::Settings::Save(Core::Settings::GetCurrent());
+    const auto keys = memoryRepository->Keys();
+    for (const auto &key :
+         {"language_locale",
+          "appearance_mode",
+          "auto_run",
+          "low_audio_latency",
+          "automatic_ear_detection",
+          "conversational_awareness",
+          "conversational_awareness_volume_percent",
+          "personalized_volume",
+          "loud_sound_reduction",
+          "adaptive_transparency_level",
+          "noise_control_mode",
+          "skipped_version",
+          "rssi_min",
+          "device_address",
+          "tray_icon_battery",
+          "tray_quick_connect_enabled",
+          "tray_quick_connect_device_id",
+          "battery_on_taskbar",
+          "audio_auto_connect_enabled",
+          "popup_on_lid_open"})
+    {
+        QVERIFY2(keys.contains(key), key);
+    }
     Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
 }
 

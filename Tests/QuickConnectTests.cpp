@@ -77,13 +77,14 @@ class BlockingBackend final : public Core::QuickConnect::Backend
 {
 public:
     std::promise<void> entered;
+    bool connected{};
 
     std::vector<Device> ListDevices(std::stop_token stopToken) override
     {
         std::stop_callback cancel{stopToken, [this] { Unblock(); }};
         entered.set_value();
         _release.wait();
-        return {{"{A}", "AirPods", false}};
+        return {{"{A}", "AirPods", connected}};
     }
 
     bool RequestReconnect(const QString &, std::stop_token) override
@@ -127,6 +128,13 @@ class QuickConnectTests : public QObject
 private slots:
     void initTestCase();
 
+    // Playback auto-connect
+    void playbackConnectsIndependentlyOfTrayAndDeduplicates();
+    void automaticConnectedCheckIsSilent();
+    void manualClickJoinsAutomaticConnectedCheck();
+    void disabledOrUnconfiguredAutomaticConnectDoesNothing();
+    void automaticFailureRequiresCooldownAndNewPlayback();
+
     // Controller
     void disabledRequestDoesNotCallBackend();
     void emptyDeviceIdReturnsNoDevice();
@@ -156,6 +164,113 @@ private slots:
 void QuickConnectTests::initTestCase()
 {
     qRegisterMetaType<Outcome>();
+}
+
+//////////////////////////////////////////////////
+// Playback auto-connect
+//
+
+void QuickConnectTests::playbackConnectsIndependentlyOfTrayAndDeduplicates()
+{
+    auto backend = std::make_shared<FakeBackend>();
+    Controller controller{backend, kTestResolveTimeout};
+    controller.SetDeviceId("{A}");
+    controller.SetAudioAutoConnectEnabled(true);
+    QVERIFY(!controller.IsEnabled());
+    QSignalSpy outcomes{&controller, &Controller::OutcomeChanged};
+    controller.OnPlaybackStateChanged(true);
+    QTRY_COMPARE(outcomes.count(), 1);
+    QCOMPARE(outcomes.last().at(0).value<Outcome>(), Outcome::RequestStarted);
+    controller.OnPlaybackStateChanged(true);
+    controller.OnPlaybackStateChanged(false);
+    controller.OnPlaybackStateChanged(true);
+    QCOMPARE(backend->reconnectCalls.load(), 1);
+    controller.OnEndpointStateChanged("{A}", true);
+    QCOMPARE(outcomes.last().at(0).value<Outcome>(), Outcome::Connected);
+    controller.OnPlaybackStateChanged(true);
+    QCOMPARE(backend->listCalls.load(), 1);
+}
+
+void QuickConnectTests::automaticConnectedCheckIsSilent()
+{
+    auto backend = std::make_shared<FakeBackend>();
+    backend->devices.front().connected = true;
+    Controller controller{backend, kTestResolveTimeout};
+    controller.SetDeviceId("{A}");
+    controller.SetAudioAutoConnectEnabled(true);
+    QSignalSpy outcomes{&controller, &Controller::OutcomeChanged};
+    controller.OnPlaybackStateChanged(true);
+    QTRY_VERIFY(!controller.IsBusy());
+    QCOMPARE(backend->listCalls.load(), 1);
+    QCOMPARE(outcomes.count(), 0);
+    controller.SetEnabled(true);
+    QCOMPARE(controller.Request(), Outcome::RequestStarted);
+    QTRY_VERIFY(
+        !outcomes.isEmpty() && outcomes.last().at(0).value<Outcome>() == Outcome::AlreadyConnected);
+    QCOMPARE(backend->reconnectCalls.load(), 0);
+    QCOMPARE(outcomes.count(), 1);
+}
+
+void QuickConnectTests::manualClickJoinsAutomaticConnectedCheck()
+{
+    auto backend = std::make_shared<BlockingBackend>();
+    backend->connected = true;
+    BackendUnblockGuard guard{backend};
+    Controller controller{backend, kTestResolveTimeout};
+    controller.SetDeviceId("{A}");
+    controller.SetEnabled(true);
+    controller.SetAudioAutoConnectEnabled(true);
+    QSignalSpy outcomes{&controller, &Controller::OutcomeChanged};
+    controller.OnPlaybackStateChanged(true);
+    auto entered = backend->entered.get_future();
+    QVERIFY(entered.wait_for(1s) == std::future_status::ready);
+    QCOMPARE(controller.Request(), Outcome::RequestStarted);
+    backend->Unblock();
+    QTRY_VERIFY(!controller.IsBusy());
+    QCOMPARE(outcomes.last().at(0).value<Outcome>(), Outcome::AlreadyConnected);
+}
+
+void QuickConnectTests::disabledOrUnconfiguredAutomaticConnectDoesNothing()
+{
+    auto backend = std::make_shared<FakeBackend>();
+    Controller controller{backend, kTestResolveTimeout};
+    controller.SetEnabled(true);
+    controller.SetDeviceId("{A}");
+    controller.OnPlaybackStateChanged(true);
+    controller.SetDeviceId({});
+    controller.SetAudioAutoConnectEnabled(true);
+    controller.OnPlaybackStateChanged(false);
+    controller.OnPlaybackStateChanged(true);
+    QTest::qWait(20);
+    QCOMPARE(backend->listCalls.load(), 0);
+}
+
+void QuickConnectTests::automaticFailureRequiresCooldownAndNewPlayback()
+{
+    auto backend = std::make_shared<FakeBackend>();
+    backend->devices = {{"{B}", "Unavailable headphones", false}};
+    Controller controller{backend, kTestResolveTimeout, 80ms};
+    controller.SetDeviceId("{B}");
+    controller.SetAudioAutoConnectEnabled(true);
+    QSignalSpy outcomes{&controller, &Controller::OutcomeChanged};
+    controller.OnPlaybackStateChanged(true);
+    QTRY_COMPARE(outcomes.count(), 1);
+    QCOMPARE(outcomes.last().at(0).value<Outcome>(), Outcome::Failed);
+    controller.OnPlaybackStateChanged(false);
+    controller.OnPlaybackStateChanged(true);
+    QCOMPARE(backend->reconnectCalls.load(), 1);
+    QTest::qWait(100);
+    controller.OnPlaybackStateChanged(true);
+    QCOMPARE(backend->reconnectCalls.load(), 1);
+    controller.OnPlaybackStateChanged(false);
+    controller.OnPlaybackStateChanged(true);
+    QTRY_COMPARE(outcomes.count(), 2);
+    QCOMPARE(backend->reconnectCalls.load(), 2);
+    controller.SetAudioAutoConnectEnabled(false);
+    QTest::qWait(100);
+    controller.OnPlaybackStateChanged(false);
+    controller.OnPlaybackStateChanged(true);
+    QCOMPARE(backend->reconnectCalls.load(), 2);
 }
 
 //////////////////////////////////////////////////

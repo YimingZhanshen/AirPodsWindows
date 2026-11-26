@@ -66,15 +66,16 @@ Core::AirPods::Model AirPods::GetModel(uint16_t modelId)
     case 0x200A:
         return Core::AirPods::Model::AirPods_Max;
     case 0x201F:
+    case 0x202D:
         return Core::AirPods::Model::AirPods_Max_USB_C;
     case 0x201D:
         return Core::AirPods::Model::Powerbeats_Pro_2;
-        // case 0x2003:
-        //    return Core::AirPods::Model::Powerbeats_3;
-        // case 0x2005:
-        //    return Core::AirPods::Model::Beats_X;
-        // case 0x2006:
-        //    return Core::AirPods::Model::Beats_Solo3;
+    case 0x2003:
+        return Core::AirPods::Model::Powerbeats_3;
+    case 0x2005:
+        return Core::AirPods::Model::Beats_X;
+    case 0x2006:
+        return Core::AirPods::Model::Beats_Solo3;
     case 0x2012:
         return Core::AirPods::Model::Beats_Fit_Pro;
     default:

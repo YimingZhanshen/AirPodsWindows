@@ -53,6 +53,9 @@ struct BasicState {
 
 struct PodState : Details::BasicState {
     bool isInEar{false};
+    // A pod charging while its peer is not is still in the case, even when the packet's
+    // "both in case" bit is clear.
+    bool isInCase{false};
 
     bool operator==(const PodState &rhs) const = default;
 };
@@ -75,7 +78,7 @@ struct State {
     PodsState pods;
     CaseState caseBox;
     QString displayName;
-    
+
     // AAP Protocol states (for AirPods Pro and Max with ANC support)
     std::optional<AAP::NoiseControlMode> noiseControlMode;
     std::optional<AAP::ConversationalAwarenessState> conversationalAwareness;
@@ -135,7 +138,12 @@ public:
         State newState;
     };
 
-    StateManager();
+    struct Intervals {
+        std::chrono::milliseconds lost{std::chrono::seconds{10}};
+        std::chrono::milliseconds stateReset{std::chrono::seconds{10}};
+    };
+
+    explicit StateManager(Intervals intervals = {});
     ~StateManager();
 
     void SetOnDiscardState(std::function<void()> callback);
@@ -156,16 +164,50 @@ private:
     Helper::Timer _lostTimer;
     Helper::Sides<Helper::Timer> _stateResetTimer;
     Helper::Sides<std::optional<std::pair<Advertisement, Timestamp>>> _adv;
+    // Addresses outlive expired advertisements so weak packets from a known side remain usable.
+    Helper::Sides<std::optional<Advertisement::AddressType>> _knownAddress;
     std::optional<State> _cachedState;
     int16_t _rssiMin{std::numeric_limits<int16_t>::max()};
 
     bool IsPossibleDesiredAdv(const Advertisement &adv) const;
+    bool IsKnownAddress(Advertisement::AddressType address) const;
     void UpdateAdv(Advertisement adv);
     std::optional<UpdateEvent> UpdateState();
     std::function<void()> ResetAll();
 
     std::function<void()> DoLost();
     void DoStateReset(Side side);
+};
+
+// Remembers lid transitions across short advertisement gaps and while the pods are out of the case.
+class LidTracker
+{
+public:
+    using Clock = std::chrono::steady_clock;
+    using Timestamp = std::chrono::time_point<Clock>;
+    enum class Lid : uint8_t { Opened, Closed, Unobservable };
+
+    static constexpr std::chrono::seconds kMemory{60};
+
+    std::optional<bool> Update(std::optional<Lid> oldLid, Lid newLid, Timestamp now);
+    void OnLost(Timestamp now);
+    void Reset();
+
+private:
+    mutable std::mutex _mutex;
+    std::optional<Lid> _lastLid;
+    std::optional<Timestamp> _lostAt;
+};
+
+// Keeps an ear-detection baseline even when StateManager drops and recreates its cached state.
+class EarDetectionTracker
+{
+public:
+    std::optional<bool> Update(const State &state);
+    void Reset();
+
+private:
+    std::optional<bool> _lastBothInEar;
 };
 } // namespace Details
 
@@ -219,6 +261,9 @@ public:
 
 private:
     std::mutex _mutex;
+    // Declared before StateManager so its timer callbacks cannot outlive these trackers.
+    Details::LidTracker _lidTracker;
+    Details::EarDetectionTracker _earDetection;
     Details::StateManager _stateMgr;
     std::optional<Bluetooth::Device> _boundDevice;
     std::optional<Model> _modelOverride;
