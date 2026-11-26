@@ -1264,12 +1264,19 @@ void AirPodsDomainTests::PlacesPopupInsideMultimonitorBounds()
         QRect{1920, 400, 2560, 1440},  // right and below the primary origin
         QRect{100, 100, 240, 180},     // smaller than the popup plus margins
     };
+    const auto formatRect = [](const QRect &rect) {
+        return QString{"x=%1, y=%2, width=%3, height=%4"}
+            .arg(rect.x())
+            .arg(rect.y())
+            .arg(rect.width())
+            .arg(rect.height());
+    };
     for (const auto &screen : screens) {
         const auto position = Gui::PopupPosition(screen, popup, margin);
         const QRect placed{position, popup};
-        QVERIFY2(placed.intersects(screen), qPrintable(screen.toString()));
-        QVERIFY2(placed.left() >= screen.left(), qPrintable(screen.toString()));
-        QVERIFY2(placed.top() >= screen.top(), qPrintable(screen.toString()));
+        QVERIFY2(placed.intersects(screen), qPrintable(formatRect(screen)));
+        QVERIFY2(placed.left() >= screen.left(), qPrintable(formatRect(screen)));
+        QVERIFY2(placed.top() >= screen.top(), qPrintable(formatRect(screen)));
         if (screen.width() >= popup.width() + margin.width()) {
             QCOMPARE(placed.right() + 1, screen.right() + 1 - margin.width());
         }
@@ -1295,15 +1302,16 @@ void AirPodsDomainTests::HebrewUpdateWindowTranslationsAreFinished_data()
     QTest::addColumn<QString>("expectedSource");
     QTest::addColumn<QString>("expectedTranslation");
 
-    QTest::newRow("view release") << QStringLiteral("View release")
-                                  << QStringLiteral("צפה בפרטי הגרסה");
-    QTest::newRow("skip this version")
-        << QStringLiteral("Skip this version") << QStringLiteral("דלג על גרסה זו");
-    QTest::newRow("remind me later")
-        << QStringLiteral("Remind me later") << QStringLiteral("הזכר לי מאוחר יותר");
-    QTest::newRow("update now") << QStringLiteral("Update now") << QStringLiteral("עדכן עכשיו");
-    QTest::newRow("download manually")
-        << QStringLiteral("Download Manually") << QStringLiteral("הורדת ידנית");
+    QTest::newRow("view release") << qPrintable(QStringLiteral("View release"))
+                                  << qPrintable(QStringLiteral("צפה בפרטי הגרסה"));
+    QTest::newRow("skip this version") << qPrintable(QStringLiteral("Skip this version"))
+                                       << qPrintable(QStringLiteral("דלג על גרסה זו"));
+    QTest::newRow("remind me later") << qPrintable(QStringLiteral("Remind me later"))
+                                     << qPrintable(QStringLiteral("הזכר לי מאוחר יותר"));
+    QTest::newRow("update now") << qPrintable(QStringLiteral("Update now"))
+                                << qPrintable(QStringLiteral("עדכן עכשיו"));
+    QTest::newRow("download manually") << qPrintable(QStringLiteral("Download Manually"))
+                                       << qPrintable(QStringLiteral("הורדת ידנית"));
 }
 
 void AirPodsDomainTests::HebrewUpdateWindowTranslationsAreFinished()
