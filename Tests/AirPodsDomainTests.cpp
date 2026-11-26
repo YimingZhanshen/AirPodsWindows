@@ -223,8 +223,10 @@ private Q_SLOTS:
     void ResolvesAirPodsMaxUsbCDisplayName();
     void PreservesForkAndAddsUpstreamModelMappings();
     void MapsModelNumberStringsToUnionOfForkAndUpstreamModels();
+    void RefinesKnownModelsOnlyWithinTheirFamily();
+    void AirPods5VariantsExposeAapCapabilities();
     void RejectsUnknownModelNumberWithoutGuessing();
-    void ModelProductIdUnionHasNoDuplicateOrConflictingEntries();
+    void ModelProductIdUnionMatchesExpectedEntries();
     void ParsesAdvertisementState();
     void NormalizesSingleBatteryModels();
     void FiltersDuplicateAndWeakAdvertisements();
@@ -291,16 +293,15 @@ void AirPodsDomainTests::RejectsMalformedPackets()
 
 void AirPodsDomainTests::RecognizesAirPods5()
 {
-    // 0x2030 was captured from a Wireless Charging Case device in the fork's own advertisement
-    // corpus (see capturedLeft/capturedRight below). 0x2036 has no local capture pointing at
-    // either variant, so the fork keeps it on the coarse AirPods 5 entry rather than guessing.
-    QCOMPARE(Core::AppleCP::AirPods::GetModel(0x2030), Model::AirPods_5_WCC);
+    // Neither local product id is correlated with a model number, so both remain coarse.
+    // WCC is resolved later only from A3439/A3440/A3441.
+    QCOMPARE(Core::AppleCP::AirPods::GetModel(0x2030), Model::AirPods_5);
     QCOMPARE(Core::AppleCP::AirPods::GetModel(0x2036), Model::AirPods_5);
     QCOMPARE(Helper::ToString(Model::AirPods_5), QString{"AirPods 5"});
     QCOMPARE(Helper::ToString(Model::AirPods_5_WCC), QString{"AirPods 5 (Wireless Charging Case)"});
 
     for (const auto &[modelId, expected] : {
-             std::pair{uint16_t{0x2030}, Model::AirPods_5_WCC},
+             std::pair{uint16_t{0x2030}, Model::AirPods_5},
              std::pair{uint16_t{0x2036}, Model::AirPods_5},
          })
     {
@@ -312,8 +313,8 @@ void AirPodsDomainTests::RecognizesAirPods5()
         QCOMPARE(advertisement.GetAdvState().caseBox.battery.Value(), 50u);
     }
 
-    // Sanitized captures from an AirPods 5 with Wireless Charging Case. Bytes 11-26 are
-    // intentionally zeroed because the protocol's trailing payload may identify the device.
+    // Sanitized AirPods 5 family captures. Bytes 11-26 are intentionally zeroed because the
+    // protocol's trailing payload may identify the device; no WCC model number is present.
     constexpr std::array<uint8_t, 27> capturedLeft{
         0x07, 0x19, 0x01, 0x30, 0x20, 0x35, 0xaa, 0xba, 0x32, 0x00, 0x05, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -337,7 +338,7 @@ void AirPodsDomainTests::RecognizesAirPods5()
             Core::AppleCP::VendorId, std::vector<uint8_t>{packet.cbegin(), packet.cend()});
         const Advertisement captured{data};
         const auto &state = captured.GetAdvState();
-        QCOMPARE(state.model, Model::AirPods_5_WCC);
+        QCOMPARE(state.model, Model::AirPods_5);
         QCOMPARE(state.side, side);
         QCOMPARE(state.pods.left.battery.Value(), 100u);
         QCOMPARE(state.pods.right.battery.Value(), 100u);
@@ -354,7 +355,7 @@ void AirPodsDomainTests::RecognizesAirPods5()
             QVERIFY(update.has_value());
         }
     }
-    QCOMPARE(manager.GetCurrentState()->model, Model::AirPods_5_WCC);
+    QCOMPARE(manager.GetCurrentState()->model, Model::AirPods_5);
 }
 
 void AirPodsDomainTests::ResolvesAirPods5DisplayName()
@@ -392,7 +393,7 @@ void AirPodsDomainTests::PreservesForkAndAddsUpstreamModelMappings()
     const std::vector<std::tuple<uint16_t, Model, QString>> models{
         {0x201D, Model::Powerbeats_Pro_2, "Powerbeats Pro 2"},
         {0x2027, Model::AirPods_Pro_3, "AirPods Pro 3"},
-        {0x2030, Model::AirPods_5_WCC, "AirPods 5 (Wireless Charging Case)"},
+        {0x2030, Model::AirPods_5, "AirPods 5"},
         {0x2036, Model::AirPods_5, "AirPods 5"},
         {0x2003, Model::Powerbeats_3, "Powerbeats 3"},
         {0x2005, Model::Beats_X, "BeatsX"},
@@ -446,6 +447,30 @@ void AirPodsDomainTests::MapsModelNumberStringsToUnionOfForkAndUpstreamModels()
         Core::AirPods::Details::ModelFromModelNumber("A3440\r\n").value(), Model::AirPods_5_WCC);
 }
 
+void AirPodsDomainTests::RefinesKnownModelsOnlyWithinTheirFamily()
+{
+    using Resolve = Core::AirPods::Details::ResolveModel;
+    QCOMPARE(Resolve(Model::Unknown, Model::AirPods_5_WCC), Model::AirPods_5_WCC);
+    QCOMPARE(Resolve(Model::AirPods_5, Model::AirPods_5_WCC), Model::AirPods_5_WCC);
+    QCOMPARE(Resolve(Model::AirPods_5, Model::AirPods_5), Model::AirPods_5);
+    QCOMPARE(Resolve(Model::AirPods_5, Model::AirPods_Pro_3), Model::AirPods_5);
+    QCOMPARE(Resolve(Model::AirPods_4, Model::AirPods_4_ANC), Model::AirPods_4_ANC);
+    QCOMPARE(Resolve(Model::AirPods_Pro_2, Model::AirPods_Pro_2_USB_C), Model::AirPods_Pro_2_USB_C);
+    QCOMPARE(Resolve(Model::AirPods_Max, Model::AirPods_Max_USB_C), Model::AirPods_Max_USB_C);
+    QCOMPARE(Resolve(Model::AirPods_Pro_2_USB_C, Model::AirPods_Pro_2), Model::AirPods_Pro_2_USB_C);
+    QCOMPARE(Resolve(Model::AirPods_Pro_3, std::nullopt), Model::AirPods_Pro_3);
+}
+
+void AirPodsDomainTests::AirPods5VariantsExposeAapCapabilities()
+{
+    QVERIFY(Core::AirPods::Manager::SupportsANC(Model::AirPods_5));
+    QVERIFY(Core::AirPods::Manager::SupportsANC(Model::AirPods_5_WCC));
+    QVERIFY(!Core::AirPods::Manager::SupportsANC(Model::AirPods_4));
+    QVERIFY(!Core::AirPods::Manager::SupportsANC(Model::AirPods_3));
+    QVERIFY(!Core::AirPods::Manager::SupportsANC(Model::Powerbeats_Pro_2));
+    QVERIFY(!Core::AirPods::Manager::SupportsANC(Model::Unknown));
+}
+
 void AirPodsDomainTests::RejectsUnknownModelNumberWithoutGuessing()
 {
     // Apple has not published a reference for these IDs in the vendored spec, so the map
@@ -460,10 +485,10 @@ void AirPodsDomainTests::RejectsUnknownModelNumberWithoutGuessing()
     QVERIFY(!Core::AirPods::Details::ModelFromModelNumber("A2968").has_value());
 }
 
-void AirPodsDomainTests::ModelProductIdUnionHasNoDuplicateOrConflictingEntries()
+void AirPodsDomainTests::ModelProductIdUnionMatchesExpectedEntries()
 {
-    // Enumerate every product id the fork's GetModel switch claims and assert it resolves
-    // to the expected Model, and that no product id silently maps to two different models.
+    // This fixture locks the evidence-backed product-id union. Duplicate switch cases are a
+    // compile error; the production table is not duplicated here as a second source of truth.
     const std::vector<std::pair<uint16_t, Model>> unionTable{
         // Upstream 0.7.0 additions.
         {0x2002, Model::AirPods_1},
@@ -484,16 +509,11 @@ void AirPodsDomainTests::ModelProductIdUnionHasNoDuplicateOrConflictingEntries()
         {0x2024, Model::AirPods_Pro_2_USB_C},
         {0x2027, Model::AirPods_Pro_3},
         {0x201D, Model::Powerbeats_Pro_2}, // winpods apple_cp/mod.rs + Hebrew/PBP commit.
-        {0x2030, Model::AirPods_5_WCC},    // Captured advertisement in this file.
-        {0x2036, Model::AirPods_5},        // Coarse fork mapping, no WCC capture.
+        {0x2030, Model::AirPods_5}, // Family capture; WCC requires a correlated model number.
+        {0x2036, Model::AirPods_5}, // Coarse fork mapping, no WCC capture.
     };
-    std::map<uint16_t, Model> seen;
     for (const auto &[productId, expected] : unionTable) {
-        const auto actual = Core::AppleCP::AirPods::GetModel(productId);
-        QCOMPARE(actual, expected);
-        const auto [iter, inserted] = seen.emplace(productId, actual);
-        QVERIFY2(inserted, qPrintable(QString{"duplicate product id 0x%1"}.arg(productId, 0, 16)));
-        QCOMPARE(iter->second, actual);
+        QCOMPARE(Core::AppleCP::AirPods::GetModel(productId), expected);
     }
 
     // Unknown ids must degrade to Model::Unknown rather than pick a nearest neighbour.

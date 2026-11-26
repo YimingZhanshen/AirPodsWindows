@@ -52,12 +52,9 @@ Core::AirPods::Model AirPods::GetModel(uint16_t modelId)
         return Core::AirPods::Model::AirPods_4;
     case 0x201B:
         return Core::AirPods::Model::AirPods_4_ANC;
-    // 0x2030 was captured from a device the fork labels "AirPods 5 with Wireless Charging
-    // Case" (see RecognizesAirPods5 in Tests/AirPodsDomainTests.cpp). 0x2036 is kept on the
-    // base AirPods 5 entry because no local capture or upstream data proves the WCC variant
-    // for it; the fork preserves that coarse mapping rather than guessing a distinct enum.
+    // The local captures prove an AirPods 5 family advertisement, but do not correlate either
+    // product id with a model number. Keep both IDs coarse; WCC requires A3439/A3440/A3441.
     case 0x2030:
-        return Core::AirPods::Model::AirPods_5_WCC;
     case 0x2036:
         return Core::AirPods::Model::AirPods_5;
     case 0x200E:

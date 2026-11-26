@@ -109,6 +109,10 @@ QString ResolveDisplayName(QString deviceName, Model model);
 // lacks a local source, upstream table, or public reference stays out of the map.
 std::optional<Model> ModelFromModelNumber(std::string_view modelNumber);
 
+// Model-number evidence may refine a generic product-id model within the same family, but must
+// not replace a conflicting family. Unknown product ids fall back to the evidenced model number.
+Model ResolveModel(Model productModel, std::optional<Model> modelNumberModel);
+
 class Advertisement
 {
 public:

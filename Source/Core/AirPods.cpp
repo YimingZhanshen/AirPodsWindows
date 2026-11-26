@@ -117,6 +117,31 @@ std::optional<Model> ModelFromModelNumber(std::string_view modelNumber)
     return iter->second;
 }
 
+Model ResolveModel(Model productModel, std::optional<Model> modelNumberModel)
+{
+    if (!modelNumberModel.has_value()) {
+        return productModel;
+    }
+
+    const auto candidate = modelNumberModel.value();
+    if (productModel == Model::Unknown || productModel == candidate) {
+        return candidate;
+    }
+
+    switch (productModel) {
+    case Model::AirPods_4:
+        return candidate == Model::AirPods_4_ANC ? candidate : productModel;
+    case Model::AirPods_5:
+        return candidate == Model::AirPods_5_WCC ? candidate : productModel;
+    case Model::AirPods_Pro_2:
+        return candidate == Model::AirPods_Pro_2_USB_C ? candidate : productModel;
+    case Model::AirPods_Max:
+        return candidate == Model::AirPods_Max_USB_C ? candidate : productModel;
+    default:
+        return productModel;
+    }
+}
+
 QString ResolveDisplayName(QString deviceName, Model model)
 {
     deviceName.remove(" - Find My");
@@ -401,7 +426,7 @@ void Manager::CompleteBoundDeviceLookup(uint64_t address, std::optional<Bluetoot
         }
 
         _boundDevice = std::move(device);
-        _boundModel = AppleCP::AirPods::GetModel(_boundDevice->GetProductId());
+        const auto productModel = AppleCP::AirPods::GetModel(_boundDevice->GetProductId());
 
         if (auto modelNumber = _boundDevice->GetModelNumber(); modelNumber.has_value()) {
             _modelOverride = Details::ModelFromModelNumber(modelNumber.value());
@@ -410,6 +435,7 @@ void Manager::CompleteBoundDeviceLookup(uint64_t address, std::optional<Bluetoot
                     Helper::ToString(_modelOverride.value()));
             }
         }
+        _boundModel = Details::ResolveModel(productModel, _modelOverride);
 
         _deviceName = QString::fromStdString([&] {
             auto name = _boundDevice->GetName();
@@ -492,14 +518,11 @@ void Manager::ConnectAAP()
     }
 
     auto state = _stateMgr.GetCurrentState();
-    auto modelToCheck = state.has_value() ? state->model : Model::Unknown;
+    auto modelToCheck =
+        state.has_value() ? Details::ResolveModel(state->model, _modelOverride) : _boundModel;
     LOG(Info, "ConnectAAP: state.has_value={}, state.model={}, _modelOverride.has_value={}",
         state.has_value(), state.has_value() ? static_cast<int>(state->model) : -1,
         _modelOverride.has_value());
-
-    if (modelToCheck == Model::Unknown && _modelOverride.has_value()) {
-        modelToCheck = _modelOverride.value();
-    }
 
     LOG(Info, "ConnectAAP: modelToCheck={}, SupportsANC={}", static_cast<int>(modelToCheck),
         SupportsANC(modelToCheck));
@@ -685,6 +708,8 @@ bool Manager::SupportsANC(Model model)
     case Model::AirPods_Pro_2_USB_C:
     case Model::AirPods_Pro_3:
     case Model::AirPods_4_ANC:
+    case Model::AirPods_5:
+    case Model::AirPods_5_WCC:
     case Model::AirPods_Max:
     case Model::AirPods_Max_USB_C:
         return true;
@@ -698,9 +723,7 @@ void Manager::OnStateChanged(Details::StateManager::UpdateEvent updateEvent)
     const auto &oldState = updateEvent.oldState;
     auto &newState = updateEvent.newState;
 
-    if (newState.model == Model::Unknown && _modelOverride.has_value()) {
-        newState.model = _modelOverride.value();
-    }
+    newState.model = Details::ResolveModel(newState.model, _modelOverride);
 
     newState.displayName = Details::ResolveDisplayName(_deviceName, newState.model);
 
@@ -770,7 +793,9 @@ bool Manager::OnAdvertisementReceived(const Bluetooth::AdvertisementWatcher::Rec
         return false;
     }
 
-    if (_boundModel != Model::Unknown && adv.GetAdvState().model != _boundModel) {
+    if (_boundModel != Model::Unknown &&
+        Details::ResolveModel(adv.GetAdvState().model, _modelOverride) != _boundModel)
+    {
         LOG(Trace, "Ignore advertisement for a model other than the bound device.");
         return false;
     }

@@ -70,9 +70,9 @@ enum class Model : uint32_t {
     AirPods_4,
     AirPods_4_ANC,
     AirPods_5,
-    // Variant captured in the fork's own advertisement (product id 0x2030) and shipped with a
-    // wireless charging case; capabilities match AirPods 5 plus SWIPE_FOR_VOLUME. Model numbers
-    // A3439/A3440/A3441 identify it (Docs/AAP-Protocol-Spec.md §14, librepods data/AirPods.kt).
+    // Wireless-charging-case variant identified by model numbers A3439/A3440/A3441
+    // (Docs/AAP-Protocol-Spec.md §14, librepods data/AirPods.kt). BLE product ids alone do not
+    // distinguish it from the base AirPods 5.
     AirPods_5_WCC,
     AirPods_Pro,
     AirPods_Pro_2,
