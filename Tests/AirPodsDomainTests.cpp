@@ -225,6 +225,7 @@ private Q_SLOTS:
     void MapsModelNumberStringsToUnionOfForkAndUpstreamModels();
     void RefinesKnownModelsOnlyWithinTheirFamily();
     void AirPods5VariantsExposeAapCapabilities();
+    void ManagerUsesResolvedModelForStateAndFiltering();
     void RejectsUnknownModelNumberWithoutGuessing();
     void ModelProductIdUnionMatchesExpectedEntries();
     void ParsesAdvertisementState();
@@ -469,6 +470,40 @@ void AirPodsDomainTests::AirPods5VariantsExposeAapCapabilities()
     QVERIFY(!Core::AirPods::Manager::SupportsANC(Model::AirPods_3));
     QVERIFY(!Core::AirPods::Manager::SupportsANC(Model::Powerbeats_Pro_2));
     QVERIFY(!Core::AirPods::Manager::SupportsANC(Model::Unknown));
+}
+
+void AirPodsDomainTests::ManagerUsesResolvedModelForStateAndFiltering()
+{
+    Core::AirPods::Manager manager;
+    manager._modelOverride = Model::AirPods_5_WCC;
+    manager._boundModel =
+        Core::AirPods::Details::ResolveModel(Model::AirPods_5, manager._modelOverride);
+    manager._deviceName = QString{"AirPods"};
+
+    int updates = 0;
+    Core::AirPods::State emitted;
+    QObject::connect(
+        &manager, &Core::AirPods::Manager::StateUpdated, [&](const Core::AirPods::State &state) {
+            emitted = state;
+            ++updates;
+        });
+
+    Core::AirPods::State state;
+    state.model = Model::AirPods_5;
+    manager.OnStateChanged({std::nullopt, state});
+    QCOMPARE(updates, 1);
+    QCOMPARE(emitted.model, Model::AirPods_5_WCC);
+    QCOMPARE(emitted.displayName, QString{"AirPods 5 (Wireless Charging Case)"});
+
+    manager._deviceConnected = true;
+    QVERIFY(manager.OnAdvertisementReceived(
+        MakeAdvertisementData(0x1234, -45, Side::Left, 8, 7, 5, 0x2030)));
+    QCOMPARE(updates, 2);
+    QCOMPARE(emitted.model, Model::AirPods_5_WCC);
+
+    QVERIFY(!manager.OnAdvertisementReceived(
+        MakeAdvertisementData(0x5678, -45, Side::Left, 8, 7, 5, 0x2027)));
+    QCOMPARE(updates, 2);
 }
 
 void AirPodsDomainTests::RejectsUnknownModelNumberWithoutGuessing()

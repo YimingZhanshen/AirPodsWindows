@@ -275,6 +275,8 @@ public:
     static bool SupportsANC(Model model);
 
 private:
+    friend class AirPodsDomainTests;
+
     std::mutex _mutex;
     // Declared before the scanner and workers it feeds so its timer callbacks cannot outlive
     // these trackers. The destructor first drains workers, then member destruction converges.
