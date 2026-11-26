@@ -1037,11 +1037,11 @@ std::optional<LoudSoundReductionState> Manager::GetLoudSoundReductionState() con
 {
     return std::nullopt;
 }
-bool Manager::SetAdaptiveTransparencyLevel(uint8_t)
+bool Manager::SetPpeCapLevel(uint8_t)
 {
     return false;
 }
-std::optional<uint8_t> Manager::GetAdaptiveTransparencyLevel() const
+std::optional<uint8_t> Manager::GetPpeCapLevel() const
 {
     return std::nullopt;
 }
