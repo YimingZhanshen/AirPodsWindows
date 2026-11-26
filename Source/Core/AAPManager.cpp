@@ -795,8 +795,6 @@ void Manager::ProcessAttFrame(
 
 bool Manager::SendPacket(const std::vector<uint8_t> &packet)
 {
-bool Manager::SendPacket(const std::vector<uint8_t> &packet)
-{
     if (!_connected) {
         return false;
     }

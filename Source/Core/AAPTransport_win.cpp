@@ -288,6 +288,9 @@ std::optional<std::vector<uint8_t>> SeqPacketTransport::Receive(std::stop_token 
         timeval timeout{};
         timeout.tv_sec = 0;
         timeout.tv_usec = static_cast<long>(kReceivePollInterval.count() * 1000);
+        if (_receivePollObserverForTest) {
+            _receivePollObserverForTest();
+        }
 
         const int selected = select(0, &readSet, nullptr, nullptr, &timeout);
         if (selected == SOCKET_ERROR) {

@@ -25,6 +25,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -96,6 +97,10 @@ private:
     std::mutex _ioMutex;
     bool _closed{false};
     bool _winsockInitialized{false};
+
+    // Test-only observation at the actual receive poll point. Arrival at Receive() itself is
+    // insufficient: cancellation or Close can win before a socket is pinned and polled.
+    std::function<void()> _receivePollObserverForTest;
 
     friend class ::AAPTransportTests;
 };

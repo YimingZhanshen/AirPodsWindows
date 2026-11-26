@@ -23,6 +23,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
+#include <cstdio>
+#include <cstdlib>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -54,8 +56,9 @@
 //     parked call never touches memory that the test already destroyed.
 //   * Time comes from ManualClock, not the wall clock, wherever a test reasons about
 //     backoff or deadlines.
-// The remaining wall-clock use is a bounded rendezvous budget; a test that exceeds it
-// fails instead of hanging, and CTest's per-test TIMEOUT is the outer safety net.
+// The remaining wall-clock use is a bounded rendezvous budget. A missed condition fails
+// its assertion, and Worker's process watchdog catches a broken release before CTest's
+// per-test TIMEOUT, which remains the outer safety net.
 
 namespace AAPTestSupport {
 
@@ -63,6 +66,12 @@ namespace AAPTestSupport {
 // trip it while a worker is merely slow, small enough that a genuine deadlock fails
 // the test well before the 60 s CTest timeout.
 inline constexpr std::chrono::milliseconds kRendezvousTimeout{10000};
+
+// A Worker may be destroyed while its body is deadlocked, so its Join cannot be the only
+// guard. This process-level backstop exits before CTest's 60 s ceiling. The watchdog is a
+// joined jthread on the normal path; nothing is detached and ordinary test cleanup is intact.
+inline constexpr std::chrono::milliseconds kWorkerFailFastTimeout{30000};
+inline constexpr int kWorkerFailFastExitCode{121};
 
 // A promise-backed blocking stub. Wait and Signal both have bounded deadlines; the RAII
 // guard signals on every exit, including a QVERIFY early return. No predicate polling is
@@ -176,8 +185,8 @@ private:
 
 // Runs a blocking transport call off the test thread and guarantees "release, then
 // join" on every exit path, including a QVERIFY early return. The release callback
-// wakes whatever the body parked on; without it, a failed assertion would leave a
-// worker blocked and the destructor's join would stall until CTest kills the process.
+// wakes whatever the body parked on; if that release is broken, the process watchdog
+// terminates the test instead of leaving the destructor blocked in an unbounded join.
 class Worker
 {
 public:
@@ -187,8 +196,21 @@ public:
     explicit Worker(Body body, Release release = {})
         : _body(std::move(body)), _release(std::move(release))
     {
+        _watchdog = std::jthread{[this](std::stop_token stop) {
+            std::unique_lock lock{_watchdogMutex};
+            const bool disarmed = _watchdogCondition.wait_for(
+                lock, stop, kWorkerFailFastTimeout, [this] { return !_watchdogArmed; });
+            if (disarmed) {
+                return;
+            }
+            lock.unlock();
+            std::fputs("AAP test worker exceeded 30 s; terminating the test process.\n", stderr);
+            std::fflush(stderr);
+            std::quick_exit(kWorkerFailFastExitCode);
+        }};
         _thread = std::thread{[this] {
             _body();
+            DisarmWatchdog();
             std::lock_guard lock{_mutex};
             _finished = true;
             _finishedCondition.notify_all();
@@ -219,11 +241,26 @@ public:
         if (_thread.joinable()) {
             _thread.join();
         }
+        DisarmWatchdog();
     }
 
 private:
+    void DisarmWatchdog()
+    {
+        {
+            std::lock_guard lock{_watchdogMutex};
+            _watchdogArmed = false;
+        }
+        _watchdogCondition.notify_all();
+    }
+
     Body _body;
     Release _release;
+    // These synchronization members outlive _watchdog during member destruction.
+    std::mutex _watchdogMutex;
+    std::condition_variable_any _watchdogCondition;
+    bool _watchdogArmed{true};
+    std::jthread _watchdog;
     std::thread _thread;
     std::mutex _mutex;
     std::condition_variable _finishedCondition;
@@ -314,6 +351,7 @@ public:
 
     Core::AAP::AAPTransportKind Kind() const override
     {
+        std::lock_guard lock{_state->mutex};
         return _state->kind;
     }
 
@@ -427,12 +465,6 @@ public:
         return _state->lastConnectAddress;
     }
 
-    std::vector<std::vector<uint8_t>> SentRecords() const
-    {
-        std::lock_guard<std::mutex> lock{_mutex};
-        return _sentRecords;
-    }
-
     std::vector<uint8_t> LastSend() const
     {
         std::lock_guard lock{_state->mutex};
@@ -539,7 +571,7 @@ private:
 // inside Connect/Send/Receive without timing it. Close is deliberately non-blocking
 // and releases every parked caller, matching what SeqPacketTransport::Close does to a
 // socket blocked in select/recv.
-class BlockingTransport final : public Core::AAP::AAPTransport
+class BlockingTransport : public Core::AAP::AAPTransport
 {
 public:
     enum class Op { Connect, Send, Receive, Any };
@@ -590,6 +622,7 @@ public:
 
     Core::AAP::AAPTransportKind Kind() const override
     {
+        std::lock_guard lock{_state->mutex};
         return _state->kind;
     }
 
@@ -739,7 +772,9 @@ private:
             case Op::Send:
                 return !state->blockSend;
             case Op::Receive:
-                return !state->blockReceive;
+                // An idle blocked reader stays parked, but already queued records remain
+                // deliverable so a test need not race Unblock against the next poll.
+                return !state->blockReceive || !state->records.empty();
             case Op::Any:
                 return false;
             }
@@ -858,29 +893,57 @@ private:
 class EntryRendezvous
 {
 public:
+    struct State {
+        bool entered{false};
+        bool completed{false};
+    };
+
     void Arrive()
     {
         std::lock_guard lock{_mutex};
-        _arrived = true;
+        _entered = true;
+        _condition.notify_all();
+    }
+
+    void Complete()
+    {
+        std::lock_guard lock{_mutex};
+        _completed = true;
         _condition.notify_all();
     }
 
     bool Wait(std::chrono::milliseconds timeout = kRendezvousTimeout)
     {
         std::unique_lock lock{_mutex};
-        return _condition.wait_for(lock, timeout, [this] { return _arrived; });
+        return _condition.wait_for(lock, timeout, [this] { return _entered; });
+    }
+
+    bool WaitForCompletion(std::chrono::milliseconds timeout = kRendezvousTimeout)
+    {
+        std::unique_lock lock{_mutex};
+        return _condition.wait_for(lock, timeout, [this] { return _entered && _completed; });
+    }
+
+    // Entry and completion belong to the same observation; never combine two separately
+    // locked getters to infer whether a call is still parked.
+    State Snapshot() const
+    {
+        std::lock_guard lock{_mutex};
+        return {_entered, _completed};
     }
 
     void Reset()
     {
         std::lock_guard lock{_mutex};
-        _arrived = false;
+        _entered = false;
+        _completed = false;
     }
 
 private:
-    std::mutex _mutex;
+    mutable std::mutex _mutex;
     std::condition_variable _condition;
-    bool _arrived{false};
+    bool _entered{false};
+    bool _completed{false};
 };
 
 // Builds and records the transports a Manager seam hands out, so a suite can inspect a

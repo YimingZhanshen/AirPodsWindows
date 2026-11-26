@@ -16,6 +16,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <future>
@@ -665,7 +666,7 @@ private slots:
                 },
                 [&] { gate.Signal(); }};
             QVERIFY(entered.Wait(2s));
-            QVERIFY(!worker.Finished(50ms));
+            QVERIFY(!gate.Wait(1ms));
             gate.Signal();
             QVERIFY(worker.Finished(2s));
         }
@@ -687,7 +688,7 @@ private slots:
                 },
                 [&] { gate.Open(); }};
             QVERIFY(entered.Wait(2s));
-            QVERIFY(!worker.Finished(50ms));
+            QVERIFY(!gate.Wait(1ms));
             gate.Open();
             QVERIFY(worker.Finished(2s));
         }
@@ -713,35 +714,40 @@ private slots:
         const auto record = AAPTestSupport::Records::FeatureAck();
         std::stop_source stop;
         AAPTestSupport::EntryRendezvous entered;
+        transport._receivePollObserverForTest = [&] { entered.Arrive(); };
         std::optional<std::vector<uint8_t>> received;
         AAPTestSupport::Worker reader{
             [&] {
-                entered.Arrive();
                 received = transport.Receive(stop.get_token());
+                entered.Complete();
             },
             [&] {
                 stop.request_stop();
                 transport.Close();
             }};
         QVERIFY(entered.Wait(2s));
+        const auto polling = entered.Snapshot();
+        QVERIFY(polling.entered);
+        QVERIFY(!polling.completed);
 
         bool sent = false;
-        AAPTestSupport::EntryRendezvous sendEntered;
         AAPTestSupport::Worker writer{
-            [&] {
-                sendEntered.Arrive();
-                sent = transport.Send(record, {});
-            },
-            [&] { transport.Close(); }};
-        QVERIFY(sendEntered.Wait(2s));
+            [&] { sent = transport.Send(record, {}); }, [&] { transport.Close(); }};
         QVERIFY(writer.Finished(2s));
         QVERIFY(sent);
         QCOMPARE(pair.ReceiveOnPeer(), std::optional(record));
+        const auto stillPolling = entered.Snapshot();
+        QVERIFY(stillPolling.entered);
+        QVERIFY(!stillPolling.completed);
 
         stop.request_stop();
+        QVERIFY(entered.WaitForCompletion(2s));
         QVERIFY(reader.Finished(2s));
         transport.Close();
         QVERIFY(!received.has_value());
+        const auto completed = entered.Snapshot();
+        QVERIFY(completed.entered);
+        QVERIFY(completed.completed);
     }
 
     void SeqPacketCloseInterruptsReceivePolling()
@@ -756,24 +762,32 @@ private slots:
 
         std::stop_source stop;
         AAPTestSupport::EntryRendezvous entered;
+        transport._receivePollObserverForTest = [&] { entered.Arrive(); };
         std::optional<std::vector<uint8_t>> received;
         AAPTestSupport::Worker reader{
             [&] {
-                entered.Arrive();
                 received = transport.Receive(stop.get_token());
+                entered.Complete();
             },
             [&] {
                 stop.request_stop();
                 transport.Close();
             }};
         QVERIFY(entered.Wait(2s));
+        const auto polling = entered.Snapshot();
+        QVERIFY(polling.entered);
+        QVERIFY(!polling.completed);
 
         // Close alone has to end the poll; the stop token is only the fallback here, so a
         // regression that drops the shutdown shows up as a missed deadline, not a hang.
         transport.Close();
+        QVERIFY(entered.WaitForCompletion(2s));
         QVERIFY(reader.Finished(2s));
         QVERIFY(!received.has_value());
         transport.Close();
+        const auto completed = entered.Snapshot();
+        QVERIFY(completed.entered);
+        QVERIFY(completed.completed);
     }
 
     void SeqPacketCloseKeepsPinnedDescriptorOpen()
@@ -814,23 +828,31 @@ private slots:
 
         std::stop_source stop;
         AAPTestSupport::EntryRendezvous entered;
+        transport._receivePollObserverForTest = [&] { entered.Arrive(); };
         std::optional<std::vector<uint8_t>> received;
         AAPTestSupport::Worker reader{
             [&] {
-                entered.Arrive();
                 received = transport.Receive(stop.get_token());
+                entered.Complete();
             },
             [&] {
                 stop.request_stop();
                 transport.Close();
             }};
         QVERIFY(entered.Wait(2s));
+        const auto polling = entered.Snapshot();
+        QVERIFY(polling.entered);
+        QVERIFY(!polling.completed);
         stop.request_stop();
+        QVERIFY(entered.WaitForCompletion(2s));
         QVERIFY(reader.Finished(2s));
         QVERIFY(!received.has_value());
         // A cancelled token must short-circuit later calls without parking again.
         QVERIFY(!transport.Receive(stop.get_token()).has_value());
         transport.Close();
+        const auto completed = entered.Snapshot();
+        QVERIFY(completed.entered);
+        QVERIFY(completed.completed);
     }
 
     void SeqPacketReceivePreservesRecordBoundaries()
@@ -1142,17 +1164,26 @@ private slots:
     {
         Core::AAP::Manager manager;
         auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        std::atomic<int> factoryCalls{0};
         manager._transportFactory =
-            [transport](Core::AAP::AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            [&](Core::AAP::AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            ++factoryCalls;
             return transport;
         };
         manager._attempt = Core::AAP::AAPAttempt{1, 7};
         manager.CancelConnect();
+        QCOMPARE(manager._cancelledGeneration.load(), uint64_t{7});
         manager._attempt = {};
 
+        // The pre-entry generation gate must win before the lifecycle mutex, factory,
+        // pending-publication path, or any transport operation is reached.
         const Core::AAP::AAPAttempt attempt{1, 7};
         QVERIFY(!manager.Connect(attempt));
+        QCOMPARE(factoryCalls.load(), 0);
+        QCOMPARE(transport->ConnectCalls(), size_t{0});
         QCOMPARE(transport->SendCalls(), size_t{0});
+        QVERIFY(!manager._readerThread.joinable());
+        QVERIFY(!manager.IsConnected());
     }
 
     // Every harness deadline expires with a result instead of blocking forever, which is
