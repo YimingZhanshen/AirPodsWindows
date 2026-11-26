@@ -39,6 +39,8 @@
 #include "AAPManager.h"
 #include "../Helper.h"
 
+class AirPodsDomainTests;
+
 namespace Core::AirPods {
 
 //
@@ -275,7 +277,7 @@ public:
     static bool SupportsANC(Model model);
 
 private:
-    friend class AirPodsDomainTests;
+    friend class ::AirPodsDomainTests;
 
     std::mutex _mutex;
     // Declared before the scanner and workers it feeds so its timer callbacks cannot outlive

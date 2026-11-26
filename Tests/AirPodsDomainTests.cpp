@@ -474,14 +474,14 @@ void AirPodsDomainTests::AirPods5VariantsExposeAapCapabilities()
 
 void AirPodsDomainTests::ManagerUsesResolvedModelForStateAndFiltering()
 {
+    int updates = 0;
+    Core::AirPods::State emitted;
     Core::AirPods::Manager manager;
     manager._modelOverride = Model::AirPods_5_WCC;
     manager._boundModel =
         Core::AirPods::Details::ResolveModel(Model::AirPods_5, manager._modelOverride);
     manager._deviceName = QString{"AirPods"};
 
-    int updates = 0;
-    Core::AirPods::State emitted;
     QObject::connect(
         &manager, &Core::AirPods::Manager::StateUpdated, [&](const Core::AirPods::State &state) {
             emitted = state;
