@@ -310,8 +310,8 @@ void QuickConnectTests::automaticTimeoutRequiresCooldownAndNewPlayback()
     controller.OnPlaybackStateChanged(true);
     QTRY_COMPARE(outcomes.count(), 1);
     QCOMPARE(outcomes.last().at(0).value<Outcome>(), Outcome::RequestStarted);
-    QTRY_COMPARE_WITH_TIMEOUT(outcomes.count(), 3, 2'000);
-    QCOMPARE(outcomes.at(2).at(0).value<Outcome>(), Outcome::TimedOut);
+    QTRY_COMPARE_WITH_TIMEOUT(outcomes.count(), 2, 2'000);
+    QCOMPARE(outcomes.at(1).at(0).value<Outcome>(), Outcome::TimedOut);
     QCOMPARE(backend->reconnectCalls.load(), 1);
     controller.OnPlaybackStateChanged(false);
     controller.OnPlaybackStateChanged(true);
@@ -321,11 +321,12 @@ void QuickConnectTests::automaticTimeoutRequiresCooldownAndNewPlayback()
     QCOMPARE(backend->reconnectCalls.load(), 1);
     controller.OnPlaybackStateChanged(false);
     controller.OnPlaybackStateChanged(true);
-    QTRY_COMPARE_WITH_TIMEOUT(outcomes.count(), 5, 2'000);
-    QCOMPARE(outcomes.at(3).at(0).value<Outcome>(), Outcome::RequestStarted);
-    QCOMPARE(outcomes.last().at(0).value<Outcome>(), Outcome::RequestStarted);
+    QTRY_COMPARE_WITH_TIMEOUT(outcomes.count(), 4, 2'000);
+    QCOMPARE(outcomes.at(2).at(0).value<Outcome>(), Outcome::RequestStarted);
+    QCOMPARE(outcomes.at(3).at(0).value<Outcome>(), Outcome::TimedOut);
     QCOMPARE(backend->reconnectCalls.load(), 2);
     QCOMPARE(controller.OnEndpointStateChanged("{A}", true), Outcome::Connected);
+    QCOMPARE(outcomes.count(), 5);
     QCOMPARE(outcomes.last().at(0).value<Outcome>(), Outcome::Connected);
 }
 
