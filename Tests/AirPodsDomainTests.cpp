@@ -1003,6 +1003,7 @@ void AirPodsDomainTests::ConcurrentHeadTrackingTogglesKeepMirrorConsistent()
     startThread.join();
     stopThread.join();
 
+    manager.FlushHeadTracking();
     std::lock_guard lock{emittedMutex};
     QVERIFY(!emitted.empty());
     // The last flush observes the serialized intent. It must agree with the public mirror.

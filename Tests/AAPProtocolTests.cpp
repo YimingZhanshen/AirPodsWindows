@@ -1679,6 +1679,25 @@ private slots:
             broker.Desired(AAPCommandKind::SetAdaptiveNoiseLevel), std::optional<uint32_t>{25});
     }
 
+    void StopSourceOutlivingBrokerDoesNotRetainCallback()
+    {
+        using namespace Core::AAP;
+        std::stop_source stop;
+        {
+            std::promise<void> started;
+            auto startedFuture = started.get_future();
+            AAPCommandBroker broker([&](const AAPCommand &, uint64_t, std::stop_token) {
+                started.set_value();
+                return true;
+            });
+            broker.BeginSession(1);
+            QVERIFY(broker.Submit({AAPCommandKind::SetAdaptiveNoiseLevel, 70}, stop.get_token())
+                        .accepted);
+            QVERIFY(startedFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        }
+        stop.request_stop();
+    }
+
     void DuplicateInFlightCallerCanCancelSharedFlight()
     {
         using namespace Core::AAP;
@@ -1710,6 +1729,47 @@ private slots:
         QVERIFY(outcome.has_value());
         QCOMPARE(outcome->settlement, AAPCommandSettlement::Rejected);
         QCOMPARE(sends.load(), size_t{1});
+    }
+
+    void QueuedDuplicateTransfersCancellationToLatestCaller()
+    {
+        using namespace Core::AAP;
+        AAPTestSupport::ManualClock clock;
+        ManualGate blockerGate;
+        std::promise<void> blockerStarted;
+        auto blockerFuture = blockerStarted.get_future();
+        std::promise<void> adaptiveStarted;
+        auto adaptiveFuture = adaptiveStarted.get_future();
+        std::atomic<size_t> adaptiveSends{0};
+        std::stop_source firstStop;
+        std::stop_source latestStop;
+        AAPCommandBroker broker(
+            [&](const AAPCommand &command, uint64_t, std::stop_token stop) {
+                if (command.kind == AAPCommandKind::SetNoiseControl) {
+                    blockerStarted.set_value();
+                    blockerGate.Wait(stop);
+                }
+                else {
+                    ++adaptiveSends;
+                    adaptiveStarted.set_value();
+                }
+                return true;
+            },
+            {}, UnverifiableConfig(clock));
+        broker.BeginSession(1);
+        QVERIFY(broker.Submit({AAPCommandKind::SetNoiseControl, 0x01}).accepted);
+        QVERIFY(blockerFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        const AAPCommand command{AAPCommandKind::SetAdaptiveNoiseLevel, 70};
+        const auto first = broker.Submit(command, firstStop.get_token());
+        QVERIFY(first.accepted);
+        const auto latest = broker.Submit(command, latestStop.get_token());
+        QVERIFY(latest.accepted);
+        QCOMPARE(latest.requestId, first.requestId);
+        firstStop.request_stop();
+        blockerGate.Open();
+        QVERIFY(adaptiveFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QVERIFY(broker.WaitForIdle(std::chrono::seconds{1}));
+        QCOMPARE(adaptiveSends.load(), size_t{1});
     }
 
     void OfflineSameValueRetiresInFlightCommand()

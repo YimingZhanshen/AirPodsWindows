@@ -193,8 +193,10 @@ public:
     // Records `command` as desired and schedules the send. An unsent value for the same kind
     // is replaced in place (a fast slider drag only ever puts its last value on the wire) and
     // an in-flight command of the same kind settles as Superseded. Repeating the queued, in-flight,
-    // or already-confirmed desired value is a no-op. Without an open session the desired value is
-    // still recorded for the next replay and the result says TransportClosed.
+    // or already-confirmed desired value is a no-op. A queued duplicate transfers cancellation
+    // ownership to the latest caller; after the send starts, every accepted caller joins
+    // cancellation. Without an open session the desired value is still recorded for the next replay
+    // and the result says TransportClosed.
     AAPCommandResult Submit(AAPCommand command, std::stop_token stop = {});
 
     // Records a disconnected caller's latest desire without queueing or sending it. Any older
@@ -294,10 +296,8 @@ private:
     void WorkerLoop(std::stop_token stopToken);
     // Caller must hold _mutex. Atomically replaces same-kind desired/pending work, optionally
     // queueing the new value for an open session. Disconnected callers never queue wire work.
-    uint64_t RecordDesiredLocked(
-        AAPCommand command, std::stop_token stop, bool queueWhenOpen,
-        std::shared_ptr<FlightControl> *cancellationControl = nullptr);
-    // Registers outside _mutex so an already-racing stop cannot invoke its callback reentrantly.
+    uint64_t RecordDesiredLocked(AAPCommand command, std::stop_token stop, bool queueWhenOpen);
+    // Safe under _mutex: an inline stop during registration cannot re-enter the broker lock.
     void RegisterCancellation(std::shared_ptr<FlightControl> control, std::stop_token stop);
     // Caller must hold _mutex. Retires queued/in-flight work but preserves desired values.
     void CloseSessionLocked(std::vector<AAPCommandOutcome> &outcomes);

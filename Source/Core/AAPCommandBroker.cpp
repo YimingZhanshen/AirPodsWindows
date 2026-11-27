@@ -86,21 +86,15 @@ AAPCommandResult AAPCommandBroker::Submit(AAPCommand command, std::stop_token st
         return {false, false, AAPCommandFailure::Rejected, 0};
     }
 
-    std::unique_lock lock{_mutex};
+    std::lock_guard lock{_mutex};
     if (_stopping) {
         return {false, false, AAPCommandFailure::Rejected, 0};
     }
     command.requestId = _nextRequestId++;
     // Replace desired and pending work under one lock, including when this Submit is about to
     // discover that the session is already offline.
-    std::shared_ptr<FlightControl> cancellationControl;
-    const auto requestId = RecordDesiredLocked(command, stop, true, &cancellationControl);
-    const bool open = _sessionOpen && _generation != 0;
-    lock.unlock();
-    if (cancellationControl) {
-        RegisterCancellation(std::move(cancellationControl), stop);
-    }
-    if (!open) {
+    const auto requestId = RecordDesiredLocked(command, stop, true);
+    if (!_sessionOpen || _generation == 0) {
         return {false, false, AAPCommandFailure::TransportClosed, requestId};
     }
 
@@ -121,9 +115,8 @@ AAPCommandResult AAPCommandBroker::RecordDesired(AAPCommand command)
     return {false, false, AAPCommandFailure::TransportClosed, requestId};
 }
 
-uint64_t AAPCommandBroker::RecordDesiredLocked(
-    AAPCommand command, std::stop_token stop, bool queueWhenOpen,
-    std::shared_ptr<FlightControl> *cancellationControl)
+uint64_t
+AAPCommandBroker::RecordDesiredLocked(AAPCommand command, std::stop_token stop, bool queueWhenOpen)
 {
     auto &state = _kinds[kKindIndex(command.kind)];
     const bool sameQueued = state.queued && *state.queued == command.value;
@@ -154,8 +147,8 @@ uint64_t AAPCommandBroker::RecordDesiredLocked(
         else if (sameQueued) {
             state.queuedStop = stop;
         }
-        if (sameOnlineFlight && cancellationControl) {
-            *cancellationControl = _flight->control;
+        if (sameOnlineFlight) {
+            RegisterCancellation(_flight->control, stop);
         }
         return requestId;
     }
@@ -225,10 +218,20 @@ void AAPCommandBroker::RegisterCancellation(
         return;
     }
 
-    auto callback =
-        std::make_unique<std::stop_callback<std::function<void()>>>(stop, [this, control] {
-            {
+    std::weak_ptr<FlightControl> weakControl = control;
+    auto ready = std::make_shared<std::atomic<bool>>(false);
+    auto callback = std::make_unique<std::stop_callback<std::function<void()>>>(
+        stop, [this, weakControl, ready] {
+            auto control = weakControl.lock();
+            if (!control) {
+                return;
+            }
+            if (ready->load()) {
                 std::lock_guard lock{_mutex};
+                control->cancelled.store(true);
+            }
+            else {
+                // The token raced with registration while _mutex was already held.
                 control->cancelled.store(true);
             }
             control->stopSource->request_stop();
@@ -236,6 +239,7 @@ void AAPCommandBroker::RegisterCancellation(
         });
     std::lock_guard lock{control->callbacksMutex};
     control->callbacks.push_back(std::move(callback));
+    ready->store(true);
 }
 
 void AAPCommandBroker::OnEcho(AAPCommand command, uint64_t generation)

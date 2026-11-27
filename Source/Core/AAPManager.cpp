@@ -705,6 +705,9 @@ AAPCommandResult Manager::SubmitCommand(AAPCommand command, std::stop_token stop
         // session. Serialize it with settlement application so an offline replacement cannot race
         // a cache update from the previous request.
         std::lock_guard lock{_mutex};
+        if (stopToken.stop_requested()) {
+            return {false, false, AAPCommandFailure::Rejected};
+        }
         if (!_connected) {
             return _commandBroker->RecordDesired(command);
         }
@@ -725,6 +728,9 @@ AAPCommandResult Manager::SubmitCommand(AAPCommand command, std::stop_token stop
         // first snapshot. Lock order is always Manager -> Broker; the broker never calls back while
         // holding its mutex, and its wire worker takes the manager lock after releasing it.
         std::lock_guard lock{_mutex};
+        if (stopToken.stop_requested()) {
+            return {false, false, AAPCommandFailure::Rejected};
+        }
         if (!_connected) {
             return _commandBroker->Submit(command, stopToken);
         }
@@ -741,7 +747,13 @@ AAPCommandResult Manager::SubmitCommand(AAPCommand command, std::stop_token stop
     }
     // Submit and HandleCommandSettled share this lock: a newer request cannot be installed between
     // the settlement's identity check and its cache update.
+    if (_beforeCommandSubmitLockForTest) {
+        _beforeCommandSubmitLockForTest();
+    }
     std::lock_guard lock{_mutex};
+    if (stopToken.stop_requested()) {
+        return {false, false, AAPCommandFailure::Rejected};
+    }
     if (!_connected) {
         return _commandBroker->RecordDesired(command);
     }

@@ -334,6 +334,7 @@ private:
     std::function<void()> _beforePendingPublishForTest;
     std::function<void()> _publicSendBarrierForTest;
     std::function<void()> _afterCommandIdentityCheckForTest;
+    std::function<void()> _beforeCommandSubmitLockForTest;
 
     // Internal methods
     bool SendPacket(const std::vector<uint8_t> &packet);

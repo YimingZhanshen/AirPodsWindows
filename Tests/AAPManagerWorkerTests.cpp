@@ -252,6 +252,32 @@ private slots:
         QVERIFY(DisconnectWithin(manager, factory));
     }
 
+    void CancelledCommandLosingConnectionDoesNotRecordOfflineIntent()
+    {
+        using namespace Core::AAP;
+        TransportFactory<BlockingTransport> factory{
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        Core::AAP::Manager manager;
+        manager._transportFactoryForTest = [&factory] { return factory.Build(); };
+        QVERIFY(manager.Connect(Core::AAP::AAPAttempt{42, 1}));
+        std::stop_source stop;
+        manager._beforeCommandSubmitLockForTest = [&] {
+            {
+                std::lock_guard lock{manager._mutex};
+                manager._connected = false;
+            }
+            stop.request_stop();
+        };
+        const auto result = manager.SubmitCommand(
+            {AAPCommandKind::SetNoiseControl,
+             static_cast<uint32_t>(NoiseControlMode::NoiseCancellation)},
+            stop.get_token());
+        QVERIFY(!result.accepted);
+        QCOMPARE(result.failure, std::optional(AAPCommandFailure::Rejected));
+        QVERIFY(!manager.DesiredCommand(AAPCommandKind::SetNoiseControl).has_value());
+        QVERIFY(DisconnectWithin(manager, factory));
+    }
+
     void ShutdownCommandsDrainsPublishedCallbacks()
     {
         using namespace Core::AAP;
