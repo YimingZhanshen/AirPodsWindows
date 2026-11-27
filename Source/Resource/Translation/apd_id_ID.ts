@@ -542,8 +542,8 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
     <message>
         <source>Action for a long press of the right stem.</source>
         <translation>Tindakan untuk tekan lama pada stem kanan.</translation>
-        <source>Sets how strongly Adaptive mode shapes ambient noise (0-100). Adjustable only while the noise control mode is Adaptive.</source>
-        <translation type="unfinished"></translation>
+    </message>
+<message>
         <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
         <translation>Mengatur kekuatan penyaringan mode Adaptive (0–100): 0 membiarkan lebih banyak suara lingkungan lolos; 100 menyaring lebih banyak. Hanya tersedia saat perangkat terhubung melaporkan mode Adaptive.</translation>
     </message>
@@ -787,7 +787,7 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
     </message>
 <message>
         <source>Stream head tracking data</source>
-        <translation type="unfinished"></translation>
+        <translation>Mengalirkan data pelacakan kepala</translation>
     </message>
     <message>
         <source>Ear detection sensitivity</source>

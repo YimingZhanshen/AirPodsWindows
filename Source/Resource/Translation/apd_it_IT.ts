@@ -543,8 +543,8 @@ Devi prima abbinare le tue AirPods nelle impostazioni Bluetooth di Windows.</tra
     <message>
         <source>Action for a long press of the right stem.</source>
         <translation>Azione per una pressione lunga dello stelo destro.</translation>
-        <source>Sets how strongly Adaptive mode shapes ambient noise (0-100). Adjustable only while the noise control mode is Adaptive.</source>
-        <translation type="unfinished"></translation>
+    </message>
+<message>
         <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
         <translation>Imposta l’intensità del filtro della modalità Adaptive (0–100): 0 lascia passare più rumore ambientale; 100 filtra di più. Disponibile solo quando il dispositivo connesso segnala la modalità Adaptive.</translation>
     </message>
@@ -788,7 +788,7 @@ Devi prima abbinare le tue AirPods nelle impostazioni Bluetooth di Windows.</tra
     </message>
 <message>
         <source>Stream head tracking data</source>
-        <translation type="unfinished"></translation>
+        <translation>Trasmettere i dati di tracciamento della testa</translation>
     </message>
     <message>
         <source>Ear detection sensitivity</source>

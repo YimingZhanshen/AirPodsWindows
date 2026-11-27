@@ -542,8 +542,8 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     <message>
         <source>Action for a long press of the right stem.</source>
         <translation>右侧耳机柄长按时执行的操作。</translation>
-        <source>Sets how strongly Adaptive mode shapes ambient noise (0-100). Adjustable only while the noise control mode is Adaptive.</source>
-        <translation type="unfinished"></translation>
+    </message>
+<message>
         <source>Sets Adaptive mode filtering strength (0-100): 0 lets more ambient noise through; 100 filters more. Available only while the connected device reports Adaptive mode.</source>
         <translation>设置自适应模式的滤波强度（0–100）：0 让更多环境噪音通过，100 过滤更多噪音。仅当已连接的设备报告自适应模式时可用。</translation>
     </message>
@@ -787,7 +787,7 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
 <message>
         <source>Stream head tracking data</source>
-        <translation type="unfinished"></translation>
+        <translation>传输头部追踪数据</translation>
     </message>
     <message>
         <source>Ear detection sensitivity</source>
