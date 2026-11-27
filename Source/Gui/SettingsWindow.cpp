@@ -93,8 +93,8 @@ void ConfigureComboBoxPopup(QComboBox *comboBox)
 SettingsWindow::SettingsWindow(
     std::function<int()> getCurrentLocaleIndex, Core::QuickConnect::Controller &quickConnect,
     std::function<Core::AirPods::Manager &()> getAirPodsManager, QWidget *parent)
-    : QDialog{parent}, _getCurrentLocaleIndex{std::move(getCurrentLocaleIndex)}, _quickConnect{
-                                                                                     quickConnect}
+    : QDialog{parent}, _getCurrentLocaleIndex{std::move(getCurrentLocaleIndex)},
+      _quickConnect{quickConnect}
 {
     // getAirPodsManager is deliberately NOT stored here: this window is built
     // by the tray icon before the application's AirPods manager exists, so any
