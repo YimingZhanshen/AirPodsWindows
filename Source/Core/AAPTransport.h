@@ -18,11 +18,14 @@
 
 #pragma once
 
+#include "MagicAAPDeviceBinding.h"
+
 #include <atomic>
 #include <cstdint>
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -52,6 +55,12 @@ public:
     virtual std::optional<std::vector<uint8_t>> Receive(std::stop_token stop) = 0;
     virtual void Close() = 0;
     virtual AAPTransportKind Kind() const = 0;
+    // Only MagicAAP produces a bind result. A default keeps injected and legacy
+    // transports safe to query without downcasting.
+    virtual Core::MagicAAPWinRT::MagicAAPBindStatus LastBindStatus() const
+    {
+        return Core::MagicAAPWinRT::MagicAAPBindStatus::TransportError;
+    }
 };
 
 class SeqPacketTransport final : public AAPTransport
@@ -89,6 +98,10 @@ private:
     bool _closed{false};
     bool _winsockInitialized{false};
 
+    // Test-only observation at the actual receive poll point. Arrival at Receive() itself is
+    // insufficient: cancellation or Close can win before a socket is pinned and polled.
+    std::function<void()> _receivePollObserverForTest;
+
     friend class ::AAPTransportTests;
 };
 
@@ -111,12 +124,22 @@ public:
         return AAPTransportKind::MagicAAP;
     }
 
+    Core::MagicAAPWinRT::MagicAAPBindStatus LastBindStatus() const override
+    {
+        return _lastBindStatus.load();
+    }
+
 private:
     void Enqueue(std::vector<uint8_t> record);
     void SignalEof();
 
     mutable std::mutex _clientMutex;
-    std::unique_ptr<Core::MagicAAPWinRT::MagicAAPWinRTClient> _client;
+    // Startup and Close retain independent snapshots. The driver operation runs
+    // without _clientMutex, while the shared owner keeps the client alive until
+    // both startup and receiver shutdown have finished.
+    std::shared_ptr<Core::MagicAAPWinRT::MagicAAPWinRTClient> _client;
+    std::atomic<Core::MagicAAPWinRT::MagicAAPBindStatus> _lastBindStatus{
+        Core::MagicAAPWinRT::MagicAAPBindStatus::NoMatch};
     std::mutex _queueMutex;
     std::condition_variable_any _queueCondition;
     std::deque<std::vector<uint8_t>> _records;

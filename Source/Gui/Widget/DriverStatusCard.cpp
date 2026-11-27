@@ -79,10 +79,9 @@ DriverStatusCard::DriverStatusCard(QWidget *parent) : QFrame{parent}
         }
         emit CopyInstallCommandRequested();
     });
-    connect(_docsButton, &QPushButton::clicked, this,
-            [this] { emit OpenDriverDocsRequested(); });
-    connect(_exportButton, &QPushButton::clicked, this,
-            [this] { emit ExportDiagnosticsRequested(); });
+    connect(_docsButton, &QPushButton::clicked, this, [this] { emit OpenDriverDocsRequested(); });
+    connect(
+        _exportButton, &QPushButton::clicked, this, [this] { emit ExportDiagnosticsRequested(); });
 
     ApplyTheme();
     Refresh();
@@ -97,14 +96,14 @@ void DriverStatusCard::SetManagerProvider(std::function<Core::AirPods::Manager &
 QString DriverStatusCard::StatusText(LinkStatus status)
 {
     switch (status) {
-        case LinkStatus::NotInstalled:
-            return QObject::tr("Driver not installed");
-        case LinkStatus::InstalledNotConnected:
-            return QObject::tr("Driver ready - waiting for the earbuds");
-        case LinkStatus::ConnectedViaDriver:
-            return QObject::tr("Connected (driver channel)");
-        case LinkStatus::ConnectedOtherChannel:
-            return QObject::tr("Connected (native channel - driver features limited)");
+    case LinkStatus::NotInstalled:
+        return QObject::tr("Driver not installed");
+    case LinkStatus::InstalledNotConnected:
+        return QObject::tr("Driver ready - waiting for the earbuds");
+    case LinkStatus::ConnectedViaDriver:
+        return QObject::tr("Connected (driver channel)");
+    case LinkStatus::ConnectedOtherChannel:
+        return QObject::tr("Connected (native channel - driver features limited)");
     }
     return QObject::tr("Unknown");
 }
@@ -113,30 +112,30 @@ QString DriverStatusCard::StatusDetailText(
     LinkStatus status, Core::AAP::AttPathState attPathState, Core::AAP::ConnectFailure lastFailure)
 {
     switch (status) {
-        case LinkStatus::NotInstalled:
-            return QObject::tr(
-                "Install the driver to unlock ANC control, loud sound reduction and other "
-                "AAP features. Copy the install command or open the documentation.");
-        case LinkStatus::InstalledNotConnected: {
-            if (lastFailure == Core::AAP::ConnectFailure::None) {
-                return QObject::tr("Open the earbud case near this computer to connect.");
-            }
-            return FailureHint(lastFailure);
+    case LinkStatus::NotInstalled:
+        return QObject::tr(
+            "Install the driver to unlock ANC control, loud sound reduction and other "
+            "AAP features. Copy the install command or open the documentation.");
+    case LinkStatus::InstalledNotConnected: {
+        if (lastFailure == Core::AAP::ConnectFailure::None) {
+            return QObject::tr("Open the earbud case near this computer to connect.");
         }
-        case LinkStatus::ConnectedViaDriver:
-            if (attPathState == Core::AAP::AttPathState::Confirmed) {
-                return QObject::tr("All driver features available.");
-            }
-            if (attPathState == Core::AAP::AttPathState::Unconfirmed) {
-                return QObject::tr(
-                    "The earbuds do not answer attribute reads on this channel; loud sound "
-                    "reduction state cannot be read back.");
-            }
+        return FailureHint(lastFailure);
+    }
+    case LinkStatus::ConnectedViaDriver:
+        if (attPathState == Core::AAP::AttPathState::Confirmed) {
             return QObject::tr("All driver features available.");
-        case LinkStatus::ConnectedOtherChannel:
+        }
+        if (attPathState == Core::AAP::AttPathState::Unconfirmed) {
             return QObject::tr(
-                "Connected without the driver channel; features that require the driver "
-                "(loud sound reduction, precise battery) may not work. See the documentation.");
+                "The earbuds do not answer attribute reads on this channel; loud sound "
+                "reduction state cannot be read back.");
+        }
+        return QObject::tr("All driver features available.");
+    case LinkStatus::ConnectedOtherChannel:
+        return QObject::tr(
+            "Connected without the driver channel; features that require the driver "
+            "(loud sound reduction, precise battery) may not work. See the documentation.");
     }
     return {};
 }
@@ -144,24 +143,33 @@ QString DriverStatusCard::StatusDetailText(
 QString DriverStatusCard::FailureHint(Core::AAP::ConnectFailure failure)
 {
     switch (failure) {
-        case Core::AAP::ConnectFailure::None:
-            return {};
-        case Core::AAP::ConnectFailure::DriverMissing:
-            return QObject::tr(
-                "Last connection failed: the MagicAAP driver is not installed or not running. "
-                "Install it (see documentation), then reconnect.");
-        case Core::AAP::ConnectFailure::ServiceUnavailable:
-            return QObject::tr(
-                "Last connection failed: the earbuds did not offer the ANC service. Make sure "
-                "they are paired, in range, and the case is open.");
-        case Core::AAP::ConnectFailure::TransportError:
-            return QObject::tr(
-                "Last connection failed: the Bluetooth transport could not be opened. Check "
-                "that Bluetooth is on and the earbuds are close to this computer.");
-        case Core::AAP::ConnectFailure::HandshakeFailure:
-            return QObject::tr(
-                "Last connection failed during the protocol handshake. Move the earbuds closer "
-                "and reconnect; see the documentation if it persists.");
+    case Core::AAP::ConnectFailure::None:
+        return {};
+    case Core::AAP::ConnectFailure::DriverMissing:
+        return QObject::tr(
+            "Last connection failed: the MagicAAP driver is not installed or not running. "
+            "Install it (see documentation), then reconnect.");
+    case Core::AAP::ConnectFailure::ServiceUnavailable:
+        return QObject::tr(
+            "Last connection failed: the earbuds did not offer the ANC service. Make sure "
+            "they are paired, in range, and the case is open.");
+    case Core::AAP::ConnectFailure::TransportError:
+        return QObject::tr(
+            "Last connection failed: the Bluetooth transport could not be opened. Check "
+            "that Bluetooth is on and the earbuds are close to this computer.");
+    case Core::AAP::ConnectFailure::HandshakeFailure:
+        return QObject::tr(
+            "Last connection failed during the protocol handshake. Move the earbuds closer "
+            "and reconnect; see the documentation if it persists.");
+    case Core::AAP::ConnectFailure::NoMatch:
+        return QObject::tr(
+            "Last connection failed: no MagicAAP interface proves the selected earbuds' "
+            "address and device container. Update the MagicAAP driver, then reconnect.");
+    case Core::AAP::ConnectFailure::OpenFailed:
+        return QObject::tr(
+            "Last connection failed: the exact MagicAAP interface for the selected earbuds "
+            "could not be opened. Close apps using the earbuds and reconnect; another device "
+            "will not be selected.");
     }
     return {};
 }
@@ -179,11 +187,14 @@ void DriverStatusCard::Refresh()
 
         if (!driverAvailable) {
             status = LinkStatus::NotInstalled;
-        } else if (!aapConnected) {
+        }
+        else if (!aapConnected) {
             status = LinkStatus::InstalledNotConnected;
-        } else if (manager.IsAAPConnectedViaMagicAAP()) {
+        }
+        else if (manager.IsAAPConnectedViaMagicAAP()) {
             status = LinkStatus::ConnectedViaDriver;
-        } else {
+        }
+        else {
             status = LinkStatus::ConnectedOtherChannel;
         }
         attPathState = manager.GetAAPAttPathState();

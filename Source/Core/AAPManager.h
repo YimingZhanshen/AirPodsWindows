@@ -38,8 +38,10 @@
 #include "Base.h"
 #include "../Helper.h"
 
+// Hardware-free suites that need the private session seam declared below.
 class AAPTransportTests;
 class UiRenderingTests;
+class AAPManagerWorkerTests;
 
 namespace Core::AAP {
 
@@ -66,6 +68,8 @@ enum class ConnectFailure : uint8_t {
     ServiceUnavailable, // device reachable but does not expose the AAP service
     TransportError,     // socket/driver transport could not be created or failed
     HandshakeFailure,   // transport up, but the AAP handshake did not complete
+    NoMatch,            // no MagicAAP interface proves the bound address/container
+    OpenFailed,         // the exact target interface exists but could not be opened
 };
 
 //////////////////////////////////////////////////
@@ -232,6 +236,7 @@ private:
     // gate; neither behavior is reachable through the public connection API.
     friend class ::AAPTransportTests;
     friend class ::UiRenderingTests;
+    friend class ::AAPManagerWorkerTests;
 
     // Serializes whole Connect/Disconnect lifecycles; _mutex protects observable state and is
     // never held while joining a reader or invoking a callback.
@@ -290,6 +295,8 @@ private:
     // Deterministic rendezvous before the adaptive eligibility critical section. The callback runs
     // without _mutex held so a test can inject a notification at the former read/record race.
     std::function<void()> _beforeAdaptiveEligibilityForTest;
+    std::function<bool()> _driverInstalledProbe;
+    std::function<bool()> _driverRunningProbe;
 
     // Callbacks
     Callbacks _callbacks;
@@ -311,6 +318,19 @@ private:
     // Blueprint 2.7: desired state, serialization and echo confirmation. Declared last so its
     // destructor joins the command worker before any member the sender can reach is destroyed.
     std::unique_ptr<AAPCommandBroker> _commandBroker;
+    // T1 test seam, reachable only through the friend declaration above. When set,
+    // ConnectTransport builds its session transport from this factory instead of the
+    // platform creators, so a hardware-free test can park a real Connect and observe
+    // the same pending-publish/CancelConnect handshake the socket path uses. Production
+    // never assigns it and no public API exposes it, so the branch stays inert there.
+    std::function<std::shared_ptr<AAPTransport>()> _transportFactoryForTest;
+
+    // Additional T1 rendezvous seams. They observe real lifecycle boundaries without
+    // replacing the logic under test: lock attempt, pending publication, and public-send
+    // validation. Production never assigns them and no public API exposes them.
+    std::function<void(AAPAttempt)> _beforeConnectLockForTest;
+    std::function<void()> _beforePendingPublishForTest;
+    std::function<void()> _publicSendBarrierForTest;
 
     // Internal methods
     bool SendPacket(const std::vector<uint8_t> &packet);

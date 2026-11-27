@@ -342,6 +342,7 @@ set(
     "Source/Core/AAPMessage.cpp"
     "Source/Core/AAPStem.cpp"
     "Source/Core/AAPDeviceInfo.cpp"
+    "Source/Core/MagicAAPDeviceBinding.cpp"
     "Source/Core/ConnectionDiagnostics.cpp"
     "Source/Core/QuickConnect.cpp"
     "Source/Core/PlaybackMonitor.cpp"

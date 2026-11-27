@@ -288,6 +288,9 @@ std::optional<std::vector<uint8_t>> SeqPacketTransport::Receive(std::stop_token 
         timeval timeout{};
         timeout.tv_sec = 0;
         timeout.tv_usec = static_cast<long>(kReceivePollInterval.count() * 1000);
+        if (_receivePollObserverForTest) {
+            _receivePollObserverForTest();
+        }
 
         const int selected = select(0, &readSet, nullptr, nullptr, &timeout);
         if (selected == SOCKET_ERROR) {
@@ -378,31 +381,71 @@ MagicAAPTransport::~MagicAAPTransport()
 bool MagicAAPTransport::Connect(uint64_t address, std::stop_token stop)
 {
     if (stop.stop_requested()) {
+        _lastBindStatus.store(Core::MagicAAPWinRT::MagicAAPBindStatus::Cancelled);
         return false;
     }
 
     Close();
-    std::lock_guard<std::mutex> lock{_clientMutex};
+    auto client = std::make_shared<MagicAAPWinRT::MagicAAPWinRTClient>();
+    client->SetOnDataReceived([this](const std::vector<uint8_t> &record) { Enqueue(record); });
+    client->SetOnDisconnected([this] { SignalEof(); });
     {
+        std::lock_guard<std::mutex> lock{_clientMutex};
         std::lock_guard<std::mutex> queueLock{_queueMutex};
         _closed = false;
         _eof = false;
         _records.clear();
+        // Publish before the blocking driver operation so Close can retire this
+        // exact attempt. The local snapshot keeps it alive after publication is
+        // moved away.
+        _client = client;
+        _lastBindStatus.store(Core::MagicAAPWinRT::MagicAAPBindStatus::Cancelled);
     }
 
-    _client = std::make_unique<MagicAAPWinRT::MagicAAPWinRTClient>();
-    _client->SetOnDataReceived([this](const std::vector<uint8_t> &record) { Enqueue(record); });
-    _client->SetOnDisconnected([this] { SignalEof(); });
-    if (!_client->ConnectViaDeviceInterface(address)) {
-        const std::wstring error = _client->GetLastError();
-        spdlog::error(
-            "[AAPTransport] MagicAAP device-interface connection failed: {}",
-            std::string(error.begin(), error.end()));
-        _client.reset();
-        std::lock_guard<std::mutex> queueLock{_queueMutex};
-        _closed = true;
-        _eof = true;
-        _queueCondition.notify_all();
+    const auto bindStatus = client->ConnectViaDeviceInterface(address, stop);
+    bool retireClient = false;
+    bool replaced = false;
+    bool cancelled = false;
+    {
+        std::lock_guard<std::mutex> lock{_clientMutex};
+        const bool current = _client == client;
+        cancelled = stop.stop_requested() || !current;
+        replaced = !current && _client != nullptr;
+        retireClient = !current || cancelled ||
+                       bindStatus != Core::MagicAAPWinRT::MagicAAPBindStatus::Connected;
+        if (retireClient && current) {
+            _client.reset();
+            std::lock_guard<std::mutex> queueLock{_queueMutex};
+            _closed = true;
+            _eof = true;
+            _records.clear();
+            _queueCondition.notify_all();
+        }
+        if (!replaced) {
+            _lastBindStatus.store(
+                cancelled || !current ? Core::MagicAAPWinRT::MagicAAPBindStatus::Cancelled
+                                      : bindStatus);
+        }
+    }
+
+    if (retireClient) {
+        // Disconnect invalidates a startup that was blocked in the driver and
+        // joins any receiver before the local snapshot releases the client.
+        client->Disconnect();
+    }
+    if (retireClient) {
+        if (!replaced && bindStatus != Core::MagicAAPWinRT::MagicAAPBindStatus::Cancelled &&
+            !cancelled)
+        {
+            const std::wstring error = client->GetLastError();
+            std::string errorText;
+            errorText.reserve(error.size());
+            for (const wchar_t character : error) {
+                errorText.push_back(static_cast<char>(character));
+            }
+            spdlog::error(
+                "[AAPTransport] MagicAAP device-interface connection failed: {}", errorText);
+        }
         return false;
     }
     spdlog::info("[AAPTransport] Connected with MagicAAP device interface");
@@ -415,11 +458,15 @@ bool MagicAAPTransport::Send(std::span<const uint8_t> data, std::stop_token stop
         return false;
     }
 
-    std::lock_guard<std::mutex> lock{_clientMutex};
-    if (!_client) {
+    std::shared_ptr<MagicAAPWinRT::MagicAAPWinRTClient> client;
+    {
+        std::lock_guard<std::mutex> lock{_clientMutex};
+        client = _client;
+    }
+    if (!client) {
         return false;
     }
-    return _client->SendData(std::vector<uint8_t>(data.begin(), data.end()), stop);
+    return client->SendData(std::vector<uint8_t>(data.begin(), data.end()), stop);
 }
 
 std::optional<std::vector<uint8_t>> MagicAAPTransport::Receive(std::stop_token stop)
@@ -470,7 +517,7 @@ void MagicAAPTransport::SignalEof()
 
 void MagicAAPTransport::Close()
 {
-    std::unique_ptr<MagicAAPWinRT::MagicAAPWinRTClient> client;
+    std::shared_ptr<MagicAAPWinRT::MagicAAPWinRTClient> client;
     {
         std::lock_guard<std::mutex> lock{_clientMutex};
         client = std::move(_client);
@@ -480,7 +527,9 @@ void MagicAAPTransport::Close()
         _records.clear();
         _queueCondition.notify_all();
     }
-    // Join the existing client receiver before destroying this queue owner.
+    // Retire the published attempt without waiting for _clientMutex-held
+    // startup work. The startup snapshot observes the missing client/generation
+    // change and cannot commit a connection after this returns.
     if (client) {
         client->Disconnect();
     }

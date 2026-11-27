@@ -855,7 +855,8 @@ void Manager::ConnectAAP()
 
     if (SupportsANC(modelToCheck)) {
         const uint64_t address = _boundDevice->GetAddress();
-        LOG(Info, "Scheduling AAP connection for ANC-capable device, address={:016X}", address);
+        LOG(Info, "Scheduling AAP connection for ANC-capable device, address={}",
+            Diagnostics::Recorder::MaskAddress(address));
         Diagnostics::Recorder::Instance().Record(
             Diagnostics::Step::AdvertisementMatched, true,
             std::string{"model="} + std::to_string(static_cast<int>(modelToCheck)) +

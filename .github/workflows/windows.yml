@@ -37,6 +37,9 @@ env:
 jobs:
   build:
     runs-on: windows-2022
+    # A hung test process must cost one job, not a runner lease. Kept well above the
+    # observed full build plus suite duration so a slow but healthy run never trips it.
+    timeout-minutes: 90
     outputs:
       version: ${{ steps.version.outputs.version }}
 
@@ -47,11 +50,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        timeout-minutes: 10
         with:
           submodules: recursive
 
       - name: Check release version
         id: version
+        timeout-minutes: 5
         run: |
           $cmakeContents = Get-Content CMakeLists.txt -Raw
           $match = [regex]::Match(
@@ -78,6 +83,7 @@ jobs:
 
       - name: Install Qt 6.8.3
         uses: jurplel/install-qt-action@v4
+        timeout-minutes: 25
         with:
           version: '6.8.3'
           arch: win64_msvc2022_64
@@ -91,6 +97,7 @@ jobs:
       - name: Cache vcpkg
         id: vcpkg-cache
         uses: actions/cache@v4
+        timeout-minutes: 15
         with:
           path: Build/vcpkg
           key: vcpkg-v2-${{ hashFiles('vcpkg.json') }}
@@ -101,6 +108,7 @@ jobs:
       # baseline (vcpkg.json) changes.
       - name: Clone and bootstrap vcpkg
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 25
         run: |
           git clone https://github.com/microsoft/vcpkg.git Build/vcpkg
           & Build/vcpkg/bootstrap-vcpkg.bat -disableMetrics
@@ -110,6 +118,7 @@ jobs:
         # Studio generator ignores the launcher property entirely (verified:
         # a fake launcher is never invoked, and sccache reported 0 compile
         # requests). Only Makefile/Ninja generators honor it.
+        timeout-minutes: 20
         run: |
           cmake -S . -B Build/Release `
             -G 'Visual Studio 17 2022' `
@@ -123,22 +132,37 @@ jobs:
             -DAPD_BUILD_GIT_HASH=${{ github.sha }}
 
       - name: Build
+        timeout-minutes: 60
         run: cmake --build Build/Release --config $env:BUILD_TYPE --parallel 2
 
       - name: Test
+        # --timeout 60 bounds each test (Tests/CMakeLists.txt sets the same property, so
+        # the ceiling also holds for a manual ctest run); --no-tests=error turns an empty
+        # or mis-registered suite into a failure instead of a silent pass.
+        timeout-minutes: 25
         run: |
           $uiLog = Join-Path $env:RUNNER_TEMP 'UiRenderingTests.txt'
-          & Build/Release/Binary/UiRenderingTests.exe -o "$uiLog,txt"
-          $uiExitCode = $LASTEXITCODE
+          $ui = Start-Process `
+            -FilePath 'Build/Release/Binary/UiRenderingTests.exe' `
+            -ArgumentList @('-o', "$uiLog,txt") `
+            -NoNewWindow -PassThru
+          if (-not $ui.WaitForExit([TimeSpan]::FromMinutes(10).TotalMilliseconds)) {
+            $ui.Kill()
+            throw 'UiRenderingTests did not finish within 10 minutes; killed instead of hanging.'
+          }
+          $uiExitCode = $ui.ExitCode
           if ($uiExitCode -ne 0) {
             Get-Content -LiteralPath $uiLog
             throw "UiRenderingTests failed with exit code $uiExitCode."
           }
           ctest --test-dir Build/Release -C $env:BUILD_TYPE `
             --exclude-regex '^UiRenderingTests$' `
+            --timeout 60 `
+            --no-tests=error `
             --output-on-failure
 
       - name: Package release assets
+        timeout-minutes: 20
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -267,6 +291,7 @@ jobs:
       - name: Sign release installer when configured
         id: signing
         if: github.ref_type == 'tag'
+        timeout-minutes: 15
         env:
           SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
           SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
@@ -319,6 +344,7 @@ jobs:
           }
 
       - name: Create Win32 update bridge
+        timeout-minutes: 10
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -336,6 +362,7 @@ jobs:
 
       - name: Verify release installer signatures
         if: github.ref_type == 'tag' && steps.signing.outputs.signed == 'true'
+        timeout-minutes: 15
         run: |
           $signTool = Get-ChildItem `
             "${env:ProgramFiles(x86)}/Windows Kits/10/bin/*/x86/signtool.exe" |
@@ -353,6 +380,7 @@ jobs:
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
+        timeout-minutes: 20
         with:
           name: AirPodsWindows-${{ steps.version.outputs.version }}-${{ github.sha }}
           path: dist/*
@@ -363,17 +391,20 @@ jobs:
     if: github.ref_type == 'tag'
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
 
     steps:
       - name: Download release assets
         uses: actions/download-artifact@v5
+        timeout-minutes: 10
         with:
           name: AirPodsWindows-${{ needs.build.outputs.version }}-${{ github.sha }}
           path: dist
 
       - name: Create draft GitHub Release
+        timeout-minutes: 10
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
