@@ -353,7 +353,6 @@ private Q_SLOTS:
     void TracksLidAcrossShortGaps();
     void TracksLidWhilePodsAreOut();
     void LidPopupCooldownBlocksRapidRepeats();
-    void EarDetectionTrackerSurvivesStateLoss();
     void RecognizesHeadTrackingPackets();
     void HeadTrackingPresentationAgreesWithCoreParser();
     void HeadTrackingViewModelThrottlesAndTracksGenerations();
@@ -384,7 +383,7 @@ private Q_SLOTS:
     void PersistsAndPropagatesStemActions();
     void PreservesForkSettingsAndAddsPlaybackAutoConnect();
     void KeepsPpeCapIndependentFromLegacyAdaptiveTransparency();
-    void AppendsPpeCapAfterExistingSettingsFields();
+    void SettingsFieldsPreserveBaselineOrderAndAppendNewKeys();
     void PersistsPpeCapLevelRoundTrip();
     void PersistsAdaptiveNoiseLevelDefaultAndReloads();
     void ClampsAndGatesAdaptiveNoiseLevelPolicy();
@@ -2466,19 +2465,45 @@ void AirPodsDomainTests::KeepsPpeCapIndependentFromLegacyAdaptiveTransparency()
     Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
 }
 
-void AirPodsDomainTests::AppendsPpeCapAfterExistingSettingsFields()
+void AirPodsDomainTests::SettingsFieldsPreserveBaselineOrderAndAppendNewKeys()
 {
     Core::Settings::MetaFields fields;
     std::vector<std::string_view> names;
     boost::pfr::for_each_field(
         fields, [&](const auto &field) { names.push_back(field.GetName()); });
 
-    QVERIFY(names.size() >= 2);
+    const std::vector<QString> baseline{
+        QString{"language_locale"},
+        QString{"appearance_mode"},
+        QString{"auto_run"},
+        QString{"low_audio_latency"},
+        QString{"automatic_ear_detection"},
+        QString{"conversational_awareness"},
+        QString{"conversational_awareness_volume_percent"},
+        QString{"personalized_volume"},
+        QString{"loud_sound_reduction"},
+        QString{"adaptive_transparency_level"},
+        QString{"noise_control_mode"},
+        QString{"skipped_version"},
+        QString{"rssi_min"},
+        QString{"reduce_loud_sounds"},
+        QString{"loud_volume_level"},
+        QString{"device_address"},
+        QString{"tray_icon_battery"},
+        QString{"tray_quick_connect_enabled"},
+        QString{"tray_quick_connect_device_id"},
+        QString{"battery_on_taskbar"},
+    };
+    QVERIFY(names.size() >= baseline.size() + 3);
     const auto nameAt = [&](size_t index) {
         return QString::fromUtf8(names[index].data(), int(names[index].size()));
     };
-    QCOMPARE(nameAt(names.size() - 2), QString{"popup_on_lid_open"});
-    QCOMPARE(nameAt(names.size() - 1), QString{"ppe_cap_level"});
+    for (size_t i = 0; i < baseline.size(); ++i) {
+        QCOMPARE(nameAt(i), baseline[i]);
+    }
+    QCOMPARE(nameAt(baseline.size()), QString{"audio_auto_connect_enabled"});
+    QCOMPARE(nameAt(baseline.size() + 1), QString{"popup_on_lid_open"});
+    QCOMPARE(nameAt(baseline.size() + 2), QString{"ppe_cap_level"});
 }
 
 void AirPodsDomainTests::PersistsPpeCapLevelRoundTrip()

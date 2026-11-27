@@ -133,16 +133,16 @@ void SetRepository(std::unique_ptr<Repository> repository);
     callback(bool, tray_quick_connect_enabled, {false},                                            \
         Impl::OnApply(&OnApply_tray_quick_connect_enabled),                                         \
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Single-click the tray icon to connect the selected device when disconnected, or show battery information when connected. Battery information opens automatically after a successful connection.")}) \
-    callback(bool, audio_auto_connect_enabled, {false},                                             \
-        Impl::OnApply(&OnApply_audio_auto_connect_enabled),                                         \
-        Impl::Desc{QT_TRANSLATE_NOOP("QObject",                                                     \
-            "Connect the selected device when audio starts playing and it is disconnected. "      \
-            "After a failure, wait at least 30 seconds and start playback again to retry.")})       \
     callback(QString, tray_quick_connect_device_id, {},                                             \
         Impl::OnApply(&OnApply_tray_quick_connect_device_id),                                       \
         Impl::Sensitive{})                                                                          \
     callback(TaskbarStatusBehavior, battery_on_taskbar, {TaskbarStatusBehavior::Disable},          \
         Impl::OnApply(&OnApply_battery_on_taskbar))                                                \
+    callback(bool, audio_auto_connect_enabled, {false},                                             \
+        Impl::OnApply(&OnApply_audio_auto_connect_enabled),                                         \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject",                                                     \
+            "Connect the selected device when audio starts playing and it is disconnected. "      \
+            "After a failure, wait at least 30 seconds and start playback again to retry.")})       \
     callback(bool, popup_on_lid_open, {true},                                                      \
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Shows the battery window when you open the case, without taking focus from the app in use. When off, open it from the tray icon.")}) \
     callback(uint8_t, ppe_cap_level, {25},                                                         \
@@ -177,17 +177,17 @@ void SetRepository(std::unique_ptr<Repository> repository);
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Action for a triple press of the right stem.")}) \
     callback(Core::AAP::StemAction, stem_right_long, {Core::AAP::DefaultStemActions()[7]}, \
         Impl::OnApply(&OnApply_stem_actions),                                                     \
-        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Action for a long press of the right stem.")})
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Action for a long press of the right stem.")}) \
     callback(EarDetectSensitivity, ear_detect_sensitivity, {EarDetectSensitivity::Normal},           \
         Impl::OnApply(&OnApply_ear_detect_sensitivity),                                           \
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.")})
-    // clang-format on
+// clang-format on
 
-    // `head_tracking` predates D5 and remains the single persisted switch. D5 deliberately reuses
-    // it instead of appending a duplicate key: the field name, type and position are unchanged, so
-    // `kFieldsAbiVersion` stays 1 and stores written before D5 keep working untouched.
+// `head_tracking` predates D5 and remains the single persisted switch. D5 deliberately reuses
+// it instead of appending a duplicate key: the field name, type and position are unchanged, so
+// `kFieldsAbiVersion` stays 1 and stores written before D5 keep working untouched.
 
-    struct Fields {
+struct Fields {
 #define DECLARE_FIELD(type, name, dft, ...) type name dft;
     SETTINGS_FIELDS(DECLARE_FIELD)
 #undef DECLARE_FIELD
