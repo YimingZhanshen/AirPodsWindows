@@ -790,6 +790,12 @@ target_link_libraries(
 #
 
 if (APD_BUILD_TESTS)
+    # curl (pulled in by the cpr FetchContent) declares BUILD_TESTING through
+    # cmake_dependent_option, which pre-seeds the cache to OFF before this point.
+    # include(CTest) would then skip enable_testing(), CTestTestfile.cmake is
+    # never generated, and every CI ctest run silently reports "No tests were
+    # found". Force the cache back on so the suite actually registers.
+    set(BUILD_TESTING ON CACHE BOOL "Build the testing tree." FORCE)
     include(CTest)
     add_subdirectory(Tests)
 endif()
