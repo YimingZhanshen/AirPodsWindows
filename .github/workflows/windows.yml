@@ -160,6 +160,19 @@ jobs:
             --timeout 60 `
             --no-tests=error `
             --output-on-failure
+          $ctestExit = $LASTEXITCODE
+          if ($ctestExit -ne 0) {
+            # QTest console output does not survive the ctest pipe (the PASS/FAIL
+            # lines never reach the log), so every suite writes a .txt report into
+            # Testing/ and we dump them here to see the actual failing assertions.
+            Get-ChildItem 'Build/Release/Testing/*.txt' -ErrorAction SilentlyContinue |
+              ForEach-Object {
+                Write-Host "::group::Test report $($_.Name)"
+                Get-Content -LiteralPath $_.FullName
+                Write-Host '::endgroup::'
+              }
+            throw "ctest failed with exit code $ctestExit."
+          }
 
       - name: Package release assets
         timeout-minutes: 20

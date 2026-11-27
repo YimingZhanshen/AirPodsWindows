@@ -1,3 +1,14 @@
+# QTest's console output does not survive the ctest pipe on CI (observed: the
+# "Start testing" header and every PASS/FAIL line missing while spdlog output
+# from the same process shows up). Each suite therefore also writes a
+# plain-text report into Testing/, which the workflow dumps when ctest fails.
+macro(apd_qtest suite)
+    add_test(
+        NAME ${suite}
+        COMMAND ${suite} -o "${CMAKE_BINARY_DIR}/Testing/${suite}.txt,txt"
+    )
+endmacro()
+
 add_executable(
     AirPodsDomainTests
 
@@ -20,7 +31,7 @@ target_compile_definitions(
     AirPodsDomainTests PRIVATE APD_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 
-add_test(NAME AirPodsDomainTests COMMAND AirPodsDomainTests)
+apd_qtest(AirPodsDomainTests)
 
 add_executable(QuickConnectTests QuickConnectTests.cpp)
 
@@ -35,7 +46,7 @@ target_link_libraries(
 
 target_include_directories(QuickConnectTests PRIVATE "${CMAKE_SOURCE_DIR}")
 
-add_test(NAME QuickConnectTests COMMAND QuickConnectTests)
+apd_qtest(QuickConnectTests)
 
 add_executable(AAPProtocolTests AAPProtocolTests.cpp)
 
@@ -49,7 +60,7 @@ target_link_libraries(
 
 target_include_directories(AAPProtocolTests PRIVATE "${CMAKE_SOURCE_DIR}")
 
-add_test(NAME AAPProtocolTests COMMAND AAPProtocolTests)
+apd_qtest(AAPProtocolTests)
 
 add_executable(MagicAAPTests MagicAAPTests.cpp)
 
@@ -65,7 +76,7 @@ target_link_libraries(
 
 target_include_directories(MagicAAPTests PRIVATE "${CMAKE_SOURCE_DIR}")
 
-add_test(NAME MagicAAPTests COMMAND MagicAAPTests)
+apd_qtest(MagicAAPTests)
 
 add_executable(AAPConnectionStateMachineTests AAPConnectionStateMachineTests.cpp)
 
@@ -79,7 +90,7 @@ target_link_libraries(
 
 target_include_directories(AAPConnectionStateMachineTests PRIVATE "${CMAKE_SOURCE_DIR}")
 
-add_test(NAME AAPConnectionStateMachineTests COMMAND AAPConnectionStateMachineTests)
+apd_qtest(AAPConnectionStateMachineTests)
 
 add_executable(AAPTransportTests AAPTransportTests.cpp)
 
@@ -93,7 +104,7 @@ target_link_libraries(
 
 target_include_directories(AAPTransportTests PRIVATE "${CMAKE_SOURCE_DIR}")
 
-add_test(NAME AAPTransportTests COMMAND AAPTransportTests)
+apd_qtest(AAPTransportTests)
 
 add_executable(AAPManagerWorkerTests AAPManagerWorkerTests.cpp)
 
@@ -107,7 +118,7 @@ target_link_libraries(
 
 target_include_directories(AAPManagerWorkerTests PRIVATE "${CMAKE_SOURCE_DIR}")
 
-add_test(NAME AAPManagerWorkerTests COMMAND AAPManagerWorkerTests)
+apd_qtest(AAPManagerWorkerTests)
 
 add_executable(AnimationViewTests AnimationViewTests.cpp)
 
@@ -129,7 +140,7 @@ target_compile_definitions(
     APD_BINARY_DIR="${CMAKE_BINARY_DIR}"
 )
 
-add_test(NAME AnimationViewTests COMMAND AnimationViewTests)
+apd_qtest(AnimationViewTests)
 
 add_executable(UiRenderingTests UiRenderingTests.cpp ${CMAKE_SOURCE_DIR}/Source/Resource/Resource.qrc)
 
@@ -146,12 +157,12 @@ target_include_directories(UiRenderingTests PRIVATE "${CMAKE_SOURCE_DIR}")
 target_compile_definitions(UiRenderingTests PRIVATE APD_BINARY_DIR="${CMAKE_BINARY_DIR}")
 add_dependencies(UiRenderingTests apd_translations apd_animations)
 
-add_test(NAME UiRenderingTests COMMAND UiRenderingTests)
+apd_qtest(UiRenderingTests)
 foreach(scale_factor 1 1.25 1.5 2)
     string(REPLACE "." "_" scale_suffix "${scale_factor}")
     add_test(
         NAME MainWindowRenderingScale${scale_suffix}
-        COMMAND UiRenderingTests MainWindowElidesLongDeviceNames
+        COMMAND UiRenderingTests -o "${CMAKE_BINARY_DIR}/Testing/MainWindowRenderingScale${scale_suffix}.txt,txt" MainWindowElidesLongDeviceNames
     )
     set_tests_properties(
         MainWindowRenderingScale${scale_suffix}
@@ -159,7 +170,7 @@ foreach(scale_factor 1 1.25 1.5 2)
     )
     add_test(
         NAME AirPods5RenderingScale${scale_suffix}
-        COMMAND UiRenderingTests MainWindowRendersAirPods5
+        COMMAND UiRenderingTests -o "${CMAKE_BINARY_DIR}/Testing/AirPods5RenderingScale${scale_suffix}.txt,txt" MainWindowRendersAirPods5
     )
     set_tests_properties(
         AirPods5RenderingScale${scale_suffix}
@@ -167,7 +178,7 @@ foreach(scale_factor 1 1.25 1.5 2)
     )
     add_test(
         NAME AirPodsMaxRenderingScale${scale_suffix}
-        COMMAND UiRenderingTests MainWindowShowsTheHeadsetAtFullSize MainWindowShowsOnlyOneMaxBattery
+        COMMAND UiRenderingTests -o "${CMAKE_BINARY_DIR}/Testing/AirPodsMaxRenderingScale${scale_suffix}.txt,txt" MainWindowShowsTheHeadsetAtFullSize MainWindowShowsOnlyOneMaxBattery
     )
     set_tests_properties(
         AirPodsMaxRenderingScale${scale_suffix}
@@ -175,7 +186,7 @@ foreach(scale_factor 1 1.25 1.5 2)
     )
     add_test(
         NAME NotificationRenderingScale${scale_suffix}
-        COMMAND UiRenderingTests NotificationCardSharesTheTitleRowWithClose
+        COMMAND UiRenderingTests -o "${CMAKE_BINARY_DIR}/Testing/NotificationRenderingScale${scale_suffix}.txt,txt" NotificationCardSharesTheTitleRowWithClose
     )
     set_tests_properties(
         NotificationRenderingScale${scale_suffix}
@@ -209,3 +220,8 @@ endforeach()
 # the TESTS directory property means a newly registered target can never be skipped.
 get_property(apd_registered_tests DIRECTORY PROPERTY TESTS)
 set_tests_properties(${apd_registered_tests} PROPERTIES TIMEOUT 60)
+
+# The animation suite decodes and renders every bundled clip; the first-ever
+# ctest run timed out at 60 s while it was still probing media on a loaded
+# runner. 300 s still bounds a hang without false-failing slow CI.
+set_tests_properties(AnimationViewTests PROPERTIES TIMEOUT 300)
