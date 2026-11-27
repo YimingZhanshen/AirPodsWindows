@@ -708,8 +708,7 @@ void QuickConnectTests::linkPlanAndSuppressionArePure()
 
     QVERIFY(
         BL::BuildPlan(
-            MakeLinkState(false, BL::ServiceStatus::Disconnected, BL::ServiceStatus::Unsupported),
-            true)
+            MakeLinkState(false, BL::ServiceStatus::Disconnected, BL::ServiceStatus::Absent), true)
             .decision == BL::Decision::DeviceNotFound);
 
     const auto connect =
@@ -727,13 +726,11 @@ void QuickConnectTests::linkPlanAndSuppressionArePure()
 
     QVERIFY(
         BL::BuildPlan(
-            MakeLinkState(true, BL::ServiceStatus::Unsupported, BL::ServiceStatus::Unavailable),
-            true)
+            MakeLinkState(true, BL::ServiceStatus::Absent, BL::ServiceStatus::Unavailable), true)
             .decision == BL::Decision::NoSupportedService);
     QVERIFY(
         BL::BuildPlan(
-            MakeLinkState(true, BL::ServiceStatus::Disconnected, BL::ServiceStatus::Unsupported),
-            false)
+            MakeLinkState(true, BL::ServiceStatus::Disconnected, BL::ServiceStatus::Absent), false)
             .decision == BL::Decision::AlreadySatisfied);
 
     const auto progress = BL::Evaluate(
@@ -753,9 +750,9 @@ void QuickConnectTests::linkConnectHappyPath()
     using Outcome = Core::BluetoothLink::Outcome;
 
     auto adapter = std::make_shared<FakeLinkAdapter>();
-    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported);
+    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Absent);
     adapter->after =
-        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Unsupported, true, true);
+        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Absent, true, true);
     auto backend = MakeLinkBackend(adapter);
     Controller controller{
         backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, kTestLinkDeadline,
@@ -779,9 +776,9 @@ void QuickConnectTests::linkDisconnectSuppressesAutomaticReconnect()
 
     auto adapter = std::make_shared<FakeLinkAdapter>();
     adapter->before =
-        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Unsupported, true, true);
+        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Absent, true, true);
     adapter->after =
-        MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported, true, false);
+        MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Absent, true, false);
     auto backend = MakeLinkBackend(adapter);
     Controller controller{
         backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, kTestLinkDeadline,
@@ -818,9 +815,9 @@ void QuickConnectTests::manualQuickConnectLiftsSuppression()
 
     auto adapter = std::make_shared<FakeLinkAdapter>();
     adapter->before =
-        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Unsupported, true, true);
+        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Absent, true, true);
     adapter->after =
-        MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported, true, false);
+        MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Absent, true, false);
     auto backend = MakeLinkBackend(adapter);
     Controller controller{
         backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, kTestLinkDeadline,
@@ -845,7 +842,7 @@ void QuickConnectTests::linkServiceSwitchFailureIsReported()
     using Outcome = Core::BluetoothLink::Outcome;
 
     auto adapter = std::make_shared<FakeLinkAdapter>();
-    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported);
+    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Absent);
     adapter->submitResult = Core::BluetoothLink::Failure::RequestRejected;
     auto backend = MakeLinkBackend(adapter);
     Controller controller{
@@ -869,7 +866,7 @@ void QuickConnectTests::linkRequestHitsFiveSecondBudgetOnce()
     using Outcome = Core::BluetoothLink::Outcome;
 
     auto adapter = std::make_shared<FakeLinkAdapter>();
-    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported);
+    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Absent);
     adapter->applyAfter = false; // request accepted, link never comes up
     auto backend = MakeLinkBackend(adapter);
     Controller controller{
@@ -895,9 +892,9 @@ void QuickConnectTests::parkedLinkWorkerCannotPostAfterTimeout()
     using Outcome = Core::BluetoothLink::Outcome;
 
     auto adapter = std::make_shared<FakeLinkAdapter>();
-    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported);
+    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Absent);
     adapter->after =
-        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Unsupported, true, true);
+        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Absent, true, true);
     adapter->parkQuery = true;
     auto backend = MakeLinkBackend(adapter);
     Controller controller{
@@ -925,9 +922,9 @@ void QuickConnectTests::repeatedLinkClicksJoinSameDirectionAndOppositeRetires()
     using Outcome = Core::BluetoothLink::Outcome;
 
     auto adapter = std::make_shared<FakeLinkAdapter>();
-    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported);
+    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Absent);
     adapter->after =
-        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Unsupported, true, true);
+        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Absent, true, true);
     adapter->parkQuery = true;
     auto backend = MakeLinkBackend(adapter);
     Controller controller{
@@ -969,7 +966,7 @@ void QuickConnectTests::linkUnsupportedServiceIsNotGuessed()
     using Outcome = Core::BluetoothLink::Outcome;
 
     auto adapter = std::make_shared<FakeLinkAdapter>();
-    adapter->before = MakeLinkState(true, ServiceStatus::Unsupported, ServiceStatus::Unavailable);
+    adapter->before = MakeLinkState(true, ServiceStatus::Absent, ServiceStatus::Unavailable);
     auto backend = MakeLinkBackend(adapter);
     Controller controller{
         backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, kTestLinkDeadline,
@@ -1006,7 +1003,7 @@ void QuickConnectTests::linkUnreadableEnumerationIsNotDisconnected()
     using Outcome = Core::BluetoothLink::Outcome;
 
     auto adapter = std::make_shared<FakeLinkAdapter>();
-    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported);
+    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Absent);
     adapter->failQuery = true;
     auto backend = MakeLinkBackend(adapter);
     Controller controller{
@@ -1026,7 +1023,7 @@ void QuickConnectTests::linkUnreadableEnumerationIsNotDisconnected()
     // A successfully enumerated empty endpoint set is different from a failed
     // enumeration: it is valid evidence that no controllable profile exists.
     adapter->failQuery = false;
-    adapter->before = MakeLinkState(true, ServiceStatus::Unsupported, ServiceStatus::Unsupported);
+    adapter->before = MakeLinkState(true, ServiceStatus::Absent, ServiceStatus::Absent);
     QVERIFY(controller.RequestLinkDisconnect() == Outcome::Started);
     QVERIFY(spy.wait(2'000));
     QVERIFY(LastLinkOutcome(spy) == Outcome::AlreadyDisconnected);
@@ -1048,12 +1045,12 @@ void QuickConnectTests::endpointEvidenceDoesNotUseActiveAlone()
     evidence.front().connected = true;
     QVERIFY(Core::BluetoothLink::AggregateEndpointEvidence(evidence) == ServiceStatus::Connected);
     evidence.front().controllable = false;
-    QVERIFY(Core::BluetoothLink::AggregateEndpointEvidence(evidence) == ServiceStatus::Unsupported);
+    QVERIFY(Core::BluetoothLink::AggregateEndpointEvidence(evidence) == ServiceStatus::Absent);
 }
 
 void QuickConnectTests::unknownHfpCanReconnect()
 {
-    auto state = MakeLinkState(true, ServiceStatus::Unsupported, ServiceStatus::Unknown);
+    auto state = MakeLinkState(true, ServiceStatus::Absent, ServiceStatus::Unknown);
     const auto plan = Core::BluetoothLink::BuildPlan(state, true);
     QVERIFY(plan.decision == Core::BluetoothLink::Decision::Proceed);
     QVERIFY(!plan.connectA2DP && plan.connectHFP);
@@ -1063,10 +1060,9 @@ void QuickConnectTests::unknownHfpCanReconnect()
 void QuickConnectTests::disconnectRequiresPositiveProof()
 {
     namespace BL = Core::BluetoothLink;
-    auto state = MakeLinkState(true, BL::ServiceStatus::Connected, BL::ServiceStatus::Unsupported);
+    auto state = MakeLinkState(true, BL::ServiceStatus::Connected, BL::ServiceStatus::Absent);
     const auto plan = BL::BuildPlan(state, false);
-    auto latest =
-        MakeLinkState(true, BL::ServiceStatus::Unsupported, BL::ServiceStatus::Unsupported);
+    auto latest = MakeLinkState(true, BL::ServiceStatus::Absent, BL::ServiceStatus::Absent);
     QVERIFY(BL::Evaluate(plan, latest, false).evaluation == BL::Evaluation::Pending);
     latest.a2dp = BL::ServiceStatus::Unknown;
     QVERIFY(BL::Evaluate(plan, latest, false).evaluation == BL::Evaluation::Pending);
@@ -1082,8 +1078,8 @@ void QuickConnectTests::unreadableReadbackIsNotDisconnected()
 
     auto adapter = std::make_shared<FakeLinkAdapter>();
     adapter->before =
-        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Unsupported, true, true);
-    adapter->after = MakeLinkState(true, ServiceStatus::Unsupported, ServiceStatus::Unsupported);
+        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Absent, true, true);
+    adapter->after = MakeLinkState(true, ServiceStatus::Absent, ServiceStatus::Absent);
     adapter->failQueryAt = 2; // initial query succeeds, first read-back is unreadable
     auto backend = MakeLinkBackend(adapter);
     Controller controller{
@@ -1170,9 +1166,9 @@ void QuickConnectTests::timedOutLinkRetryDoesNotJoinBlockedWorker()
     using Outcome = Core::BluetoothLink::Outcome;
 
     auto adapter = std::make_shared<FakeLinkAdapter>();
-    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported);
+    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Absent);
     adapter->after =
-        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Unsupported, true, true);
+        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Absent, true, true);
     adapter->parkQuery = true;
     auto backend = MakeLinkBackend(adapter);
     Controller controller{
@@ -1206,9 +1202,9 @@ void QuickConnectTests::explicitDisconnectRetiresQuickConnectAndBlocksStaleConne
 
     auto adapter = std::make_shared<FakeLinkAdapter>();
     adapter->before =
-        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Unsupported, true, true);
+        MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Absent, true, true);
     adapter->after =
-        MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported, true, false);
+        MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Absent, true, false);
     auto backend = std::make_shared<BlockingBackend>();
     backend->linkAdapter = adapter;
     BackendUnblockGuard guard{backend};
@@ -1276,7 +1272,7 @@ void QuickConnectTests::rebindingRetiresInFlightLinkRequest()
     using Outcome = Core::BluetoothLink::Outcome;
 
     auto adapter = std::make_shared<FakeLinkAdapter>();
-    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Unsupported);
+    adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Absent);
     adapter->parkQuery = true;
     auto backend = MakeLinkBackend(adapter);
     Controller controller{
