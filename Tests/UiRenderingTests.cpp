@@ -489,9 +489,9 @@ private Q_SLOTS:
             manager._aapConnectInProgress = true;
             manager._aapActiveAttempt = manager._aapMgr._attempt;
         }
-        Gui::SettingsWindow settings{
-            [] { return 0; }, quickConnect,
-            [&manager]() -> Core::AirPods::Manager & { return manager; }};
+        Gui::SettingsWindow settings{[] { return 0; }, quickConnect};
+        settings.SetAirPodsManagerProvider(
+            [&manager]() -> Core::AirPods::Manager & { return manager; });
         manager.OnPpeCapLevelChanged(75);
         auto *slider = settings.findChild<QSlider *>("hsPpeCapLevel");
         QVERIFY(slider != nullptr);
@@ -526,9 +526,9 @@ private Q_SLOTS:
             manager._aapConnectInProgress = true;
             manager._aapActiveAttempt = manager._aapMgr._attempt;
         }
-        Gui::SettingsWindow settings{
-            [] { return 0; }, quickConnect,
-            [&manager]() -> Core::AirPods::Manager & { return manager; }};
+        Gui::SettingsWindow settings{[] { return 0; }, quickConnect};
+        settings.SetAirPodsManagerProvider(
+            [&manager]() -> Core::AirPods::Manager & { return manager; });
         manager.OnPpeCapLevelChanged(75);
         auto *slider = settings.findChild<QSlider *>("hsPpeCapLevel");
         QVERIFY(slider != nullptr);
