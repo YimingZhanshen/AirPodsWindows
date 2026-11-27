@@ -44,10 +44,10 @@ int FirstLineHeight(const QLabel *label)
 
 NotificationWindow::NotificationWindow(QWidget *parent)
     : QWidget{parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::WindowDoesNotAcceptFocus},
-      _title{new QLabel{this}}, _message{new QLabel{this}}, _activity{new Widget::ActivityIndicator{
-                                                                kActivitySize, _message}},
-      _close{new Widget::CloseButton{this}}, _titleOffset{new QSpacerItem{
-                                                 0, 0, QSizePolicy::Minimum, QSizePolicy::Fixed}},
+      _title{new QLabel{this}}, _message{new QLabel{this}},
+      _activity{new Widget::ActivityIndicator{kActivitySize, _message}},
+      _close{new Widget::CloseButton{this}},
+      _titleOffset{new QSpacerItem{0, 0, QSizePolicy::Minimum, QSizePolicy::Fixed}},
       _closeOffset{new QSpacerItem{0, 0, QSizePolicy::Minimum, QSizePolicy::Fixed}}
 {
     setObjectName("connectionNotification");
