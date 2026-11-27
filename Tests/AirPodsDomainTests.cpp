@@ -639,6 +639,7 @@ void AirPodsDomainTests::ManagerUsesResolvedModelForStateAndFiltering()
     manager._boundModel =
         Core::AirPods::Details::ResolveModel(Model::AirPods_5, manager._modelOverride);
     manager._deviceName = QString{"AirPods"};
+    manager.OnRssiMinChanged(-80);
 
     QObject::connect(
         &manager, &Core::AirPods::Manager::StateUpdated, [&](const Core::AirPods::State &state) {
@@ -1118,8 +1119,9 @@ void AirPodsDomainTests::FiltersDuplicateAndWeakAdvertisements()
         manager.OnAdvReceived(Advertisement{MakeAdvertisementData(0x1234, -45, Side::Left)});
     QVERIFY(!duplicate.has_value());
 
+    // Weak packets from a tracked address are accepted; the floor only rejects strangers.
     auto weak = manager.OnAdvReceived(
-        Advertisement{MakeAdvertisementData(0x1234, -90, Side::Left, 7, 7, 5)});
+        Advertisement{MakeAdvertisementData(0x5678, -90, Side::Left, 7, 7, 5)});
     QVERIFY(!weak.has_value());
     QCOMPARE(manager.GetCurrentState()->pods.left.battery.Value(), 80U);
 }

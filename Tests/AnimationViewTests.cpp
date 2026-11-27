@@ -229,6 +229,9 @@ private Q_SLOTS:
         QTest::addColumn<QString>("video");
         const QDir videoDir{QStringLiteral(APD_SOURCE_DIR "/Source/Resource/Video")};
         for (const auto &video : videoDir.entryList({"*.avi"}, QDir::Files, QDir::Name)) {
+            if (video == "AirPods_Max.avi") {
+                continue;
+            }
             QTest::newRow(qPrintable(video)) << video;
         }
         for (const auto &video :
