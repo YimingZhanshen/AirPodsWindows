@@ -1462,7 +1462,8 @@ void AirPodsDomainTests::PersistsAndPropagatesStemActions()
     Core::Settings::SetRepository(std::move(repository));
     QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
     QVERIFY(
-        Core::AAP::StemActionsOf(Core::Settings::GetCurrent()) == Core::AAP::DefaultStemActions());
+        Core::Settings::StemActionsOf(Core::Settings::GetCurrent()) ==
+        Core::AAP::DefaultStemActions());
     RecordingSettingsObserver observer;
     Core::Settings::SetApplyObserver(&observer);
     Core::AAP::StemActionTable custom{};
@@ -1485,7 +1486,7 @@ void AirPodsDomainTests::PersistsAndPropagatesStemActions()
     Core::Settings::SetApplyObserver(nullptr);
 
     QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
-    QVERIFY(Core::AAP::StemActionsOf(Core::Settings::GetCurrent()) == custom);
+    QVERIFY(Core::Settings::StemActionsOf(Core::Settings::GetCurrent()) == custom);
     Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
 }
 
@@ -2149,7 +2150,7 @@ void AirPodsDomainTests::StemTranslationsAreFinished_data()
         QString{Config::TranslationLocales}.split(QStringLiteral(";"), Qt::SkipEmptyParts);
     QCOMPARE(locales.size(), 18);
     for (const auto &locale : locales) {
-        QTest::newRow(qPrintable(locale)) << locale;
+        QTest::newRow(qPrintable(locale)) << qPrintable(locale);
     }
 }
 
@@ -2226,23 +2227,24 @@ void AirPodsDomainTests::StemTranslationsAreFinished()
         const auto key =
             (isDescription ? QStringLiteral("QObject") : QStringLiteral("SettingsWindow")) +
             QLatin1Char{'\\'} + expected;
-        QVERIFY2(counts.value(key) == 1, qPrintable(QString{"%1: missing or duplicate %2/%3"})
-                                                   .arg(locale, key.section(QLatin1Char{'\\'}, 0, 0),
-                                                        expected)));
-        QVERIFY2(!unfinished.value(key, true),
-            qPrintable(QString{"%1: unfinished translation for %2"}).arg(locale, expected)));
+        const auto where = QString{"%1/%2"}.arg(locale, key.section(QLatin1Char{'\\'}, 0, 0));
+        QVERIFY2(
+            counts.value(key) == 1,
+            qPrintable(QString{"%1: missing or duplicate %2"}.arg(where, expected)));
+        QVERIFY2(
+            !unfinished.value(key, true),
+            qPrintable(QString{"%1: unfinished translation for %2"}.arg(where, expected)));
         const auto translation = translations.value(key);
-        QVERIFY2(!translation.isEmpty(), qPrintable(QString{"%1: empty translation for %2"})
-                                                  .arg(locale, expected)));
-        // Spanish "Triple" and French "Double"/"Triple"/"Long" are correctly identical to the
-        // source; every other entry must be a real translation rather than an untranslated
-        // fallback.
-        QVERIFY2((locale == QStringLiteral("es_ES") && expected == QStringLiteral("Triple")) ||
-                     (locale == QStringLiteral("fr_FR") &&
-                      (expected == QStringLiteral("Double") || expected == QStringLiteral("Triple") ||
-                       expected == QStringLiteral("Long"))) ||
-                     translation != expected,
-            qPrintable(QString{"%1: untranslated fallback for %2"}).arg(locale, expected)));
+        QVERIFY2(
+            !translation.isEmpty(),
+            qPrintable(QString{"%1: empty translation for %2"}.arg(where, expected)));
+        QVERIFY2(
+            (locale == QStringLiteral("es_ES") && expected == QStringLiteral("Triple")) ||
+                (locale == QStringLiteral("fr_FR") &&
+                 (expected == QStringLiteral("Double") || expected == QStringLiteral("Triple") ||
+                  expected == QStringLiteral("Long"))) ||
+                translation != expected,
+            qPrintable(QString{"%1: untranslated fallback for %2"}.arg(where, expected)));
     }
 }
 

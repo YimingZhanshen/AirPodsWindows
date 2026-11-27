@@ -473,7 +473,8 @@ void SettingsWindow::SetupStemActionsCard()
                     return;
                 }
                 auto settings = ModifiableAccess();
-                (*settings).*binding.member =
+                auto *fields = settings.operator->();
+                fields->*binding.member =
                     static_cast<Core::AAP::StemAction>(combo->currentData().toInt());
             });
     }

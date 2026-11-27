@@ -391,7 +391,7 @@ private slots:
     void StemDeduperCollapsesRepeatedLongPressBurstsAndReleaseTails()
     {
         using namespace std::chrono_literals;
-        using StemPressDeduper::TimePointT;
+        using TimePointT = StemPressDeduper::TimePointT;
         auto now = TimePointT{};
         StemPressDeduper deduper([&] { return now; });
         const StemEvent leftLong{StemSide::Left, StemPress::Long};
