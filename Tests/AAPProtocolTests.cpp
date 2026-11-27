@@ -131,47 +131,49 @@ Core::AAP::AAPCommandBroker::Config UnverifiableConfig(AAPTestSupport::ManualClo
         mode = Core::AAP::AAPConfirmMode::Unverifiable;
     }
     return config;
-    std::vector<uint8_t> FromHex(const QByteArray &hex)
-    {
-        const auto bytes = QByteArray::fromHex(hex);
-        return std::vector<uint8_t>(bytes.begin(), bytes.end());
-    }
+}
 
-    // Byte-exact 222-byte 0x001D device-information record from librepods'
-    // "AAP Definitions.md" example packet (the reference capture also documented in
-    // Docs/AAP-Protocol-Spec.md §3). Values verified against the same table:
-    // name, model, manufacturer, serial, firmware x2, hardware revision, updater id,
-    // left/right serials, numeric version, a 35-byte encrypted blob, and a trailing
-    // numeric string.
-    const std::vector<uint8_t> &DeviceInfoSample()
-    {
-        static const std::vector<uint8_t> sample =
-            FromHex(QByteArrayLiteral("040004001d0002d5000400416972506f64732050726f0041333034380041"
-                                      "70706c6520496e632e0051584e52"
-                                      "4848595850360036312e313836383034303030323030303030302e323731"
-                                      "330036312e313836383034303030"
-                                      "323030303030302e3237313300312e302e3000636f6d2e6170706c652e61"
-                                      "63636573736f72792e7570646174"
-                                      "65722e6170702e3731004859394c5432454632364a59004833504c574844"
-                                      "4a32364b3000363335373533360089"
-                                      "312a6567a5400f84a3ca234947efd40b90d78436ae5946748d70273e6606"
-                                      "6a258930003533393530363036340"
-                                      "0"));
-        return sample;
-    }
+std::vector<uint8_t> FromHex(const QByteArray &hex)
+{
+    const auto bytes = QByteArray::fromHex(hex);
+    return std::vector<uint8_t>(bytes.begin(), bytes.end());
+}
 
-    // Builds a syntactically shaped 0x001D record carrying the given NUL-separated
-    // fields behind the standard header and `02 D5 00 04 00` preamble.
-    std::vector<uint8_t> BuildDeviceInfoPacket(std::initializer_list<QByteArray> fields)
-    {
-        std::vector<uint8_t> packet =
-            Hex({0x04, 0x00, 0x04, 0x00, 0x1D, 0x00, 0x02, 0xD5, 0x00, 0x04, 0x00});
-        for (const auto &field : fields) {
-            packet.insert(packet.end(), field.constData(), field.constData() + field.size());
-            packet.push_back(0x00);
-        }
-        return packet;
+// Byte-exact 222-byte 0x001D device-information record from librepods'
+// "AAP Definitions.md" example packet (the reference capture also documented in
+// Docs/AAP-Protocol-Spec.md §3). Values verified against the same table:
+// name, model, manufacturer, serial, firmware x2, hardware revision, updater id,
+// left/right serials, numeric version, a 35-byte encrypted blob, and a trailing
+// numeric string.
+const std::vector<uint8_t> &DeviceInfoSample()
+{
+    static const std::vector<uint8_t> sample =
+        FromHex(QByteArrayLiteral("040004001d0002d5000400416972506f64732050726f0041333034380041"
+                                  "70706c6520496e632e0051584e52"
+                                  "4848595850360036312e313836383034303030323030303030302e323731"
+                                  "330036312e313836383034303030"
+                                  "323030303030302e3237313300312e302e3000636f6d2e6170706c652e61"
+                                  "63636573736f72792e7570646174"
+                                  "65722e6170702e3731004859394c5432454632364a59004833504c574844"
+                                  "4a32364b3000363335373533360089"
+                                  "312a6567a5400f84a3ca234947efd40b90d78436ae5946748d70273e6606"
+                                  "6a258930003533393530363036340"
+                                  "0"));
+    return sample;
+}
+
+// Builds a syntactically shaped 0x001D record carrying the given NUL-separated
+// fields behind the standard header and `02 D5 00 04 00` preamble.
+std::vector<uint8_t> BuildDeviceInfoPacket(std::initializer_list<QByteArray> fields)
+{
+    std::vector<uint8_t> packet =
+        Hex({0x04, 0x00, 0x04, 0x00, 0x1D, 0x00, 0x02, 0xD5, 0x00, 0x04, 0x00});
+    for (const auto &field : fields) {
+        packet.insert(packet.end(), field.constData(), field.constData() + field.size());
+        packet.push_back(0x00);
     }
+    return packet;
+}
 
 } // namespace
 

@@ -1544,879 +1544,884 @@ private slots:
         QVERIFY(!manager.GetAdaptiveNoiseLevel().has_value());
         QVERIFY(!manager.GetNoiseControlMode().has_value());
         manager.Disconnect();
-        void ManagerMapsBindStatusAndRecordsFinalDriverOpen_data()
-        {
-            using Core::AAP::ConnectFailure;
-            using Core::MagicAAPWinRT::MagicAAPBindStatus;
-            QTest::addColumn<int>("bindStatus");
-            QTest::addColumn<int>("expectedFailure");
-            QTest::newRow("connected") << static_cast<int>(MagicAAPBindStatus::Connected)
-                                       << static_cast<int>(ConnectFailure::None);
-            QTest::newRow("no-match") << static_cast<int>(MagicAAPBindStatus::NoMatch)
-                                      << static_cast<int>(ConnectFailure::NoMatch);
-            QTest::newRow("open-failed") << static_cast<int>(MagicAAPBindStatus::OpenFailed)
-                                         << static_cast<int>(ConnectFailure::OpenFailed);
-            QTest::newRow("driver-missing") << static_cast<int>(MagicAAPBindStatus::DriverMissing)
-                                            << static_cast<int>(ConnectFailure::DriverMissing);
-            QTest::newRow("transport-error") << static_cast<int>(MagicAAPBindStatus::TransportError)
-                                             << static_cast<int>(ConnectFailure::TransportError);
-            QTest::newRow("cancelled") << static_cast<int>(MagicAAPBindStatus::Cancelled)
-                                       << static_cast<int>(ConnectFailure::TransportError);
-        }
+    }
 
-        void ManagerMapsBindStatusAndRecordsFinalDriverOpen()
-        {
-            using Core::AAP::ConnectFailure;
-            using Core::MagicAAPWinRT::MagicAAPBindStatus;
-            QFETCH(int, bindStatus);
-            QFETCH(int, expectedFailure);
-            const auto status = static_cast<MagicAAPBindStatus>(bindStatus);
+    void ManagerMapsBindStatusAndRecordsFinalDriverOpen_data()
+    {
+        using Core::AAP::ConnectFailure;
+        using Core::MagicAAPWinRT::MagicAAPBindStatus;
+        QTest::addColumn<int>("bindStatus");
+        QTest::addColumn<int>("expectedFailure");
+        QTest::newRow("connected") << static_cast<int>(MagicAAPBindStatus::Connected)
+                                   << static_cast<int>(ConnectFailure::None);
+        QTest::newRow("no-match") << static_cast<int>(MagicAAPBindStatus::NoMatch)
+                                  << static_cast<int>(ConnectFailure::NoMatch);
+        QTest::newRow("open-failed") << static_cast<int>(MagicAAPBindStatus::OpenFailed)
+                                     << static_cast<int>(ConnectFailure::OpenFailed);
+        QTest::newRow("driver-missing") << static_cast<int>(MagicAAPBindStatus::DriverMissing)
+                                        << static_cast<int>(ConnectFailure::DriverMissing);
+        QTest::newRow("transport-error") << static_cast<int>(MagicAAPBindStatus::TransportError)
+                                         << static_cast<int>(ConnectFailure::TransportError);
+        QTest::newRow("cancelled") << static_cast<int>(MagicAAPBindStatus::Cancelled)
+                                   << static_cast<int>(ConnectFailure::TransportError);
+    }
 
-            Core::AAP::Manager manager;
-            auto seqPacket = std::make_shared<UnavailableSeqPacketTransport>();
-            auto magicAAP = std::make_shared<BindStatusTransport>(status);
-            manager._driverInstalledProbe = [] { return true; };
-            manager._driverRunningProbe = [] { return true; };
-            manager._transportFactory = [seqPacket, magicAAP](Core::AAP::AAPTransportKind kind) {
-                if (kind == Core::AAP::AAPTransportKind::SeqPacket) {
-                    return std::shared_ptr<Core::AAP::AAPTransport>{seqPacket};
-                }
-                return std::shared_ptr<Core::AAP::AAPTransport>{magicAAP};
-            };
+    void ManagerMapsBindStatusAndRecordsFinalDriverOpen()
+    {
+        using Core::AAP::ConnectFailure;
+        using Core::MagicAAPWinRT::MagicAAPBindStatus;
+        QFETCH(int, bindStatus);
+        QFETCH(int, expectedFailure);
+        const auto status = static_cast<MagicAAPBindStatus>(bindStatus);
 
-            Core::Diagnostics::Recorder::Instance().Reset();
-            ConnectFailure failure = ConnectFailure::None;
-            const auto transport = manager.ConnectTransport({1, 1}, {}, failure);
-            const auto report = Core::Diagnostics::Recorder::Instance().BuildReport({});
-            if (status == MagicAAPBindStatus::Connected) {
-                QVERIFY(transport != nullptr);
-                QVERIFY(report.find("driver_open  ok") != std::string::npos);
-                QVERIFY(report.find("driver_open  FAILED") == std::string::npos);
-                transport->Close();
+        Core::AAP::Manager manager;
+        auto seqPacket = std::make_shared<UnavailableSeqPacketTransport>();
+        auto magicAAP = std::make_shared<BindStatusTransport>(status);
+        manager._driverInstalledProbe = [] { return true; };
+        manager._driverRunningProbe = [] { return true; };
+        manager._transportFactory = [seqPacket, magicAAP](Core::AAP::AAPTransportKind kind) {
+            if (kind == Core::AAP::AAPTransportKind::SeqPacket) {
+                return std::shared_ptr<Core::AAP::AAPTransport>{seqPacket};
             }
-            else {
-                QVERIFY(transport == nullptr);
-                QVERIFY(report.find("driver_open  FAILED") != std::string::npos);
-                QVERIFY(report.find("driver_open  ok") == std::string::npos);
-            }
-            QCOMPARE(failure, static_cast<ConnectFailure>(expectedFailure));
+            return std::shared_ptr<Core::AAP::AAPTransport>{magicAAP};
+        };
+
+        Core::Diagnostics::Recorder::Instance().Reset();
+        ConnectFailure failure = ConnectFailure::None;
+        const auto transport = manager.ConnectTransport({1, 1}, {}, failure);
+        const auto report = Core::Diagnostics::Recorder::Instance().BuildReport({});
+        if (status == MagicAAPBindStatus::Connected) {
+            QVERIFY(transport != nullptr);
+            QVERIFY(report.find("driver_open  ok") != std::string::npos);
+            QVERIFY(report.find("driver_open  FAILED") == std::string::npos);
+            transport->Close();
         }
-
-        void ManagerRecordsDriverOpenFailureWhenMagicConnectThrows()
-        {
-            Core::AAP::Manager manager;
-            auto seqPacket = std::make_shared<UnavailableSeqPacketTransport>();
-            auto magicAAP = std::make_shared<ThrowingMagicAAPTransport>();
-            manager._driverInstalledProbe = [] { return true; };
-            manager._driverRunningProbe = [] { return true; };
-            manager._transportFactory = [seqPacket, magicAAP](Core::AAP::AAPTransportKind kind) {
-                if (kind == Core::AAP::AAPTransportKind::SeqPacket) {
-                    return std::shared_ptr<Core::AAP::AAPTransport>{seqPacket};
-                }
-                return std::shared_ptr<Core::AAP::AAPTransport>{magicAAP};
-            };
-
-            Core::Diagnostics::Recorder::Instance().Reset();
-            Core::AAP::ConnectFailure failure = Core::AAP::ConnectFailure::None;
-            const auto transport = manager.ConnectTransport({1, 1}, {}, failure);
-            const auto report = Core::Diagnostics::Recorder::Instance().BuildReport({});
+        else {
             QVERIFY(transport == nullptr);
-            QCOMPARE(failure, Core::AAP::ConnectFailure::TransportError);
             QVERIFY(report.find("driver_open  FAILED") != std::string::npos);
             QVERIFY(report.find("driver_open  ok") == std::string::npos);
         }
+        QCOMPARE(failure, static_cast<ConnectFailure>(expectedFailure));
+    }
 
-        void ManagerConnectInitializesBeforeConnectionGateOpens()
-        {
-            Core::AAP::Manager manager;
-            auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
-            manager._transportFactory = [transport](Core::AAP::AAPTransportKind)
-                -> std::shared_ptr<Core::AAP::AAPTransport> { return transport; };
+    void ManagerRecordsDriverOpenFailureWhenMagicConnectThrows()
+    {
+        Core::AAP::Manager manager;
+        auto seqPacket = std::make_shared<UnavailableSeqPacketTransport>();
+        auto magicAAP = std::make_shared<ThrowingMagicAAPTransport>();
+        manager._driverInstalledProbe = [] { return true; };
+        manager._driverRunningProbe = [] { return true; };
+        manager._transportFactory = [seqPacket, magicAAP](Core::AAP::AAPTransportKind kind) {
+            if (kind == Core::AAP::AAPTransportKind::SeqPacket) {
+                return std::shared_ptr<Core::AAP::AAPTransport>{seqPacket};
+            }
+            return std::shared_ptr<Core::AAP::AAPTransport>{magicAAP};
+        };
 
-            const Core::AAP::AAPAttempt attempt{1, 1};
-            QVERIFY(manager.Connect(attempt));
-            QVERIFY(manager.IsConnected());
-            QCOMPARE(manager.GetLastAttempt().generation, attempt.generation);
+        Core::Diagnostics::Recorder::Instance().Reset();
+        Core::AAP::ConnectFailure failure = Core::AAP::ConnectFailure::None;
+        const auto transport = manager.ConnectTransport({1, 1}, {}, failure);
+        const auto report = Core::Diagnostics::Recorder::Instance().BuildReport({});
+        QVERIFY(transport == nullptr);
+        QCOMPARE(failure, Core::AAP::ConnectFailure::TransportError);
+        QVERIFY(report.find("driver_open  FAILED") != std::string::npos);
+        QVERIFY(report.find("driver_open  ok") == std::string::npos);
+    }
 
-            // Handshake, raw stem config, feature flags, notification subscriptions, then one ATT
-            // read.
-            QCOMPARE(transport->SendCalls(), size_t{5});
-            const auto records = transport->SentRecords();
-            QCOMPARE(records.at(0), Core::AAP::Packets::Handshake);
-            QCOMPARE(
-                records.at(1),
-                (std::vector<uint8_t>{
-                    0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x39, 0x0F, 0x00, 0x00, 0x00}));
-            QCOMPARE(records.at(2), Core::AAP::Packets::EnableFeatures);
-            QCOMPARE(records.at(3), Core::AAP::Packets::RequestNotifications);
-            QCOMPARE(transport->LastSend(), (std::vector<uint8_t>{0x0A, 0x1B, 0x00}));
-            QVERIFY(manager._readerThread.joinable());
+    void ManagerConnectInitializesBeforeConnectionGateOpens()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transportFactory =
+            [transport](Core::AAP::AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            return transport;
+        };
 
-            manager.Disconnect();
-            QVERIFY(!manager.IsConnected());
-            QVERIFY(!manager._readerThread.joinable());
-        }
+        const Core::AAP::AAPAttempt attempt{1, 1};
+        QVERIFY(manager.Connect(attempt));
+        QVERIFY(manager.IsConnected());
+        QCOMPARE(manager.GetLastAttempt().generation, attempt.generation);
 
-        void StemConfigSendsOnChangeAndReplaysOnReconnect()
-        {
-            Core::AAP::Manager manager;
-            auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
-            manager._transportFactory = [transport](Core::AAP::AAPTransportKind)
-                -> std::shared_ptr<Core::AAP::AAPTransport> { return transport; };
+        // Handshake, raw stem config, feature flags, notification subscriptions, then one ATT
+        // read.
+        QCOMPARE(transport->SendCalls(), size_t{5});
+        const auto records = transport->SentRecords();
+        QCOMPARE(records.at(0), Core::AAP::Packets::Handshake);
+        QCOMPARE(
+            records.at(1), (std::vector<uint8_t>{
+                               0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x39, 0x0F, 0x00, 0x00, 0x00}));
+        QCOMPARE(records.at(2), Core::AAP::Packets::EnableFeatures);
+        QCOMPARE(records.at(3), Core::AAP::Packets::RequestNotifications);
+        QCOMPARE(transport->LastSend(), (std::vector<uint8_t>{0x0A, 0x1B, 0x00}));
+        QVERIFY(manager._readerThread.joinable());
 
-            QVERIFY(manager.SetStemConfig(0x05)); // Saved before the transport exists.
-            QVERIFY(manager.Connect({0x1234, 1}));
-            QCOMPARE(transport->SentRecords().at(1).at(7), uint8_t{0x05});
-            QVERIFY(manager.SetStemConfig(0x0A));
-            QCOMPARE(transport->LastSend().at(7), uint8_t{0x0A});
-            QCOMPARE(transport->SendCalls(), size_t{6});
-            manager.Disconnect();
+        manager.Disconnect();
+        QVERIFY(!manager.IsConnected());
+        QVERIFY(!manager._readerThread.joinable());
+    }
 
-            QVERIFY(manager.Connect({0x1234, 2}));
-            const auto records = transport->SentRecords();
-            QCOMPARE(records.size(), size_t{11});
-            QCOMPARE(records.at(6), Core::AAP::Packets::Handshake);
-            QCOMPARE(records.at(7).at(7), uint8_t{0x0A});
-            manager.Disconnect();
-        }
+    void StemConfigSendsOnChangeAndReplaysOnReconnect()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transportFactory =
+            [transport](Core::AAP::AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            return transport;
+        };
 
-        void FailedStemConfigWriteRemainsPendingForReconnect()
-        {
-            Core::AAP::Manager manager;
-            auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
-            manager._transportFactory = [transport](Core::AAP::AAPTransportKind)
-                -> std::shared_ptr<Core::AAP::AAPTransport> { return transport; };
-            QVERIFY(manager.Connect({0x1234, 1}));
-            transport->SetSendError(true);
-            QVERIFY(!manager.SetStemConfig(0x03));
-            transport->SetSendError(false);
-            manager.Disconnect();
+        QVERIFY(manager.SetStemConfig(0x05)); // Saved before the transport exists.
+        QVERIFY(manager.Connect({0x1234, 1}));
+        QCOMPARE(transport->SentRecords().at(1).at(7), uint8_t{0x05});
+        QVERIFY(manager.SetStemConfig(0x0A));
+        QCOMPARE(transport->LastSend().at(7), uint8_t{0x0A});
+        QCOMPARE(transport->SendCalls(), size_t{6});
+        manager.Disconnect();
 
-            QVERIFY(manager.Connect({0x1234, 2}));
-            const auto records = transport->SentRecords();
-            QCOMPARE(records.at(6).at(7), uint8_t{0x03});
-            manager.Disconnect();
-        }
+        QVERIFY(manager.Connect({0x1234, 2}));
+        const auto records = transport->SentRecords();
+        QCOMPARE(records.size(), size_t{11});
+        QCOMPARE(records.at(6), Core::AAP::Packets::Handshake);
+        QCOMPARE(records.at(7).at(7), uint8_t{0x0A});
+        manager.Disconnect();
+    }
 
-        void FailedStemReplayRecoversInNewSessionAfterPriorSuccess()
-        {
-            Core::AAP::Manager manager;
-            auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
-            manager._transportFactory = [transport](Core::AAP::AAPTransportKind)
-                -> std::shared_ptr<Core::AAP::AAPTransport> { return transport; };
-            QVERIFY(manager.SetStemConfig(0x05));
-            QVERIFY(manager.Connect({0x1234, 1}));
-            manager.Disconnect();
+    void FailedStemConfigWriteRemainsPendingForReconnect()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transportFactory =
+            [transport](Core::AAP::AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            return transport;
+        };
+        QVERIFY(manager.Connect({0x1234, 1}));
+        transport->SetSendError(true);
+        QVERIFY(!manager.SetStemConfig(0x03));
+        transport->SetSendError(false);
+        manager.Disconnect();
 
-            // Generation 2 must replay 0x39 even though generation 1 sent the same revision. The
-            // first replay write fails; the bounded post-handshake recovery must retry on this
-            // transport.
-            transport->SetSendFailures(1);
-            QVERIFY(manager.Connect({0x1234, 2}));
-            QCOMPARE(transport->SendCalls(), size_t{6});
-            const auto records = transport->SentRecords();
-            QCOMPARE(records.size(), size_t{5});
-            QCOMPARE(records.at(0), Core::AAP::Packets::Handshake);
-            QCOMPARE(records.at(4).at(4), uint8_t{0x09});
-            QCOMPARE(records.at(4).at(5), uint8_t{0x39});
-            QCOMPARE(records.at(4).at(7), uint8_t{0x05});
-            manager.Disconnect();
-        }
+        QVERIFY(manager.Connect({0x1234, 2}));
+        const auto records = transport->SentRecords();
+        QCOMPARE(records.at(6).at(7), uint8_t{0x03});
+        manager.Disconnect();
+    }
 
-        void FailedStemReplayIsBoundedAndRetriedByNextSession()
-        {
-            Core::AAP::Manager manager;
-            auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
-            manager._transportFactory = [transport](Core::AAP::AAPTransportKind)
-                -> std::shared_ptr<Core::AAP::AAPTransport> { return transport; };
-            QVERIFY(manager.SetStemConfig(0x0A));
-            transport->SetSendFailures(2);
-            QVERIFY(manager.Connect({0x1234, 1}));
-            // Handshake, two failed 0x39 attempts, features, notifications, ATT probe. No third
-            // retry.
-            QCOMPARE(transport->SendCalls(), size_t{6});
-            QCOMPARE(transport->SentRecords().size(), size_t{4});
-            manager.Disconnect();
+    void FailedStemReplayRecoversInNewSessionAfterPriorSuccess()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transportFactory =
+            [transport](Core::AAP::AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            return transport;
+        };
+        QVERIFY(manager.SetStemConfig(0x05));
+        QVERIFY(manager.Connect({0x1234, 1}));
+        manager.Disconnect();
 
-            QVERIFY(manager.Connect({0x1234, 2}));
-            QCOMPARE(transport->SendCalls(), size_t{5});
-            const auto records = transport->SentRecords();
-            QCOMPARE(records.at(1).at(5), uint8_t{0x39});
-            QCOMPARE(records.at(1).at(7), uint8_t{0x0A});
-            manager.Disconnect();
-        }
+        // Generation 2 must replay 0x39 even though generation 1 sent the same revision. The
+        // first replay write fails; the bounded post-handshake recovery must retry on this
+        // transport.
+        transport->SetSendFailures(1);
+        QVERIFY(manager.Connect({0x1234, 2}));
+        QCOMPARE(transport->SendCalls(), size_t{6});
+        const auto records = transport->SentRecords();
+        QCOMPARE(records.size(), size_t{5});
+        QCOMPARE(records.at(0), Core::AAP::Packets::Handshake);
+        QCOMPARE(records.at(4).at(4), uint8_t{0x09});
+        QCOMPARE(records.at(4).at(5), uint8_t{0x39});
+        QCOMPARE(records.at(4).at(7), uint8_t{0x05});
+        manager.Disconnect();
+    }
 
-        void AttemptBoundNoiseControlRevalidatesAttemptAndCancellation()
-        {
-            Core::AAP::Manager manager;
-            auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
-            manager._transport.store(transport);
-            manager._attempt = {0x1234, 7};
-            manager._connected = true;
-            constexpr Core::AAP::NoiseControlMode mode =
-                Core::AAP::NoiseControlMode::NoiseCancellation;
+    void FailedStemReplayIsBoundedAndRetriedByNextSession()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transportFactory =
+            [transport](Core::AAP::AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            return transport;
+        };
+        QVERIFY(manager.SetStemConfig(0x0A));
+        transport->SetSendFailures(2);
+        QVERIFY(manager.Connect({0x1234, 1}));
+        // Handshake, two failed 0x39 attempts, features, notifications, ATT probe. No third
+        // retry.
+        QCOMPARE(transport->SendCalls(), size_t{6});
+        QCOMPARE(transport->SentRecords().size(), size_t{4});
+        manager.Disconnect();
 
-            QVERIFY(!manager.SetNoiseControlMode(mode, {0x1234, 8}, {}));
-            QVERIFY(!manager.SetNoiseControlMode(mode, {0x5678, 7}, {}));
-            manager._connected = false;
-            QVERIFY(!manager.SetNoiseControlMode(mode, {0x1234, 7}, {}));
-            manager._connected = true;
-            manager._cancelledGeneration = 7;
-            QVERIFY(!manager.SetNoiseControlMode(mode, {0x1234, 7}, {}));
-            manager._cancelledGeneration = 0;
-            std::stop_source stop;
-            stop.request_stop();
-            QVERIFY(!manager.SetNoiseControlMode(mode, {0x1234, 7}, stop.get_token()));
-            QCOMPARE(transport->SendCalls(), size_t{0});
+        QVERIFY(manager.Connect({0x1234, 2}));
+        QCOMPARE(transport->SendCalls(), size_t{5});
+        const auto records = transport->SentRecords();
+        QCOMPARE(records.at(1).at(5), uint8_t{0x39});
+        QCOMPARE(records.at(1).at(7), uint8_t{0x0A});
+        manager.Disconnect();
+    }
 
-            QVERIFY(manager.SetNoiseControlMode(mode, {0x1234, 7}, {}));
-            QCOMPARE(
-                transport->LastSend(),
-                (std::vector<uint8_t>{
-                    0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02, 0x00, 0x00, 0x00}));
-            manager._connected = false;
-            manager._transport.store(nullptr);
-        }
+    void AttemptBoundNoiseControlRevalidatesAttemptAndCancellation()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transport.store(transport);
+        manager._attempt = {0x1234, 7};
+        manager._connected = true;
+        constexpr Core::AAP::NoiseControlMode mode = Core::AAP::NoiseControlMode::NoiseCancellation;
 
-        void AttemptBoundNoiseControlRechecksGenerationAcrossReconnectBarrier()
-        {
-            Core::AAP::Manager manager;
-            auto original = std::make_shared<AAPTestSupport::FakeTransport>();
-            auto replacement = std::make_shared<AAPTestSupport::FakeTransport>();
-            manager._transport.store(original);
-            manager._attempt = {0x1234, 7};
-            manager._connected = true;
+        QVERIFY(!manager.SetNoiseControlMode(mode, {0x1234, 8}, {}));
+        QVERIFY(!manager.SetNoiseControlMode(mode, {0x5678, 7}, {}));
+        manager._connected = false;
+        QVERIFY(!manager.SetNoiseControlMode(mode, {0x1234, 7}, {}));
+        manager._connected = true;
+        manager._cancelledGeneration = 7;
+        QVERIFY(!manager.SetNoiseControlMode(mode, {0x1234, 7}, {}));
+        manager._cancelledGeneration = 0;
+        std::stop_source stop;
+        stop.request_stop();
+        QVERIFY(!manager.SetNoiseControlMode(mode, {0x1234, 7}, stop.get_token()));
+        QCOMPARE(transport->SendCalls(), size_t{0});
 
-            // Hold the send gate after the queued request has been validated by its caller. The
-            // worker enters SetNoiseControlMode but cannot acquire _mutex until the replacement is
-            // installed.
-            std::unique_lock barrier{manager._mutex};
-            auto result = std::async(std::launch::async, [&] {
-                return manager.SetNoiseControlMode(
-                    Core::AAP::NoiseControlMode::NoiseCancellation, {0x1234, 7}, {});
-            });
-            const bool blocked =
-                result.wait_for(std::chrono::milliseconds{20}) == std::future_status::timeout;
+        QVERIFY(manager.SetNoiseControlMode(mode, {0x1234, 7}, {}));
+        QCOMPARE(
+            transport->LastSend(),
+            (std::vector<uint8_t>{
+                0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02, 0x00, 0x00, 0x00}));
+        manager._connected = false;
+        manager._transport.store(nullptr);
+    }
+
+    void AttemptBoundNoiseControlRechecksGenerationAcrossReconnectBarrier()
+    {
+        Core::AAP::Manager manager;
+        auto original = std::make_shared<AAPTestSupport::FakeTransport>();
+        auto replacement = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transport.store(original);
+        manager._attempt = {0x1234, 7};
+        manager._connected = true;
+
+        // Hold the send gate after the queued request has been validated by its caller. The
+        // worker enters SetNoiseControlMode but cannot acquire _mutex until the replacement is
+        // installed.
+        std::unique_lock barrier{manager._mutex};
+        auto result = std::async(std::launch::async, [&] {
+            return manager.SetNoiseControlMode(
+                Core::AAP::NoiseControlMode::NoiseCancellation, {0x1234, 7}, {});
+        });
+        const bool blocked =
+            result.wait_for(std::chrono::milliseconds{20}) == std::future_status::timeout;
+        manager._attempt = {0x1234, 8};
+        manager._transport.store(replacement);
+        barrier.unlock();
+
+        QVERIFY(blocked);
+        QVERIFY(!result.get());
+        QCOMPARE(original->SendCalls(), size_t{0});
+        QCOMPARE(replacement->SendCalls(), size_t{0});
+        manager._connected = false;
+        manager._transport.store(nullptr);
+    }
+
+    void AttemptBoundNoiseControlRechecksCancellationAtSendBarrier()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transport.store(transport);
+        manager._attempt = {0x1234, 7};
+        manager._connected = true;
+
+        std::unique_lock barrier{manager._mutex};
+        auto result = std::async(std::launch::async, [&] {
+            return manager.SetNoiseControlMode(
+                Core::AAP::NoiseControlMode::NoiseCancellation, {0x1234, 7}, {});
+        });
+        const bool blocked =
+            result.wait_for(std::chrono::milliseconds{20}) == std::future_status::timeout;
+        manager._cancelledGeneration = 7;
+        barrier.unlock();
+
+        QVERIFY(blocked);
+        QVERIFY(!result.get());
+        QCOMPARE(transport->SendCalls(), size_t{0});
+        manager._connected = false;
+        manager._transport.store(nullptr);
+    }
+
+    void AttemptBoundNoiseControlPinsTransportDuringWrite()
+    {
+        Core::AAP::Manager manager;
+        auto original = std::make_shared<AAPTestSupport::FakeTransport>();
+        auto replacement = std::make_shared<AAPTestSupport::FakeTransport>();
+        original->SetBlockSend(true);
+        manager._transport.store(original);
+        manager._attempt = {0x1234, 7};
+        manager._connected = true;
+
+        auto result = std::async(std::launch::async, [&] {
+            return manager.SetNoiseControlMode(
+                Core::AAP::NoiseControlMode::NoiseCancellation, {0x1234, 7}, {});
+        });
+        const bool reachedSendBarrier = original->WaitForSendWaiter(std::chrono::seconds{1});
+        if (reachedSendBarrier) {
+            // Replacement after the identity gate must not redirect an in-flight write.
             manager._attempt = {0x1234, 8};
             manager._transport.store(replacement);
-            barrier.unlock();
-
-            QVERIFY(blocked);
-            QVERIFY(!result.get());
-            QCOMPARE(original->SendCalls(), size_t{0});
-            QCOMPARE(replacement->SendCalls(), size_t{0});
-            manager._connected = false;
-            manager._transport.store(nullptr);
         }
+        original->SetBlockSend(false);
+        QVERIFY(reachedSendBarrier);
+        QVERIFY(result.get());
+        QCOMPARE(original->SendCalls(), size_t{1});
+        QCOMPARE(original->LastSend().at(5), uint8_t{0x0D});
+        QCOMPARE(replacement->SendCalls(), size_t{0});
+        manager._connected = false;
+        manager._transport.store(nullptr);
+    }
 
-        void AttemptBoundNoiseControlRechecksCancellationAtSendBarrier()
+    void ManagerRejectsStaleStemAttemptIdentity()
+    {
+        Core::AAP::Manager manager;
+        manager._attempt = {0x1234, 7};
+        manager._connected = true;
+        QVERIFY(manager.IsCurrentAttempt({0x1234, 7}));
+        QVERIFY(!manager.IsCurrentAttempt({0x1234, 8}));
+        QVERIFY(!manager.IsCurrentAttempt({0x5678, 7}));
+        manager._connected = false;
+        QVERIFY(!manager.IsCurrentAttempt({0x1234, 7}));
+    }
+
+    void ManagerRetriesFailedHeadTrackingStartToConfirmation()
+    {
+        using namespace Core::AAP;
+        Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = AAPAttempt{1, 11};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(11);
+        transport->SetSendFailures(2);
+
+        std::promise<AAPCommandOutcome> settled;
+        auto settledFuture = settled.get_future();
+        Callbacks callbacks;
+        callbacks.onCommandSettled = [&](const AAPCommandOutcome &outcome, const AAPAttempt &) {
+            settled.set_value(outcome);
+        };
+        manager.SetCallbacks(std::move(callbacks));
+        QVERIFY(manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x01}).accepted);
+        QVERIFY(transport->WaitForRecordCount(1, std::chrono::seconds{1}));
+        QCOMPARE(transport->SendAttempts(), size_t{3});
+        QCOMPARE(transport->SendCalls(), size_t{3});
+        QVERIFY(!manager.IsHeadTrackingActive());
+
+        std::vector<uint8_t> sensor(70, 0);
+        const std::array<uint8_t, 10> prefix{0x04, 0x00, 0x04, 0x00, 0x17,
+                                             0x00, 0x00, 0x00, 0x10, 0x00};
+        std::copy(prefix.begin(), prefix.end(), sensor.begin());
+        sensor[10] = 0x44;
+        manager.ProcessPacket(sensor);
+        QVERIFY(settledFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        const auto outcome = settledFuture.get();
+        QCOMPARE(outcome.generation, uint64_t{11});
+        QCOMPARE(outcome.settlement, AAPCommandSettlement::Confirmed);
+        QVERIFY(manager.IsHeadTrackingActive());
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
+    }
+
+    void OfflineStopCancelsStartQueuedByReconnectReplay()
+    {
+        using namespace Core::AAP;
+        Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        transport->SetBlockSend(true);
+        manager._transport.store(transport);
+        manager._commandBroker->SetConfirmMode(
+            AAPCommandKind::SetHeadTracking, AAPConfirmMode::Unverifiable);
+
+        const auto offlineStart = manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x01});
+        QVERIFY(!offlineStart.accepted);
+        manager._attempt = AAPAttempt{1, 21};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(21);
+        QVERIFY(manager.SubmitCommand({AAPCommandKind::SetNoiseControl, 0x01}).accepted);
+        manager._commandBroker->ReplayDesiredState(21);
+        QVERIFY(transport->WaitForSendWaiter(std::chrono::seconds{1}));
+
+        // Replay opens generation 22 before the transport owner has retired the old attempt.
+        // During this window the head-tracking intent still takes its offline submission path.
         {
-            Core::AAP::Manager manager;
-            auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
-            manager._transport.store(transport);
-            manager._attempt = {0x1234, 7};
-            manager._connected = true;
-
-            std::unique_lock barrier{manager._mutex};
-            auto result = std::async(std::launch::async, [&] {
-                return manager.SetNoiseControlMode(
-                    Core::AAP::NoiseControlMode::NoiseCancellation, {0x1234, 7}, {});
-            });
-            const bool blocked =
-                result.wait_for(std::chrono::milliseconds{20}) == std::future_status::timeout;
-            manager._cancelledGeneration = 7;
-            barrier.unlock();
-
-            QVERIFY(blocked);
-            QVERIFY(!result.get());
-            QCOMPARE(transport->SendCalls(), size_t{0});
-            manager._connected = false;
-            manager._transport.store(nullptr);
-        }
-
-        void AttemptBoundNoiseControlPinsTransportDuringWrite()
-        {
-            Core::AAP::Manager manager;
-            auto original = std::make_shared<AAPTestSupport::FakeTransport>();
-            auto replacement = std::make_shared<AAPTestSupport::FakeTransport>();
-            original->SetBlockSend(true);
-            manager._transport.store(original);
-            manager._attempt = {0x1234, 7};
-            manager._connected = true;
-
-            auto result = std::async(std::launch::async, [&] {
-                return manager.SetNoiseControlMode(
-                    Core::AAP::NoiseControlMode::NoiseCancellation, {0x1234, 7}, {});
-            });
-            const bool reachedSendBarrier = original->WaitForSendWaiter(std::chrono::seconds{1});
-            if (reachedSendBarrier) {
-                // Replacement after the identity gate must not redirect an in-flight write.
-                manager._attempt = {0x1234, 8};
-                manager._transport.store(replacement);
-            }
-            original->SetBlockSend(false);
-            QVERIFY(reachedSendBarrier);
-            QVERIFY(result.get());
-            QCOMPARE(original->SendCalls(), size_t{1});
-            QCOMPARE(original->LastSend().at(5), uint8_t{0x0D});
-            QCOMPARE(replacement->SendCalls(), size_t{0});
-            manager._connected = false;
-            manager._transport.store(nullptr);
-        }
-
-        void ManagerRejectsStaleStemAttemptIdentity()
-        {
-            Core::AAP::Manager manager;
-            manager._attempt = {0x1234, 7};
-            manager._connected = true;
-            QVERIFY(manager.IsCurrentAttempt({0x1234, 7}));
-            QVERIFY(!manager.IsCurrentAttempt({0x1234, 8}));
-            QVERIFY(!manager.IsCurrentAttempt({0x5678, 7}));
-            manager._connected = false;
-            QVERIFY(!manager.IsCurrentAttempt({0x1234, 7}));
-        }
-
-        void ManagerRetriesFailedHeadTrackingStartToConfirmation()
-        {
-            using namespace Core::AAP;
-            Manager manager;
-            auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
-            QVERIFY(transport->Connect(1, {}));
-            manager._transport.store(transport);
-            manager._attempt = AAPAttempt{1, 11};
-            manager._connected = true;
-            manager._commandBroker->BeginSession(11);
-            transport->SetSendFailures(2);
-
-            std::promise<AAPCommandOutcome> settled;
-            auto settledFuture = settled.get_future();
-            Callbacks callbacks;
-            callbacks.onCommandSettled = [&](const AAPCommandOutcome &outcome, const AAPAttempt &) {
-                settled.set_value(outcome);
-            };
-            manager.SetCallbacks(std::move(callbacks));
-            QVERIFY(manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x01}).accepted);
-            QVERIFY(transport->WaitForRecordCount(1, std::chrono::seconds{1}));
-            QCOMPARE(transport->SendAttempts(), size_t{3});
-            QCOMPARE(transport->SendCalls(), size_t{3});
-            QVERIFY(!manager.IsHeadTrackingActive());
-
-            std::vector<uint8_t> sensor(70, 0);
-            const std::array<uint8_t, 10> prefix{0x04, 0x00, 0x04, 0x00, 0x17,
-                                                 0x00, 0x00, 0x00, 0x10, 0x00};
-            std::copy(prefix.begin(), prefix.end(), sensor.begin());
-            sensor[10] = 0x44;
-            manager.ProcessPacket(sensor);
-            QVERIFY(settledFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
-            const auto outcome = settledFuture.get();
-            QCOMPARE(outcome.generation, uint64_t{11});
-            QCOMPARE(outcome.settlement, AAPCommandSettlement::Confirmed);
-            QVERIFY(manager.IsHeadTrackingActive());
-            QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
-            manager._connected = false;
-            manager._transport.store(nullptr);
-            manager._commandBroker->EndSession();
-        }
-
-        void OfflineStopCancelsStartQueuedByReconnectReplay()
-        {
-            using namespace Core::AAP;
-            Manager manager;
-            auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
-            QVERIFY(transport->Connect(1, {}));
-            transport->SetBlockSend(true);
-            manager._transport.store(transport);
-            manager._commandBroker->SetConfirmMode(
-                AAPCommandKind::SetHeadTracking, AAPConfirmMode::Unverifiable);
-
-            const auto offlineStart =
-                manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x01});
-            QVERIFY(!offlineStart.accepted);
-            manager._attempt = AAPAttempt{1, 21};
-            manager._connected = true;
-            manager._commandBroker->BeginSession(21);
-            QVERIFY(manager.SubmitCommand({AAPCommandKind::SetNoiseControl, 0x01}).accepted);
-            manager._commandBroker->ReplayDesiredState(21);
-            QVERIFY(transport->WaitForSendWaiter(std::chrono::seconds{1}));
-
-            // Replay opens generation 22 before the transport owner has retired the old attempt.
-            // During this window the head-tracking intent still takes its offline submission path.
-            {
-                std::lock_guard lock{manager._mutex};
-                manager._attempt = AAPAttempt{1, 22};
-            }
-            manager._commandBroker->ReplayDesiredState(22);
-            QCOMPARE(manager._commandBroker->QueuedCount(), size_t{2});
-            {
-                std::lock_guard lock{manager._mutex};
-                manager._connected = false;
-            }
-            const auto offlineStop = manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x00});
-            QVERIFY(!offlineStop.accepted);
-            QCOMPARE(offlineStop.failure, std::optional(AAPCommandFailure::TransportClosed));
-            QCOMPARE(manager._commandBroker->QueuedCount(), size_t{1});
-
-            transport->SetBlockSend(false);
-            QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
-            manager._transport.store(transport);
-            manager._attempt = AAPAttempt{1, 23};
-            manager._connected = true;
-            manager._commandBroker->BeginSession(23);
-            manager._commandBroker->ReplayDesiredState(23);
-            QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
-
-            size_t headTrackingRecords = 0;
-            for (const auto &record : transport->SentRecords()) {
-                if (record == Packets::StartHeadTracking || record == Packets::StopHeadTracking) {
-                    ++headTrackingRecords;
-                    QCOMPARE(record, Packets::StopHeadTracking);
-                }
-            }
-            QCOMPARE(headTrackingRecords, size_t{1});
-            QCOMPARE(
-                manager.DesiredCommand(AAPCommandKind::SetHeadTracking),
-                std::optional<uint32_t>{0});
-            manager._connected = false;
-            manager._transport.store(nullptr);
-            manager._commandBroker->EndSession();
-        }
-
-        void ManagerReconnectReplaysDesiredStop()
-        {
-            using namespace Core::AAP;
-            Manager manager;
-            auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
-            QVERIFY(transport->Connect(1, {}));
-            manager._commandBroker->SetConfirmMode(
-                AAPCommandKind::SetHeadTracking, AAPConfirmMode::Unverifiable);
-            const auto offline = manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x00});
-            QVERIFY(!offline.accepted);
-            QCOMPARE(offline.failure, std::optional(AAPCommandFailure::TransportClosed));
-            QCOMPARE(
-                manager.DesiredCommand(AAPCommandKind::SetHeadTracking),
-                std::optional<uint32_t>{0});
-
-            manager._transport.store(transport);
-            manager._attempt = AAPAttempt{1, 21};
-            manager._connected = true;
-            manager._commandBroker->BeginSession(21);
-            manager._commandBroker->ReplayDesiredState(21);
-            QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
-
-            manager._commandBroker->EndSession();
+            std::lock_guard lock{manager._mutex};
             manager._attempt = AAPAttempt{1, 22};
-            manager._commandBroker->BeginSession(22);
-            manager._commandBroker->ReplayDesiredState(22);
-            QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
-            const auto records = transport->SentRecords();
-            QCOMPARE(records.size(), size_t{2});
-            QCOMPARE(records[0], Packets::StopHeadTracking);
-            QCOMPARE(records[1], Packets::StopHeadTracking);
-            QCOMPARE(
-                manager.DesiredCommand(AAPCommandKind::SetHeadTracking),
-                std::optional<uint32_t>{0});
-            QVERIFY(!manager.IsHeadTrackingActive());
-            manager._connected = false;
-            manager._transport.store(nullptr);
-            manager._commandBroker->EndSession();
         }
-
-        void ConcurrentHeadTrackingToggleAndReplayUseOneBroker()
+        manager._commandBroker->ReplayDesiredState(22);
+        QCOMPARE(manager._commandBroker->QueuedCount(), size_t{2});
         {
-            using namespace Core::AAP;
-            Manager manager;
-            auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
-            QVERIFY(transport->Connect(1, {}));
-            manager._transport.store(transport);
-            manager._attempt = AAPAttempt{1, 31};
-            manager._connected = true;
-            manager._commandBroker->SetConfirmMode(
-                AAPCommandKind::SetHeadTracking, AAPConfirmMode::Unverifiable);
-            manager._commandBroker->BeginSession(31);
-
-            std::atomic<uint32_t> lastDesired{0};
-            std::jthread toggles{[&] {
-                for (uint32_t index = 0; index < 200; ++index) {
-                    const uint32_t value = index % 2;
-                    lastDesired.store(value);
-                    manager.SubmitCommand({AAPCommandKind::SetHeadTracking, value});
-                }
-            }};
-            std::jthread reconnects{[&] {
-                for (uint64_t generation = 32; generation <= 40; ++generation) {
-                    {
-                        std::lock_guard lock{manager._mutex};
-                        manager._attempt = AAPAttempt{1, generation};
-                    }
-                    manager._commandBroker->EndSession();
-                    manager._commandBroker->BeginSession(generation);
-                    manager._commandBroker->ReplayDesiredState(generation);
-                }
-            }};
-            toggles.join();
-            reconnects.join();
-            QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
-            QCOMPARE(
-                manager.DesiredCommand(AAPCommandKind::SetHeadTracking),
-                std::optional<uint32_t>{lastDesired.load()});
-            const auto records = transport->SentRecords();
-            QVERIFY(!records.empty());
-            for (const auto &record : records) {
-                QVERIFY(
-                    record == Packets::StartHeadTracking || record == Packets::StopHeadTracking);
-            }
-            QCOMPARE(transport->SendAttempts(), records.size());
+            std::lock_guard lock{manager._mutex};
             manager._connected = false;
-            manager._transport.store(nullptr);
-            manager._commandBroker->EndSession();
-            void ManagerMagicAAPStartupCancellationAllowsImmediateRebind_data()
-            {
-                QTest::addColumn<bool>("disconnect");
-                QTest::newRow("cancel-connect") << false;
-                QTest::newRow("disconnect") << true;
+        }
+        const auto offlineStop = manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x00});
+        QVERIFY(!offlineStop.accepted);
+        QCOMPARE(offlineStop.failure, std::optional(AAPCommandFailure::TransportClosed));
+        QCOMPARE(manager._commandBroker->QueuedCount(), size_t{1});
+
+        transport->SetBlockSend(false);
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        manager._transport.store(transport);
+        manager._attempt = AAPAttempt{1, 23};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(23);
+        manager._commandBroker->ReplayDesiredState(23);
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+
+        size_t headTrackingRecords = 0;
+        for (const auto &record : transport->SentRecords()) {
+            if (record == Packets::StartHeadTracking || record == Packets::StopHeadTracking) {
+                ++headTrackingRecords;
+                QCOMPARE(record, Packets::StopHeadTracking);
             }
+        }
+        QCOMPARE(headTrackingRecords, size_t{1});
+        QCOMPARE(
+            manager.DesiredCommand(AAPCommandKind::SetHeadTracking), std::optional<uint32_t>{0});
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
+    }
 
-            void ManagerMagicAAPStartupCancellationAllowsImmediateRebind()
-            {
-                using Core::AAP::AAPAttempt;
-                using Core::AAP::AAPTransportKind;
-                using Core::AAP::ConnectFailure;
-                QFETCH(bool, disconnect);
+    void ManagerReconnectReplaysDesiredStop()
+    {
+        using namespace Core::AAP;
+        Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._commandBroker->SetConfirmMode(
+            AAPCommandKind::SetHeadTracking, AAPConfirmMode::Unverifiable);
+        const auto offline = manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x00});
+        QVERIFY(!offline.accepted);
+        QCOMPARE(offline.failure, std::optional(AAPCommandFailure::TransportClosed));
+        QCOMPARE(
+            manager.DesiredCommand(AAPCommandKind::SetHeadTracking), std::optional<uint32_t>{0});
 
-                Core::AAP::Manager manager;
-                auto seqPacket = std::make_shared<UnavailableSeqPacketTransport>();
-                auto magicAAP = std::make_shared<BlockingMagicAAPTransport>();
-                manager._driverInstalledProbe = [] { return true; };
-                manager._driverRunningProbe = [] { return true; };
-                manager._transportFactory = [seqPacket, magicAAP](AAPTransportKind kind) {
-                    if (kind == AAPTransportKind::SeqPacket) {
-                        return std::shared_ptr<Core::AAP::AAPTransport>{seqPacket};
-                    }
-                    return std::shared_ptr<Core::AAP::AAPTransport>{magicAAP};
-                };
-                int connectedGenerations = 0;
-                Core::AAP::Callbacks callbacks;
-                callbacks.onConnected = [&](const AAPAttempt &attempt) {
-                    connectedGenerations = static_cast<int>(attempt.generation);
-                };
-                manager.SetCallbacks(std::move(callbacks));
+        manager._transport.store(transport);
+        manager._attempt = AAPAttempt{1, 21};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(21);
+        manager._commandBroker->ReplayDesiredState(21);
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
 
-                constexpr uint64_t targetAddress = 0x340E22CC08A0ULL;
-                const AAPAttempt firstAttempt{targetAddress, 7};
-                Core::Diagnostics::Recorder::Instance().Reset();
-                auto connect =
-                    std::async(std::launch::async, [&] { return manager.Connect(firstAttempt); });
-                const bool startupEntered = magicAAP->WaitForConnectWaiter(std::chrono::seconds(1));
-                if (!startupEntered) {
-                    magicAAP->ReleaseStartup();
+        manager._commandBroker->EndSession();
+        manager._attempt = AAPAttempt{1, 22};
+        manager._commandBroker->BeginSession(22);
+        manager._commandBroker->ReplayDesiredState(22);
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        const auto records = transport->SentRecords();
+        QCOMPARE(records.size(), size_t{2});
+        QCOMPARE(records[0], Packets::StopHeadTracking);
+        QCOMPARE(records[1], Packets::StopHeadTracking);
+        QCOMPARE(
+            manager.DesiredCommand(AAPCommandKind::SetHeadTracking), std::optional<uint32_t>{0});
+        QVERIFY(!manager.IsHeadTrackingActive());
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
+    }
+
+    void ConcurrentHeadTrackingToggleAndReplayUseOneBroker()
+    {
+        using namespace Core::AAP;
+        Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = AAPAttempt{1, 31};
+        manager._connected = true;
+        manager._commandBroker->SetConfirmMode(
+            AAPCommandKind::SetHeadTracking, AAPConfirmMode::Unverifiable);
+        manager._commandBroker->BeginSession(31);
+
+        std::atomic<uint32_t> lastDesired{0};
+        std::jthread toggles{[&] {
+            for (uint32_t index = 0; index < 200; ++index) {
+                const uint32_t value = index % 2;
+                lastDesired.store(value);
+                manager.SubmitCommand({AAPCommandKind::SetHeadTracking, value});
+            }
+        }};
+        std::jthread reconnects{[&] {
+            for (uint64_t generation = 32; generation <= 40; ++generation) {
+                {
+                    std::lock_guard lock{manager._mutex};
+                    manager._attempt = AAPAttempt{1, generation};
                 }
-                QVERIFY(startupEntered);
-
-                auto cancel = std::async(std::launch::async, [&] {
-                    if (disconnect) {
-                        manager.Disconnect();
-                    }
-                    else {
-                        manager.CancelConnect();
-                    }
-                });
-                const bool cancellationReturned =
-                    cancel.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
-                const bool startupReturned =
-                    connect.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
-
-                // Release the fake driver before joining even when the regression is
-                // present, so a failed assertion cannot strand a blocked future.
-                magicAAP->ReleaseStartup();
-                cancel.get();
-                const bool connected = connect.get();
-
-                QVERIFY(cancellationReturned);
-                QVERIFY(startupReturned);
-                QVERIFY(!connected);
-                QCOMPARE(manager.GetLastConnectFailure(), ConnectFailure::TransportError);
-                QCOMPARE(magicAAP->LastAddress(), targetAddress);
-                QVERIFY(magicAAP->CloseCalls() > 0);
-                QCOMPARE(connectedGenerations, 0);
-                const auto report = Core::Diagnostics::Recorder::Instance().BuildReport({});
-                QVERIFY(report.find("driver_open  FAILED") == std::string::npos);
-                QVERIFY(report.find("exact target interface open failed") == std::string::npos);
-
-                auto rebound = std::make_shared<AAPTestSupport::FakeTransport>();
-                manager._transportFactory =
-                    [rebound](AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
-                    return rebound;
-                };
-                const AAPAttempt secondAttempt{targetAddress, 8};
-                QVERIFY(manager.Connect(secondAttempt));
-                QVERIFY(manager.IsConnected());
-                QCOMPARE(connectedGenerations, 8);
-                QCOMPARE(rebound->SendCalls(), size_t{4});
-
-                auto disconnectRebound =
-                    std::async(std::launch::async, [&] { manager.Disconnect(); });
-                QVERIFY(
-                    disconnectRebound.wait_for(std::chrono::seconds(1)) ==
-                    std::future_status::ready);
-                disconnectRebound.get();
-                QVERIFY(!manager.IsConnected());
+                manager._commandBroker->EndSession();
+                manager._commandBroker->BeginSession(generation);
+                manager._commandBroker->ReplayDesiredState(generation);
             }
+        }};
+        toggles.join();
+        reconnects.join();
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        QCOMPARE(
+            manager.DesiredCommand(AAPCommandKind::SetHeadTracking),
+            std::optional<uint32_t>{lastDesired.load()});
+        const auto records = transport->SentRecords();
+        QVERIFY(!records.empty());
+        for (const auto &record : records) {
+            QVERIFY(record == Packets::StartHeadTracking || record == Packets::StopHeadTracking);
+        }
+        QCOMPARE(transport->SendAttempts(), records.size());
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
+    }
 
-            void CancelConnectBeforeAttemptStartsSuppressesThatGeneration()
-            {
-                Core::AAP::Manager manager;
-                auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
-                std::atomic<int> factoryCalls{0};
-                manager._transportFactory =
-                    [&](Core::AAP::AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
-                    ++factoryCalls;
-                    return transport;
-                };
-                manager._attempt = Core::AAP::AAPAttempt{1, 7};
-                manager.CancelConnect();
-                QCOMPARE(manager._cancelledGeneration.load(), uint64_t{7});
-                manager._attempt = {};
+    void ManagerMagicAAPStartupCancellationAllowsImmediateRebind_data()
+    {
+        QTest::addColumn<bool>("disconnect");
+        QTest::newRow("cancel-connect") << false;
+        QTest::newRow("disconnect") << true;
+    }
 
-                // The pre-entry generation gate must win before the lifecycle mutex, factory,
-                // pending-publication path, or any transport operation is reached.
-                const Core::AAP::AAPAttempt attempt{1, 7};
-                QVERIFY(!manager.Connect(attempt));
-                QCOMPARE(factoryCalls.load(), 0);
-                QCOMPARE(transport->ConnectCalls(), size_t{0});
-                QCOMPARE(transport->SendCalls(), size_t{0});
-                QVERIFY(!manager._readerThread.joinable());
-                QVERIFY(!manager.IsConnected());
+    void ManagerMagicAAPStartupCancellationAllowsImmediateRebind()
+    {
+        using Core::AAP::AAPAttempt;
+        using Core::AAP::AAPTransportKind;
+        using Core::AAP::ConnectFailure;
+        QFETCH(bool, disconnect);
+
+        Core::AAP::Manager manager;
+        auto seqPacket = std::make_shared<UnavailableSeqPacketTransport>();
+        auto magicAAP = std::make_shared<BlockingMagicAAPTransport>();
+        manager._driverInstalledProbe = [] { return true; };
+        manager._driverRunningProbe = [] { return true; };
+        manager._transportFactory = [seqPacket, magicAAP](AAPTransportKind kind) {
+            if (kind == AAPTransportKind::SeqPacket) {
+                return std::shared_ptr<Core::AAP::AAPTransport>{seqPacket};
             }
+            return std::shared_ptr<Core::AAP::AAPTransport>{magicAAP};
+        };
+        int connectedGenerations = 0;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onConnected = [&](const AAPAttempt &attempt) {
+            connectedGenerations = static_cast<int>(attempt.generation);
+        };
+        manager.SetCallbacks(std::move(callbacks));
 
-            // Every harness deadline expires with a result instead of blocking forever, which is
-            // what makes the CI timeout a backstop rather than the primary guard.
-            void RendezvousDeadlinesExpireInsteadOfBlocking()
-            {
-                AAPTestSupport::FakeTransport idle;
-                QVERIFY(!idle.WaitForReceiveWaiter(50ms));
-                QVERIFY(!idle.WaitForSendWaiter(50ms));
-                QVERIFY(!idle.WaitForConnectWaiter(50ms));
+        constexpr uint64_t targetAddress = 0x340E22CC08A0ULL;
+        const AAPAttempt firstAttempt{targetAddress, 7};
+        Core::Diagnostics::Recorder::Instance().Reset();
+        auto connect =
+            std::async(std::launch::async, [&] { return manager.Connect(firstAttempt); });
+        const bool startupEntered = magicAAP->WaitForConnectWaiter(std::chrono::seconds(1));
+        if (!startupEntered) {
+            magicAAP->ReleaseStartup();
+        }
+        QVERIFY(startupEntered);
 
-                AAPTestSupport::BlockingTransport parked;
-                parked.Block(AAPTestSupport::BlockingTransport::Op::Send);
-                QVERIFY(!parked.WaitForParked(AAPTestSupport::BlockingTransport::Op::Send, 50ms));
-
-                AAPTestSupport::CallbackRecorder recorder;
-                QVERIFY(!recorder.WaitForCount("never", 1, 50ms));
-            }
-
-            // D2: routing of the battery notification through the production packet path.
-            void BatteryNotificationReachesCallbackAndCache()
-            {
-                Core::AAP::Manager manager;
-                int callbacks = 0;
-                std::optional<Core::AAP::AAPBatterySnapshot> lastSnapshot;
-                Core::AAP::Callbacks cb;
-                cb.onBatteryChanged = [&](const Core::AAP::AAPBatterySnapshot &snapshot,
-                                          const Core::AAP::AAPAttempt &attempt) {
-                    QCOMPARE(attempt.address, uint64_t{1});
-                    QCOMPARE(attempt.generation, uint64_t{1});
-                    lastSnapshot = snapshot;
-                    ++callbacks;
-                };
-                manager.SetCallbacks(cb);
-                manager._attempt = Core::AAP::AAPAttempt{1, 1};
-                manager._connected = true;
-
-                const std::vector<uint8_t> frame{0x04, 0x00, 0x04, 0x00, 0x04, 0x00,
-                                                 0x01, 0x04, 0x01, 87,   0x02, 0x01};
-                manager.ProcessPacket(frame);
-                QCOMPARE(callbacks, 1);
-                QVERIFY(lastSnapshot.has_value());
-                QCOMPARE(lastSnapshot->left->level, uint8_t(87));
-                auto cached = manager.GetBatterySnapshot();
-                QVERIFY(cached.has_value());
-                QCOMPARE(cached->left->level, uint8_t(87));
-
-                // A malformed record (dead spacer) passes the transport minimum but fails the
-                // strict parser: neither the cache nor the consumer may move.
-                std::vector<uint8_t> badSpacer = frame;
-                badSpacer[8] = 0x00;
-                manager.ProcessPacket(badSpacer);
-                QCOMPARE(callbacks, 1);
-                QCOMPARE(manager.GetBatterySnapshot()->left->level, uint8_t(87));
-
-                // Count/size mismatches are rejected the same way (count=2 with 12 bytes).
-                const std::vector<uint8_t> mismatched{0x04, 0x00, 0x04, 0x00, 0x04, 0x00,
-                                                      0x02, 0x04, 0x01, 50,   0x02, 0x01};
-                manager.ProcessPacket(mismatched);
-                QCOMPARE(callbacks, 1);
-            }
-
-            void StaleGenerationBatteryEventsAreDiscarded()
-            {
-                Core::AAP::Manager manager;
-                int callbacks = 0;
-                Core::AAP::Callbacks cb;
-                cb.onBatteryChanged = [&](const Core::AAP::AAPBatterySnapshot &,
-                                          const Core::AAP::AAPAttempt &attempt) {
-                    QCOMPARE(attempt.generation, uint64_t{2});
-                    ++callbacks;
-                };
-                manager.SetCallbacks(cb);
-                manager._attempt = Core::AAP::AAPAttempt{1, 2};
-                manager._connected = true;
-
-                const std::vector<uint8_t> frame{0x04, 0x00, 0x04, 0x00, 0x04, 0x00,
-                                                 0x01, 0x08, 0x01, 50,   0x02, 0x01};
-                // The reader of the retired generation must not publish through the new session.
-                manager.ProcessPacket(frame, Core::AAP::AAPAttempt{1, 1}, cb);
-                QCOMPARE(callbacks, 0);
-                QVERIFY(!manager.GetBatterySnapshot().has_value());
-
-                manager.ProcessPacket(frame, Core::AAP::AAPAttempt{1, 2}, cb);
-                QCOMPARE(callbacks, 1);
-                QVERIFY(manager.GetBatterySnapshot().has_value());
-            }
-
-            void BatteryCacheClearedOnDisconnect()
-            {
-                Core::AAP::Manager manager;
-                auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
-                QVERIFY(transport->Connect(1, {}));
-                manager._transport.store(transport);
-                manager._attempt = Core::AAP::AAPAttempt{1, 1};
-                manager._connected = true;
-
-                const std::vector<uint8_t> frame{0x04, 0x00, 0x04, 0x00, 0x04, 0x00,
-                                                 0x01, 0x04, 0x01, 66,   0x01, 0x01};
-                manager.ProcessPacket(frame);
-                QVERIFY(manager.GetBatterySnapshot().has_value());
-
-                // AAP disconnect: the cached session snapshot is gone, so no stale overlay
-                // can outlive the connection that produced it.
+        auto cancel = std::async(std::launch::async, [&] {
+            if (disconnect) {
                 manager.Disconnect();
-                QVERIFY(!manager.GetBatterySnapshot().has_value());
-                // Blueprint 2.1: the 0x001D notification feeds a generation-scoped cache and
-                // a payload-free callback tagged only with the current session identity.
-                void DeviceInfoRecordCachesAndNotifiesWithGeneration()
-                {
-                    Core::AAP::Manager manager;
-                    int calls = 0;
-                    Core::AAP::AAPAttempt lastAttempt{};
-                    Core::AAP::Callbacks callbacks;
-                    callbacks.onDeviceInfoChanged = [&](Core::AAP::AAPAttempt attempt) {
-                        ++calls;
-                        lastAttempt = attempt;
-                    };
-                    manager.SetCallbacks(std::move(callbacks));
-                    manager._attempt = Core::AAP::AAPAttempt{1, 1};
-                    manager._connected = true;
+            }
+            else {
+                manager.CancelConnect();
+            }
+        });
+        const bool cancellationReturned =
+            cancel.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+        const bool startupReturned =
+            connect.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
 
-                    const auto sample = DeviceInfoSampleBytes();
-                    QCOMPARE(sample.size(), size_t{222});
-                    manager.ProcessPacket(sample);
+        // Release the fake driver before joining even when the regression is
+        // present, so a failed assertion cannot strand a blocked future.
+        magicAAP->ReleaseStartup();
+        cancel.get();
+        const bool connected = connect.get();
 
-                    QCOMPARE(calls, 1);
-                    const auto cached = manager.GetDeviceInfo();
-                    QVERIFY(cached.has_value());
-                    QCOMPARE(cached->serial, std::string{"QXNRHHYXP6"});
-                    QCOMPARE(lastAttempt.address, uint64_t{1});
-                    QCOMPARE(lastAttempt.generation, uint64_t{1});
-                }
+        QVERIFY(cancellationReturned);
+        QVERIFY(startupReturned);
+        QVERIFY(!connected);
+        QCOMPARE(manager.GetLastConnectFailure(), ConnectFailure::TransportError);
+        QCOMPARE(magicAAP->LastAddress(), targetAddress);
+        QVERIFY(magicAAP->CloseCalls() > 0);
+        QCOMPARE(connectedGenerations, 0);
+        const auto report = Core::Diagnostics::Recorder::Instance().BuildReport({});
+        QVERIFY(report.find("driver_open  FAILED") == std::string::npos);
+        QVERIFY(report.find("exact target interface open failed") == std::string::npos);
 
-                // A rejected record must keep the previous cache intact (the UI keeps showing
-                // the last trusted read instead of flickering to empty).
-                void MalformedDeviceInfoKeepsPreviousCache()
-                {
-                    Core::AAP::Manager manager;
-                    int calls = 0;
-                    Core::AAP::Callbacks callbacks;
-                    callbacks.onDeviceInfoChanged = [&calls](Core::AAP::AAPAttempt) { ++calls; };
-                    manager.SetCallbacks(std::move(callbacks));
-                    manager._attempt = Core::AAP::AAPAttempt{1, 1};
-                    manager._connected = true;
+        auto rebound = std::make_shared<AAPTestSupport::FakeTransport>();
+        manager._transportFactory =
+            [rebound](AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            return rebound;
+        };
+        const AAPAttempt secondAttempt{targetAddress, 8};
+        QVERIFY(manager.Connect(secondAttempt));
+        QVERIFY(manager.IsConnected());
+        QCOMPARE(connectedGenerations, 8);
+        QCOMPARE(rebound->SendCalls(), size_t{4});
 
-                    const auto valid = BuildDeviceInfoWithSerial("GOODSERIAL");
-                    manager.ProcessPacket(valid);
-                    QCOMPARE(calls, 1);
-                    QVERIFY(manager.GetDeviceInfo().has_value());
-                    QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
+        auto disconnectRebound = std::async(std::launch::async, [&] { manager.Disconnect(); });
+        QVERIFY(disconnectRebound.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+        disconnectRebound.get();
+        QVERIFY(!manager.IsConnected());
+    }
 
-                    // Passes the transport gate (correct header/opcode, >= 11 bytes) but the
-                    // serial carries invalid UTF-8: "BAD" + 0xC3 + 0x28 + "SERIAL".
-                    auto corrupted = BuildDeviceInfoWithSerial("BAD"
-                                                               "\xc3"
-                                                               "\x28"
-                                                               "SERIAL");
-                    manager.ProcessPacket(corrupted);
-                    QCOMPARE(calls, 1);
-                    QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
+    void CancelConnectBeforeAttemptStartsSuppressesThatGeneration()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        std::atomic<int> factoryCalls{0};
+        manager._transportFactory =
+            [&](Core::AAP::AAPTransportKind) -> std::shared_ptr<Core::AAP::AAPTransport> {
+            ++factoryCalls;
+            return transport;
+        };
+        manager._attempt = Core::AAP::AAPAttempt{1, 7};
+        manager.CancelConnect();
+        QCOMPARE(manager._cancelledGeneration.load(), uint64_t{7});
+        manager._attempt = {};
 
-                    // Removing the eleventh field's terminator is truncation, even though
-                    // all nine fields surfaced by the card are still present.
-                    auto missingEleventh = BuildDeviceInfoWithSerial("OTHER");
-                    missingEleventh.pop_back();
-                    manager.ProcessPacket(missingEleventh);
-                    QCOMPARE(calls, 1);
-                    QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
+        // The pre-entry generation gate must win before the lifecycle mutex, factory,
+        // pending-publication path, or any transport operation is reached.
+        const Core::AAP::AAPAttempt attempt{1, 7};
+        QVERIFY(!manager.Connect(attempt));
+        QCOMPARE(factoryCalls.load(), 0);
+        QCOMPARE(transport->ConnectCalls(), size_t{0});
+        QCOMPARE(transport->SendCalls(), size_t{0});
+        QVERIFY(!manager._readerThread.joinable());
+        QVERIFY(!manager.IsConnected());
+    }
 
-                    // Wrong opcode behind an otherwise valid record: rejected before the
-                    // cache is written, previous value survives.
-                    auto wrongOpcode = BuildDeviceInfoWithSerial("OTHER");
-                    wrongOpcode[4] = 0x1E;
-                    manager.ProcessPacket(wrongOpcode);
-                    QCOMPARE(calls, 1);
-                    QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
-                }
+    // Every harness deadline expires with a result instead of blocking forever, which is
+    // what makes the CI timeout a backstop rather than the primary guard.
+    void RendezvousDeadlinesExpireInsteadOfBlocking()
+    {
+        AAPTestSupport::FakeTransport idle;
+        QVERIFY(!idle.WaitForReceiveWaiter(50ms));
+        QVERIFY(!idle.WaitForSendWaiter(50ms));
+        QVERIFY(!idle.WaitForConnectWaiter(50ms));
 
-                // Packets attributed to a superseded attempt never touch the cache nor the
-                // callback (reader-thread races against reconnect are dropped by generation).
-                void StaleAttemptDeviceInfoIsIgnored()
-                {
-                    Core::AAP::Manager manager;
-                    int calls = 0;
-                    Core::AAP::Callbacks callbacks;
-                    callbacks.onDeviceInfoChanged = [&calls](Core::AAP::AAPAttempt) { ++calls; };
-                    manager.SetCallbacks(std::move(callbacks));
-                    manager._attempt = Core::AAP::AAPAttempt{1, 5};
-                    manager._connected = true;
+        AAPTestSupport::BlockingTransport parked;
+        parked.Block(AAPTestSupport::BlockingTransport::Op::Send);
+        QVERIFY(!parked.WaitForParked(AAPTestSupport::BlockingTransport::Op::Send, 50ms));
 
-                    manager.ProcessPacket(
-                        DeviceInfoSampleBytes(), Core::AAP::AAPAttempt{1, 4}, callbacks);
-                    QCOMPARE(calls, 0);
-                    QVERIFY(!manager.GetDeviceInfo().has_value());
-                }
+        AAPTestSupport::CallbackRecorder recorder;
+        QVERIFY(!recorder.WaitForCount("never", 1, 50ms));
+    }
 
-                // Disconnect is the fixed teardown used by rebind as well as an explicit
-                // disconnect. It must drop cached device information between sessions.
-                void DisconnectClearsDeviceInfoBetweenSessions()
-                {
-                    Core::AAP::Manager manager;
-                    manager._attempt = Core::AAP::AAPAttempt{1, 1};
-                    manager._connected = true;
-                    manager.ProcessPacket(BuildDeviceInfoWithSerial("SESSIONA"));
-                    QVERIFY(manager.GetDeviceInfo().has_value());
+    // D2: routing of the battery notification through the production packet path.
+    void BatteryNotificationReachesCallbackAndCache()
+    {
+        Core::AAP::Manager manager;
+        int callbacks = 0;
+        std::optional<Core::AAP::AAPBatterySnapshot> lastSnapshot;
+        Core::AAP::Callbacks cb;
+        cb.onBatteryChanged = [&](const Core::AAP::AAPBatterySnapshot &snapshot,
+                                  const Core::AAP::AAPAttempt &attempt) {
+            QCOMPARE(attempt.address, uint64_t{1});
+            QCOMPARE(attempt.generation, uint64_t{1});
+            lastSnapshot = snapshot;
+            ++callbacks;
+        };
+        manager.SetCallbacks(cb);
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
 
-                    manager.Disconnect();
-                    QVERIFY(!manager.GetDeviceInfo().has_value());
+        const std::vector<uint8_t> frame{0x04, 0x00, 0x04, 0x00, 0x04, 0x00,
+                                         0x01, 0x04, 0x01, 87,   0x02, 0x01};
+        manager.ProcessPacket(frame);
+        QCOMPARE(callbacks, 1);
+        QVERIFY(lastSnapshot.has_value());
+        QCOMPARE(lastSnapshot->left->level, uint8_t(87));
+        auto cached = manager.GetBatterySnapshot();
+        QVERIFY(cached.has_value());
+        QCOMPARE(cached->left->level, uint8_t(87));
 
-                    // A later session can cache its own record without inheriting stale
-                    // values. Rebinding uses this same teardown before changing address.
-                    manager._attempt = Core::AAP::AAPAttempt{2, 2};
-                    manager._connected = true;
-                    manager.ProcessPacket(BuildDeviceInfoWithSerial("SESSIONB"));
-                    QVERIFY(manager.GetDeviceInfo().has_value());
-                    QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"SESSIONB"});
+        // A malformed record (dead spacer) passes the transport minimum but fails the
+        // strict parser: neither the cache nor the consumer may move.
+        std::vector<uint8_t> badSpacer = frame;
+        badSpacer[8] = 0x00;
+        manager.ProcessPacket(badSpacer);
+        QCOMPARE(callbacks, 1);
+        QCOMPARE(manager.GetBatterySnapshot()->left->level, uint8_t(87));
 
-                    manager.Disconnect();
-                    QVERIFY(!manager.GetDeviceInfo().has_value());
+        // Count/size mismatches are rejected the same way (count=2 with 12 bytes).
+        const std::vector<uint8_t> mismatched{0x04, 0x00, 0x04, 0x00, 0x04, 0x00,
+                                              0x02, 0x04, 0x01, 50,   0x02, 0x01};
+        manager.ProcessPacket(mismatched);
+        QCOMPARE(callbacks, 1);
+    }
 
-                    manager._attempt = Core::AAP::AAPAttempt{2, 3};
-                    manager._connected = true;
-                    manager.ProcessPacket(BuildDeviceInfoWithSerial("SESSIONC"));
-                    QVERIFY(manager.GetDeviceInfo().has_value());
-                    QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"SESSIONC"});
-                    manager.Disconnect();
-                }
+    void StaleGenerationBatteryEventsAreDiscarded()
+    {
+        Core::AAP::Manager manager;
+        int callbacks = 0;
+        Core::AAP::Callbacks cb;
+        cb.onBatteryChanged = [&](const Core::AAP::AAPBatterySnapshot &,
+                                  const Core::AAP::AAPAttempt &attempt) {
+            QCOMPARE(attempt.generation, uint64_t{2});
+            ++callbacks;
+        };
+        manager.SetCallbacks(cb);
+        manager._attempt = Core::AAP::AAPAttempt{1, 2};
+        manager._connected = true;
+
+        const std::vector<uint8_t> frame{0x04, 0x00, 0x04, 0x00, 0x04, 0x00,
+                                         0x01, 0x08, 0x01, 50,   0x02, 0x01};
+        // The reader of the retired generation must not publish through the new session.
+        manager.ProcessPacket(frame, Core::AAP::AAPAttempt{1, 1}, cb);
+        QCOMPARE(callbacks, 0);
+        QVERIFY(!manager.GetBatterySnapshot().has_value());
+
+        manager.ProcessPacket(frame, Core::AAP::AAPAttempt{1, 2}, cb);
+        QCOMPARE(callbacks, 1);
+        QVERIFY(manager.GetBatterySnapshot().has_value());
+    }
+
+    void BatteryCacheClearedOnDisconnect()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
+
+        const std::vector<uint8_t> frame{0x04, 0x00, 0x04, 0x00, 0x04, 0x00,
+                                         0x01, 0x04, 0x01, 66,   0x01, 0x01};
+        manager.ProcessPacket(frame);
+        QVERIFY(manager.GetBatterySnapshot().has_value());
+
+        // AAP disconnect: the cached session snapshot is gone, so no stale overlay
+        // can outlive the connection that produced it.
+        manager.Disconnect();
+        QVERIFY(!manager.GetBatterySnapshot().has_value());
+    }
+
+    // Blueprint 2.1: the 0x001D notification feeds a generation-scoped cache and
+    // a payload-free callback tagged only with the current session identity.
+    void DeviceInfoRecordCachesAndNotifiesWithGeneration()
+    {
+        Core::AAP::Manager manager;
+        int calls = 0;
+        Core::AAP::AAPAttempt lastAttempt{};
+        Core::AAP::Callbacks callbacks;
+        callbacks.onDeviceInfoChanged = [&](Core::AAP::AAPAttempt attempt) {
+            ++calls;
+            lastAttempt = attempt;
+        };
+        manager.SetCallbacks(std::move(callbacks));
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
+
+        const auto sample = DeviceInfoSampleBytes();
+        QCOMPARE(sample.size(), size_t{222});
+        manager.ProcessPacket(sample);
+
+        QCOMPARE(calls, 1);
+        const auto cached = manager.GetDeviceInfo();
+        QVERIFY(cached.has_value());
+        QCOMPARE(cached->serial, std::string{"QXNRHHYXP6"});
+        QCOMPARE(lastAttempt.address, uint64_t{1});
+        QCOMPARE(lastAttempt.generation, uint64_t{1});
+    }
+
+    // A rejected record must keep the previous cache intact (the UI keeps showing
+    // the last trusted read instead of flickering to empty).
+    void MalformedDeviceInfoKeepsPreviousCache()
+    {
+        Core::AAP::Manager manager;
+        int calls = 0;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onDeviceInfoChanged = [&calls](Core::AAP::AAPAttempt) { ++calls; };
+        manager.SetCallbacks(std::move(callbacks));
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
+
+        const auto valid = BuildDeviceInfoWithSerial("GOODSERIAL");
+        manager.ProcessPacket(valid);
+        QCOMPARE(calls, 1);
+        QVERIFY(manager.GetDeviceInfo().has_value());
+        QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
+
+        // Passes the transport gate (correct header/opcode, >= 11 bytes) but the
+        // serial carries invalid UTF-8: "BAD" + 0xC3 + 0x28 + "SERIAL".
+        auto corrupted = BuildDeviceInfoWithSerial("BAD"
+                                                   "\xc3"
+                                                   "\x28"
+                                                   "SERIAL");
+        manager.ProcessPacket(corrupted);
+        QCOMPARE(calls, 1);
+        QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
+
+        // Removing the eleventh field's terminator is truncation, even though
+        // all nine fields surfaced by the card are still present.
+        auto missingEleventh = BuildDeviceInfoWithSerial("OTHER");
+        missingEleventh.pop_back();
+        manager.ProcessPacket(missingEleventh);
+        QCOMPARE(calls, 1);
+        QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
+
+        // Wrong opcode behind an otherwise valid record: rejected before the
+        // cache is written, previous value survives.
+        auto wrongOpcode = BuildDeviceInfoWithSerial("OTHER");
+        wrongOpcode[4] = 0x1E;
+        manager.ProcessPacket(wrongOpcode);
+        QCOMPARE(calls, 1);
+        QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
+    }
+
+    // Packets attributed to a superseded attempt never touch the cache nor the
+    // callback (reader-thread races against reconnect are dropped by generation).
+    void StaleAttemptDeviceInfoIsIgnored()
+    {
+        Core::AAP::Manager manager;
+        int calls = 0;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onDeviceInfoChanged = [&calls](Core::AAP::AAPAttempt) { ++calls; };
+        manager.SetCallbacks(std::move(callbacks));
+        manager._attempt = Core::AAP::AAPAttempt{1, 5};
+        manager._connected = true;
+
+        manager.ProcessPacket(DeviceInfoSampleBytes(), Core::AAP::AAPAttempt{1, 4}, callbacks);
+        QCOMPARE(calls, 0);
+        QVERIFY(!manager.GetDeviceInfo().has_value());
+    }
+
+    // Disconnect is the fixed teardown used by rebind as well as an explicit
+    // disconnect. It must drop cached device information between sessions.
+    void DisconnectClearsDeviceInfoBetweenSessions()
+    {
+        Core::AAP::Manager manager;
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
+        manager.ProcessPacket(BuildDeviceInfoWithSerial("SESSIONA"));
+        QVERIFY(manager.GetDeviceInfo().has_value());
+
+        manager.Disconnect();
+        QVERIFY(!manager.GetDeviceInfo().has_value());
+
+        // A later session can cache its own record without inheriting stale
+        // values. Rebinding uses this same teardown before changing address.
+        manager._attempt = Core::AAP::AAPAttempt{2, 2};
+        manager._connected = true;
+        manager.ProcessPacket(BuildDeviceInfoWithSerial("SESSIONB"));
+        QVERIFY(manager.GetDeviceInfo().has_value());
+        QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"SESSIONB"});
+
+        manager.Disconnect();
+        QVERIFY(!manager.GetDeviceInfo().has_value());
+
+        manager._attempt = Core::AAP::AAPAttempt{2, 3};
+        manager._connected = true;
+        manager.ProcessPacket(BuildDeviceInfoWithSerial("SESSIONC"));
+        QVERIFY(manager.GetDeviceInfo().has_value());
+        QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"SESSIONC"});
+        manager.Disconnect();
+    }
 #endif
-            };
+};
 
-            QTEST_GUILESS_MAIN(AAPTransportTests)
+QTEST_GUILESS_MAIN(AAPTransportTests)
 
 #include "AAPTransportTests.moc"
