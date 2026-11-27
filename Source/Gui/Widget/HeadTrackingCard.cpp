@@ -20,11 +20,13 @@
 
 #include <QCoreApplication>
 #include <QGridLayout>
-#include <QStyleHints>
-#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QStyle>
 #include <QVBoxLayout>
+
+#if defined(APD_OS_WIN)
+    #include <Windows.h>
+#endif
 
 #include "../Theme.h"
 #include "ActivityIndicator.h"
@@ -349,7 +351,15 @@ void HeadTrackingCard::Publish()
 
 bool HeadTrackingCard::IsReducedMotion()
 {
-    return QGuiApplication::styleHints()->isReducedMotion();
+#if defined(APD_OS_WIN)
+    // Qt 6 has no reduced-motion hint on QStyleHints; ask Windows whether window animations
+    // are enabled, which is the system switch users flip for "show animations".
+    BOOL animationsEnabled = TRUE;
+    if (SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &animationsEnabled, 0)) {
+        return animationsEnabled == FALSE;
+    }
+#endif
+    return false;
 }
 
 void HeadTrackingCard::SetReducedMotionOverride(std::optional<bool> reduced)
