@@ -365,6 +365,8 @@ void Manager::Disconnect()
         _loudSoundReductionState.reset();
         _batterySnapshot.reset();
         _ppeCapLevel.reset();
+        _handshakeAckObserved = false;
+        _featureFlagsAckObserved = false;
         // Privacy + correctness: device information (serials) belongs to this
         // session only (blueprint 2.1).
         _deviceInfo.reset();
@@ -969,6 +971,10 @@ void Manager::StartAttProbe(
         std::lock_guard lock{_attReadMutex};
         _attReadOwner = AttReadOwner{_attempt.generation, 0, true};
     }
+    // Pending is published before the write: a device that answers immediately confirms the
+    // path while SendPacket is still on the stack, and only the failure path below may
+    // downgrade it to Unconfirmed.
+    _attPathState.store(AttPathState::Pending);
     if (!SendPacket(transport, packet, stopToken)) {
         ReleaseAttRead();
         _attPathState.store(AttPathState::Unconfirmed);
@@ -976,7 +982,6 @@ void Manager::StartAttProbe(
         return;
     }
 
-    _attPathState.store(AttPathState::Pending);
     Diagnostics::Recorder::Instance().Record(Diagnostics::Step::AttProbe, true, "probe sent");
     LOG(Info, "AAP: Sent ATT probe (read handle 0x{:02X}), waiting up to 500ms",
         Att::kLoudSoundReductionHandle);
@@ -985,6 +990,12 @@ void Manager::StartAttProbe(
 void Manager::ProcessAttFrame(
     const std::vector<uint8_t> &packet, AAPAttempt attempt, const Callbacks &callbacks)
 {
+    // A retired session's late answer must not touch the current session's probe state:
+    // drop it before the reservation, the cache or the diagnostic log can be written on
+    // behalf of an attempt that is no longer current.
+    if (!IsCurrentAttempt(attempt)) {
+        return;
+    }
     if (!IsCurrentAttempt(attempt)) {
         return;
     }
@@ -1214,6 +1225,42 @@ void Manager::ProcessPacket(
     // misparsed as settings notifications.
     if (Att::IsAttFrame(packet)) {
         ProcessAttFrame(packet, attempt, callbacks);
+        return;
+    }
+
+    if (IsHandshakeAck(packet)) {
+        bool firstObservation = false;
+        {
+            std::lock_guard<std::mutex> lock{_mutex};
+            if (!IsCurrentAttemptLocked(attempt)) {
+                return;
+            }
+            firstObservation = !_handshakeAckObserved;
+            _handshakeAckObserved = true;
+        }
+        if (firstObservation) {
+            LOG(Info, "AAP: Handshake acknowledged by the device");
+            Diagnostics::Recorder::Instance().RecordForAttempt(
+                attempt.generation, Diagnostics::Step::Handshake, true, "device ACK observed");
+        }
+        return;
+    }
+
+    if (IsFeatureFlagsAck(packet)) {
+        bool firstObservation = false;
+        {
+            std::lock_guard<std::mutex> lock{_mutex};
+            if (!IsCurrentAttemptLocked(attempt)) {
+                return;
+            }
+            firstObservation = !_featureFlagsAckObserved;
+            _featureFlagsAckObserved = true;
+        }
+        if (firstObservation) {
+            LOG(Info, "AAP: Feature flags acknowledged by the device");
+            Diagnostics::Recorder::Instance().RecordForAttempt(
+                attempt.generation, Diagnostics::Step::FeatureFlags, true, "device ACK observed");
+        }
         return;
     }
 
@@ -1485,6 +1532,8 @@ void Manager::ReaderLoop(
         // session only (blueprint 2.1).
         _deviceInfo.reset();
         _batterySnapshot.reset();
+        _handshakeAckObserved = false;
+        _featureFlagsAckObserved = false;
         active = _attempt;
         callback = _callbacks.onDisconnected;
     }

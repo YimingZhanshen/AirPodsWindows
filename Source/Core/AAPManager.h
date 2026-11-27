@@ -274,6 +274,12 @@ private:
     mutable std::condition_variable_any _attReadCondition;
     mutable std::optional<AttReadOwner> _attReadOwner;
 
+    // Handshake and feature flags are only acknowledged by the device when its ACK record
+    // has actually been read. Both start false for every attempt and are never inferred
+    // from a successful send.
+    bool _handshakeAckObserved{false};
+    bool _featureFlagsAckObserved{false};
+
     // Why the last Connect() attempt failed; reset to None on success.
     std::atomic<ConnectFailure> _lastConnectFailure{ConnectFailure::None};
     std::atomic<uint64_t> _cancelledGeneration{0};

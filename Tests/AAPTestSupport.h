@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -80,6 +81,7 @@ public:
         _closed = false;
         _eof = false;
         _records.clear();
+        _sendHook = {};
         _connected = true;
         return true;
     }
@@ -182,6 +184,14 @@ public:
         _sendCondition.notify_all();
     }
 
+    // Executes after the send result is known but before Send returns, without holding the
+    // transport mutex. Tests use this to model a response that overtakes the sender.
+    void SetSendHook(std::function<void()> hook)
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        _sendHook = std::move(hook);
+    }
+
     size_t SendCalls() const
     {
         std::lock_guard<std::mutex> lock{_mutex};
@@ -227,6 +237,14 @@ public:
         return _lastSend;
     }
 
+    // Every record the production path managed to put on the wire, in order. Used to
+    // prove a session never emits a second ATT read while one is still outstanding.
+    std::vector<std::vector<uint8_t>> SentRecords() const
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        return _sentRecords;
+    }
+
     size_t RecordCount() const
     {
         std::lock_guard<std::mutex> lock{_mutex};
@@ -253,6 +271,7 @@ private:
     std::vector<std::vector<uint8_t>> _sentRecords;
     std::vector<uint8_t> _lastSend;
     std::optional<size_t> _sendLimit;
+    std::optional<size_t> _sendFailure;
     size_t _sendCalls{0};
     size_t _sendAttempts{0};
     size_t _receiveWaiters{0};
@@ -263,6 +282,7 @@ private:
     bool _sendError{false};
     size_t _sendFailures{0};
     bool _blockSend{false};
+    std::function<void()> _sendHook;
 };
 
 } // namespace AAPTestSupport

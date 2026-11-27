@@ -39,6 +39,7 @@
 
 #if defined(APD_OS_WIN)
     #include "Source/Core/AAPManager.h"
+    #include "Source/Core/ConnectionDiagnostics.h"
     #pragma comment(lib, "Ws2_32.lib")
 #endif
 
@@ -201,6 +202,27 @@ class AAPTransportTests : public QObject
     Q_OBJECT
 
 private slots:
+#if defined(APD_OS_WIN)
+    static void ResetRecorder()
+    {
+        auto &recorder = Core::Diagnostics::Recorder::Instance();
+        recorder.EndAttempt(recorder.CurrentGeneration());
+        recorder.Reset();
+        QCOMPARE(recorder.CurrentGeneration(), uint64_t{0});
+        QCOMPARE(recorder.StepCount(), size_t{0});
+    }
+
+    void init()
+    {
+        ResetRecorder();
+    }
+
+    void cleanup()
+    {
+        ResetRecorder();
+    }
+#endif
+
     void ShortWriteFailsWithoutEmittingASecondRecord()
     {
         AAPTestSupport::FakeTransport transport;
@@ -839,6 +861,51 @@ private slots:
         auto future = settled.get_future();
         QVERIFY(future.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
         QCOMPARE(future.get().settlement, Core::AAP::AAPCommandSettlement::Confirmed);
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
+    }
+
+    void ImmediateAttProbeResponseStaysConfirmed()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 21};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(21);
+        manager.StartAttProbe(transport, {});
+        // Pending was published before the write, so an answer that lands while the probe
+        // window is open confirms the path and is never downgraded back to Pending.
+        manager.ProcessAttFrame({0x0B, 0x00}, manager._attempt, Core::AAP::Callbacks{});
+        QCOMPARE(manager.GetAttPathState(), Core::AAP::AttPathState::Confirmed);
+        manager.ProcessAttFrame({0x0B, 0x01}, manager._attempt, Core::AAP::Callbacks{});
+        QCOMPARE(manager.GetAttPathState(), Core::AAP::AttPathState::Confirmed);
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
+    }
+
+    void LateAttResponseFromRetiredSessionIsDropped()
+    {
+        Core::AAP::Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = Core::AAP::AAPAttempt{1, 22};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(22);
+        manager.StartAttProbe(transport, {});
+        // The session dies before the answer arrives; a fresh generation starts afterwards.
+        manager._connected = false;
+        manager._commandBroker->EndSession();
+        manager._attempt = Core::AAP::AAPAttempt{1, 23};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(23);
+        // The retired generation's answer must not confirm the new session's ATT path.
+        manager.ProcessAttFrame({0x0B, 0x00}, Core::AAP::AAPAttempt{1, 22}, Core::AAP::Callbacks{});
+        QVERIFY(manager.GetAttPathState() != Core::AAP::AttPathState::Confirmed);
         manager._connected = false;
         manager._transport.store(nullptr);
         manager._commandBroker->EndSession();

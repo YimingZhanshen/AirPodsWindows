@@ -828,6 +828,33 @@ private slots:
             std::optional(LoudSoundReductionState::Disabled));
     }
 
+    // P3: control identifier 0x25 is VolumeSwipeMode. It is recognised under that name and
+    // can never produce a LoudSoundReductionState — loud sound reduction only exists on ATT
+    // handle 0x1B. (The retired loud-sound-reduction control parser read this frame as LSR.)
+    void VolumeSwipeIs0x25AndIsNotLoudSoundReduction()
+    {
+        const auto enabled =
+            Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x25, 0x01, 0x00, 0x00, 0x00});
+        const auto disabled =
+            Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x25, 0x02, 0x00, 0x00, 0x00});
+
+        QVERIFY(IsVolumeSwipeNotification(enabled));
+        QCOMPARE(ParseVolumeSwipeMode(enabled), std::optional(VolumeSwipeMode::Enabled));
+        QCOMPARE(ParseVolumeSwipeMode(disabled), std::optional(VolumeSwipeMode::Disabled));
+        // The 0x00 used by the loud-sound-reduction ATT value is not a volume swipe state.
+        QCOMPARE(
+            ParseVolumeSwipeMode(
+                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x25, 0x00, 0x00, 0x00, 0x00})),
+            std::optional(VolumeSwipeMode::Unknown));
+        QVERIFY(!ParseVolumeSwipeMode(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x26, 0x01}))
+                     .has_value());
+
+        // No LSR value can come out of the AAP control path: the ATT write is not a
+        // settings notification, and the 0x25 frame reaches no LSR parser.
+        QVERIFY(!IsSettingsNotification(Packets::BuildLoudSoundReductionPacket(true)));
+        QVERIFY(!IsVolumeSwipeNotification(Packets::BuildLoudSoundReductionPacket(true)));
+    }
+
     void HeadTrackingParserReadsLittleEndianOffsets()
     {
         std::vector<uint8_t> frame(70, 0x00);
@@ -2084,6 +2111,18 @@ private slots:
         QVERIFY(cancelled.has_value());
         QCOMPARE(cancelled->settlement, AAPCommandSettlement::Rejected);
         QCOMPARE(cancelled->failure, std::optional(AAPCommandFailure::Rejected));
+
+        // after the answer was actually read.
+        void AcknowledgementRecordsAreRecognised()
+        {
+            QVERIFY(IsHandshakeAck(Hex({0x01, 0x00, 0x04, 0x00})));
+            // Five bytes with the same prefix is an ATT Error Response instead.
+            QVERIFY(!IsHandshakeAck(Hex({0x01, 0x00, 0x04, 0x00, 0x0A})));
+            QVERIFY(!IsHandshakeAck(Hex({0x01, 0x00, 0x04})));
+            QVERIFY(IsFeatureFlagsAck(Hex({0x04, 0x00, 0x04, 0x00, 0x2B, 0x00})));
+            QVERIFY(!IsFeatureFlagsAck(Hex({0x04, 0x00, 0x04, 0x00, 0x4D, 0x00})));
+            QVERIFY(!Att::IsAttFrame(Hex({0x01, 0x00, 0x04, 0x00})));
+        }
     }
 
     //////////////////////////////////////////////////
@@ -2118,29 +2157,66 @@ private slots:
         QVERIFY(masked.find("77665544332211") == std::string::npos);
     }
 
-    void DiagnosticsRecorderBuildsReport()
+    void DiagnosticsRecorderResetsAndIsolatesGenerations()
     {
         using Core::Diagnostics::Recorder;
         using Core::Diagnostics::Step;
 
         auto &recorder = Recorder::Instance();
-        recorder.Reset();
+        recorder.BeginAttempt(7);
+        recorder.RecordForAttempt(7, Step::AdvertisementMatched, true, "model=14");
+        recorder.RecordPendingForAttempt(7, Step::Handshake, "send accepted, ACK unconfirmed");
+        recorder.RecordForAttempt(7, Step::FeatureFlags, false, "send failed");
+        recorder.RecordPendingForAttempt(7, Step::AttProbe, "probe sent, waiting up to 500ms");
+        QCOMPARE(recorder.ReportedAttemptStepCount(), size_t{4});
+
+        const auto report = QString::fromStdString(recorder.BuildReport({}));
+        QVERIFY(report.contains("attempt 7"));
+        QVERIFY(report.contains("handshake  PENDING  send accepted, ACK unconfirmed"));
+        QVERIFY(!report.contains("handshake  ok"));
+        QVERIFY(report.contains("feature_flags  FAILED  send failed"));
+        QVERIFY(report.contains("att_probe  PENDING"));
+
+        // A late event or end notification from generation 6 cannot alter open attempt 7.
+        const auto before = recorder.StepCount();
+        recorder.RecordForAttempt(6, Step::Handshake, true, "stale ACK");
+        recorder.EndAttempt(6);
+        QCOMPARE(recorder.StepCount(), before);
+        QCOMPARE(recorder.CurrentGeneration(), uint64_t{7});
+        QVERIFY(!QString::fromStdString(recorder.BuildReport({})).contains("stale ACK"));
+        recorder.EndAttempt(7);
+        QCOMPARE(recorder.CurrentGeneration(), uint64_t{0});
+
+        // BeginAttempt resets before opening generation 8, including untagged preconnect
+        // lines. No scanner, advertisement or handshake evidence from attempt 7 survives.
+        recorder.Record(Step::ScannerStarted, true);
+        recorder.Record(Step::AdvertisementMatched, true, "old preconnect");
+        recorder.BeginAttempt(8);
         QCOMPARE(recorder.StepCount(), size_t{0});
+        QCOMPARE(recorder.ReportedAttemptStepCount(), size_t{0});
+        QCOMPARE(recorder.CurrentGeneration(), uint64_t{8});
+        QCOMPARE(recorder.ReportedAttempt(), uint64_t{8});
 
-        recorder.Record(Step::Handshake, true);
-        recorder.Record(Step::AttProbe, false, "no ATT answer within 500ms");
-        QCOMPARE(recorder.StepCount(), size_t{2});
+        // Untagged BLE watcher callbacks have no attempt identity. While an attempt is open,
+        // accepting them would silently attach a delayed event to the successor generation.
+        const auto openCount = recorder.StepCount();
+        recorder.Record(Step::ScannerStarted, true, "stale watcher callback");
+        recorder.RecordPending(Step::AttProbe, "stale watcher callback");
+        QCOMPARE(recorder.StepCount(), openCount);
 
-        const auto report = recorder.BuildReport("header-line");
-        const auto asString = QString::fromStdString(report);
-        QVERIFY(asString.contains("header-line"));
-        QVERIFY(asString.contains("handshake"));
-        QVERIFY(asString.contains("att_probe"));
-        QVERIFY(asString.contains("FAILED"));
-        QVERIFY(asString.contains("no ATT answer within 500ms"));
-
-        recorder.Reset();
-        QCOMPARE(recorder.StepCount(), size_t{0});
+        recorder.RecordForAttempt(7, Step::Handshake, true, "late old ACK");
+        recorder.RecordForAttempt(8, Step::TransportConnect, false, "driver unavailable");
+        recorder.BeginAttempt(8); // idempotent while the same attempt is open
+        QCOMPARE(recorder.ReportedAttemptStepCount(), size_t{1});
+        const auto fresh = QString::fromStdString(recorder.BuildReport({}));
+        QVERIFY(fresh.contains("attempt 8"));
+        QVERIFY(fresh.contains("transport_connect  FAILED  driver unavailable"));
+        QVERIFY(!fresh.contains("attempt 7"));
+        QVERIFY(!fresh.contains("scanner_started"));
+        QVERIFY(!fresh.contains("advertisement_matched"));
+        QVERIFY(!fresh.contains("late old ACK"));
+        QVERIFY(!fresh.contains("stale watcher callback"));
+        recorder.EndAttempt(8);
     }
 };
 

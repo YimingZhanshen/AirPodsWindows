@@ -82,6 +82,19 @@ enum class PersonalizedVolumeState : uint8_t { Enabled = 0x01, Disabled = 0x02, 
 enum class LoudSoundReductionState : uint8_t { Enabled = 0x01, Disabled = 0x00, Unknown = 0xFF };
 
 //////////////////////////////////////////////////
+// Volume Swipe Mode (control command 0x25)
+//
+
+// Control identifier 0x25 is VolumeSwipeMode (the "swipe on the stem to change volume"
+// switch), not loud sound reduction: `04 00 04 00 09 00 25 [01|02] 00 00 00` with the
+// usual 0x01 = enabled / 0x02 = disabled convention (Docs/AAP-Protocol-Spec.md §7,
+// appendix VolumeSwipe). Loud sound reduction lives on ATT handle 0x1B instead, so this
+// value must never be routed into the LSR state. The project does not expose a volume
+// swipe control yet; the identifiers exist so an inbound 0x25 echo is recognised for what
+// it is and ignored.
+enum class VolumeSwipeMode : uint8_t { Enabled = 0x01, Disabled = 0x02, Unknown = 0xFF };
+
+//////////////////////////////////////////////////
 // PPE Cap Level (hearing protection, control 0x38; range 0-100)
 //
 
@@ -397,13 +410,14 @@ inline std::optional<bool> ParseAutomaticEarDetectionState(const std::vector<uin
     return data[7] == 0x01;
 }
 
-// LEGACY / NO SENDER: Loud sound reduction is now an ATT write (handle 0x1B), so its state comes
-// back over ATT (read response 0x0B / notification `1B 1B 00 …`), not as a control reply. The
-// control id 0x25 seen below is VolumeSwipeMode, not LSR — this parser and
-// IsLoudSoundReductionNotification never match anything real anymore and are kept only until the
-// ATT read path lands (blueprint item 0.3). See spec §7/§12.
+// Loud sound reduction has no control-command parser on purpose. Its state only exists on
+// ATT handle 0x1B and comes back over ATT (read response 0x0B / notification `1B 1B 00 …`),
+// where it is attributed to the pending read of that handle
+// (Core::AAP::Att::PendingReadTracker). The 0x25 identifier this parser used to claim is
+// VolumeSwipeMode, so reading a control reply can never produce a LoudSoundReductionState.
+// See spec §7/§12.
 
-// Parse loud sound reduction (headphone safety) state
+// Parse the volume swipe (0x25) state echo.
 // Packet format: 04 00 04 00 09 00 25 [status] 00 00 00
 inline std::optional<LoudSoundReductionState>
 ParseLoudSoundReductionState(const std::vector<uint8_t> &data)
@@ -425,6 +439,28 @@ ParseLoudSoundReductionState(const std::vector<uint8_t> &data)
         return LoudSoundReductionState::Disabled;
     default:
         return LoudSoundReductionState::Unknown;
+    }
+}
+
+inline std::optional<VolumeSwipeMode> ParseVolumeSwipeMode(const std::vector<uint8_t> &data)
+{
+    if (data.size() < 8) {
+        return std::nullopt;
+    }
+
+    if (data[0] != 0x04 || data[1] != 0x00 || data[2] != 0x04 || data[3] != 0x00 ||
+        data[4] != 0x09 || data[5] != 0x00 || data[6] != 0x25)
+    {
+        return std::nullopt;
+    }
+
+    switch (data[7]) {
+    case 0x01:
+        return VolumeSwipeMode::Enabled;
+    case 0x02:
+        return VolumeSwipeMode::Disabled;
+    default:
+        return VolumeSwipeMode::Unknown;
     }
 }
 
@@ -499,6 +535,19 @@ inline bool IsLoudSoundReductionNotification(const std::vector<uint8_t> &data)
            data[3] == 0x00 && data[4] == 0x09 && data[5] == 0x00 && data[6] == 0x25;
 }
 
+// Volume swipe echo (0x25). Named for what the identifier actually is: an earlier version
+// of this project read 0x25 as loud sound reduction and pushed the result into the LSR
+// state, which is the misclassification P3 removes.
+inline bool IsVolumeSwipeNotification(const std::vector<uint8_t> &data)
+{
+    return data.size() >= 7 && data[0] == 0x04 && data[1] == 0x00 && data[2] == 0x04 &&
+           data[3] == 0x00 && data[4] == 0x09 && data[5] == 0x00 && data[6] == 0x25;
+}
+{
+    return data.size() >= 7 && data[0] == 0x04 && data[1] == 0x00 && data[2] == 0x04 &&
+           data[3] == 0x00 && data[4] == 0x09 && data[5] == 0x00 && data[6] == 0x25;
+}
+
 inline bool IsPpeCapLevelNotification(const std::vector<uint8_t> &data)
 {
     return data.size() >= 7 && data[0] == 0x04 && data[1] == 0x00 && data[2] == 0x04 &&
@@ -519,6 +568,29 @@ inline std::optional<uint8_t> GetSettingType(const std::vector<uint8_t> &data)
         return std::nullopt;
     }
     return data[6];
+}
+
+//////////////////////////////////////////////////
+// Device acknowledgements (blueprint 0.3 / P3)
+//
+
+// The device answers the handshake with the four-byte record `01 00 04 00` and the feature
+// flags packet (0x4D) with `04 00 04 00 2B 00` (Docs/AAP-Protocol-Spec.md, connection
+// sequence and appendix Parse::HANDSHAKE_ACK / FEATURES_ACK). AAPMessage already accepts both
+// as complete transport records; these classifiers give them a meaning, so a connection step
+// can be recorded as "sent, waiting for the device" and only later as acknowledged. Not every
+// firmware revision answers, therefore observing an ACK is evidence when it arrives and never
+// a precondition for continuing the handshake.
+inline bool IsHandshakeAck(const std::vector<uint8_t> &data)
+{
+    return data.size() == 4 && data[0] == 0x01 && data[1] == 0x00 && data[2] == 0x04 &&
+           data[3] == 0x00;
+}
+
+inline bool IsFeatureFlagsAck(const std::vector<uint8_t> &data)
+{
+    return data.size() >= 6 && data[0] == 0x04 && data[1] == 0x00 && data[2] == 0x04 &&
+           data[3] == 0x00 && data[4] == 0x2B && data[5] == 0x00;
 }
 
 } // namespace Core::AAP
