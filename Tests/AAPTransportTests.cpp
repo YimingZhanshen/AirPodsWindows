@@ -847,130 +847,132 @@ private slots:
         // can outlive the connection that produced it.
         manager.Disconnect();
         QVERIFY(!manager.GetBatterySnapshot().has_value());
-        // Blueprint 2.1: the 0x001D notification feeds a generation-scoped cache and
-        // a payload-free callback tagged only with the current session identity.
-        void DeviceInfoRecordCachesAndNotifiesWithGeneration()
-        {
-            Core::AAP::Manager manager;
-            int calls = 0;
-            Core::AAP::AAPAttempt lastAttempt{};
-            Core::AAP::Callbacks callbacks;
-            callbacks.onDeviceInfoChanged = [&](Core::AAP::AAPAttempt attempt) {
-                ++calls;
-                lastAttempt = attempt;
-            };
-            manager.SetCallbacks(std::move(callbacks));
-            manager._attempt = Core::AAP::AAPAttempt{1, 1};
-            manager._connected = true;
+    }
 
-            const auto sample = DeviceInfoSampleBytes();
-            QCOMPARE(sample.size(), size_t{222});
-            manager.ProcessPacket(sample);
+    // Blueprint 2.1: the 0x001D notification feeds a generation-scoped cache and
+    // a payload-free callback tagged only with the current session identity.
+    void DeviceInfoRecordCachesAndNotifiesWithGeneration()
+    {
+        Core::AAP::Manager manager;
+        int calls = 0;
+        Core::AAP::AAPAttempt lastAttempt{};
+        Core::AAP::Callbacks callbacks;
+        callbacks.onDeviceInfoChanged = [&](Core::AAP::AAPAttempt attempt) {
+            ++calls;
+            lastAttempt = attempt;
+        };
+        manager.SetCallbacks(std::move(callbacks));
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
 
-            QCOMPARE(calls, 1);
-            const auto cached = manager.GetDeviceInfo();
-            QVERIFY(cached.has_value());
-            QCOMPARE(cached->serial, std::string{"QXNRHHYXP6"});
-            QCOMPARE(lastAttempt.address, uint64_t{1});
-            QCOMPARE(lastAttempt.generation, uint64_t{1});
-        }
+        const auto sample = DeviceInfoSampleBytes();
+        QCOMPARE(sample.size(), size_t{222});
+        manager.ProcessPacket(sample);
 
-        // A rejected record must keep the previous cache intact (the UI keeps showing
-        // the last trusted read instead of flickering to empty).
-        void MalformedDeviceInfoKeepsPreviousCache()
-        {
-            Core::AAP::Manager manager;
-            int calls = 0;
-            Core::AAP::Callbacks callbacks;
-            callbacks.onDeviceInfoChanged = [&calls](Core::AAP::AAPAttempt) { ++calls; };
-            manager.SetCallbacks(std::move(callbacks));
-            manager._attempt = Core::AAP::AAPAttempt{1, 1};
-            manager._connected = true;
+        QCOMPARE(calls, 1);
+        const auto cached = manager.GetDeviceInfo();
+        QVERIFY(cached.has_value());
+        QCOMPARE(cached->serial, std::string{"QXNRHHYXP6"});
+        QCOMPARE(lastAttempt.address, uint64_t{1});
+        QCOMPARE(lastAttempt.generation, uint64_t{1});
+    }
 
-            const auto valid = BuildDeviceInfoWithSerial("GOODSERIAL");
-            manager.ProcessPacket(valid);
-            QCOMPARE(calls, 1);
-            QVERIFY(manager.GetDeviceInfo().has_value());
-            QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
+    // A rejected record must keep the previous cache intact (the UI keeps showing
+    // the last trusted read instead of flickering to empty).
+    void MalformedDeviceInfoKeepsPreviousCache()
+    {
+        Core::AAP::Manager manager;
+        int calls = 0;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onDeviceInfoChanged = [&calls](Core::AAP::AAPAttempt) { ++calls; };
+        manager.SetCallbacks(std::move(callbacks));
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
 
-            // Passes the transport gate (correct header/opcode, >= 11 bytes) but the
-            // serial carries invalid UTF-8: "BAD" + 0xC3 + 0x28 + "SERIAL".
-            auto corrupted = BuildDeviceInfoWithSerial("BAD"
-                                                       "\xc3"
-                                                       "\x28"
-                                                       "SERIAL");
-            manager.ProcessPacket(corrupted);
-            QCOMPARE(calls, 1);
-            QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
+        const auto valid = BuildDeviceInfoWithSerial("GOODSERIAL");
+        manager.ProcessPacket(valid);
+        QCOMPARE(calls, 1);
+        QVERIFY(manager.GetDeviceInfo().has_value());
+        QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
 
-            // Removing the eleventh field's terminator is truncation, even though
-            // all nine fields surfaced by the card are still present.
-            auto missingEleventh = BuildDeviceInfoWithSerial("OTHER");
-            missingEleventh.pop_back();
-            manager.ProcessPacket(missingEleventh);
-            QCOMPARE(calls, 1);
-            QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
+        // Passes the transport gate (correct header/opcode, >= 11 bytes) but the
+        // serial carries invalid UTF-8: "BAD" + 0xC3 + 0x28 + "SERIAL".
+        auto corrupted = BuildDeviceInfoWithSerial("BAD"
+                                                   "\xc3"
+                                                   "\x28"
+                                                   "SERIAL");
+        manager.ProcessPacket(corrupted);
+        QCOMPARE(calls, 1);
+        QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
 
-            // Wrong opcode behind an otherwise valid record: rejected before the
-            // cache is written, previous value survives.
-            auto wrongOpcode = BuildDeviceInfoWithSerial("OTHER");
-            wrongOpcode[4] = 0x1E;
-            manager.ProcessPacket(wrongOpcode);
-            QCOMPARE(calls, 1);
-            QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
-        }
+        // Removing the eleventh field's terminator is truncation, even though
+        // all nine fields surfaced by the card are still present.
+        auto missingEleventh = BuildDeviceInfoWithSerial("OTHER");
+        missingEleventh.pop_back();
+        manager.ProcessPacket(missingEleventh);
+        QCOMPARE(calls, 1);
+        QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
 
-        // Packets attributed to a superseded attempt never touch the cache nor the
-        // callback (reader-thread races against reconnect are dropped by generation).
-        void StaleAttemptDeviceInfoIsIgnored()
-        {
-            Core::AAP::Manager manager;
-            int calls = 0;
-            Core::AAP::Callbacks callbacks;
-            callbacks.onDeviceInfoChanged = [&calls](Core::AAP::AAPAttempt) { ++calls; };
-            manager.SetCallbacks(std::move(callbacks));
-            manager._attempt = Core::AAP::AAPAttempt{1, 5};
-            manager._connected = true;
+        // Wrong opcode behind an otherwise valid record: rejected before the
+        // cache is written, previous value survives.
+        auto wrongOpcode = BuildDeviceInfoWithSerial("OTHER");
+        wrongOpcode[4] = 0x1E;
+        manager.ProcessPacket(wrongOpcode);
+        QCOMPARE(calls, 1);
+        QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"GOODSERIAL"});
+    }
 
-            manager.ProcessPacket(DeviceInfoSampleBytes(), Core::AAP::AAPAttempt{1, 4}, callbacks);
-            QCOMPARE(calls, 0);
-            QVERIFY(!manager.GetDeviceInfo().has_value());
-        }
+    // Packets attributed to a superseded attempt never touch the cache nor the
+    // callback (reader-thread races against reconnect are dropped by generation).
+    void StaleAttemptDeviceInfoIsIgnored()
+    {
+        Core::AAP::Manager manager;
+        int calls = 0;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onDeviceInfoChanged = [&calls](Core::AAP::AAPAttempt) { ++calls; };
+        manager.SetCallbacks(std::move(callbacks));
+        manager._attempt = Core::AAP::AAPAttempt{1, 5};
+        manager._connected = true;
 
-        // Disconnect is the fixed teardown used by rebind as well as an explicit
-        // disconnect. It must drop cached device information between sessions.
-        void DisconnectClearsDeviceInfoBetweenSessions()
-        {
-            Core::AAP::Manager manager;
-            manager._attempt = Core::AAP::AAPAttempt{1, 1};
-            manager._connected = true;
-            manager.ProcessPacket(BuildDeviceInfoWithSerial("SESSIONA"));
-            QVERIFY(manager.GetDeviceInfo().has_value());
+        manager.ProcessPacket(DeviceInfoSampleBytes(), Core::AAP::AAPAttempt{1, 4}, callbacks);
+        QCOMPARE(calls, 0);
+        QVERIFY(!manager.GetDeviceInfo().has_value());
+    }
 
-            manager.Disconnect();
-            QVERIFY(!manager.GetDeviceInfo().has_value());
+    // Disconnect is the fixed teardown used by rebind as well as an explicit
+    // disconnect. It must drop cached device information between sessions.
+    void DisconnectClearsDeviceInfoBetweenSessions()
+    {
+        Core::AAP::Manager manager;
+        manager._attempt = Core::AAP::AAPAttempt{1, 1};
+        manager._connected = true;
+        manager.ProcessPacket(BuildDeviceInfoWithSerial("SESSIONA"));
+        QVERIFY(manager.GetDeviceInfo().has_value());
 
-            // A later session can cache its own record without inheriting stale
-            // values. Rebinding uses this same teardown before changing address.
-            manager._attempt = Core::AAP::AAPAttempt{2, 2};
-            manager._connected = true;
-            manager.ProcessPacket(BuildDeviceInfoWithSerial("SESSIONB"));
-            QVERIFY(manager.GetDeviceInfo().has_value());
-            QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"SESSIONB"});
+        manager.Disconnect();
+        QVERIFY(!manager.GetDeviceInfo().has_value());
 
-            manager.Disconnect();
-            QVERIFY(!manager.GetDeviceInfo().has_value());
+        // A later session can cache its own record without inheriting stale
+        // values. Rebinding uses this same teardown before changing address.
+        manager._attempt = Core::AAP::AAPAttempt{2, 2};
+        manager._connected = true;
+        manager.ProcessPacket(BuildDeviceInfoWithSerial("SESSIONB"));
+        QVERIFY(manager.GetDeviceInfo().has_value());
+        QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"SESSIONB"});
 
-            manager._attempt = Core::AAP::AAPAttempt{2, 3};
-            manager._connected = true;
-            manager.ProcessPacket(BuildDeviceInfoWithSerial("SESSIONC"));
-            QVERIFY(manager.GetDeviceInfo().has_value());
-            QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"SESSIONC"});
-            manager.Disconnect();
-        }
+        manager.Disconnect();
+        QVERIFY(!manager.GetDeviceInfo().has_value());
+
+        manager._attempt = Core::AAP::AAPAttempt{2, 3};
+        manager._connected = true;
+        manager.ProcessPacket(BuildDeviceInfoWithSerial("SESSIONC"));
+        QVERIFY(manager.GetDeviceInfo().has_value());
+        QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"SESSIONC"});
+        manager.Disconnect();
+    }
 #endif
-    };
+};
 
-    QTEST_GUILESS_MAIN(AAPTransportTests)
+QTEST_GUILESS_MAIN(AAPTransportTests)
 
 #include "AAPTransportTests.moc"
