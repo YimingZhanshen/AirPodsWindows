@@ -1786,7 +1786,7 @@ void AirPodsDomainTests::AdaptiveNoiseTranslationsAreCompleteInAllCatalogs()
                                           "id_ID", "it_IT", "ja_JP", "ko_KR", "pl_PL", "pt_BR",
                                           "pt_PT", "ru_RU", "tr_TR", "uk_UA", "zh_CN", "zh_TW"};
 
-    const QDir translationDir{QStringLiteral(APD_SOURCE_DIR) "/Source/Resource/Translation"};
+    const QDir translationDir{QStringLiteral(APD_SOURCE_DIR "/Source/Resource/Translation")};
     QCOMPARE(
         translationDir.entryList({QStringLiteral("apd_*.ts")}, QDir::Files).size(), qsizetype{18});
     for (const auto &locale : locales) {
