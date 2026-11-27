@@ -632,11 +632,8 @@ private Q_SLOTS:
         QCOMPARE(combo->currentIndex(), 0);
         QVERIFY(!slider->isEnabled());
 
+        // Selecting Adaptive arms the inline control; no reported-device card gates it.
         combo->setCurrentIndex(3);
-        QVERIFY(!slider->isEnabled());
-
-        // Simulate the reported-device state used by Refresh; a drag then persists the field.
-        card->SetDeviceState(Core::AAP::NoiseControlMode::Adaptive, true);
         QVERIFY(slider->isEnabled());
         slider->setValue(80);
         QCOMPARE(valueLabel->text(), QStringLiteral("80"));

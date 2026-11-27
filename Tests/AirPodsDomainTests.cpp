@@ -1827,7 +1827,10 @@ void AirPodsDomainTests::AdaptiveNoiseTranslationsAreCompleteInAllCatalogs()
                 else if (xml.name() == QLatin1String("translation")) {
                     inTranslation = false;
                 }
-                else if (xml.name() == QLatin1String("message") && contexts.contains(context)) {
+                else if (
+                    xml.name() == QLatin1String("message") &&
+                    std::find(contexts.begin(), contexts.end(), context) != contexts.end())
+                {
                     entries.insert(source, Entry{translation, unfinished});
                 }
             }
