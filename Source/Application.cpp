@@ -300,49 +300,49 @@ void ApdApplication::ConnectAirPodsManager()
     connect(
         manager, &Core::AirPods::Manager::StemActionRequestedSafely, this,
         &ApdApplication::ExecuteStemAction, Qt::QueuedConnection);
+    connect(
         manager, &Core::AirPods::Manager::DeviceConnectionChanged, _quickConnect.get(),
         &Core::QuickConnect::Controller::OnDeviceConnectionChanged, Qt::QueuedConnection);
-        // Blueprint 2.8: a successful manual link disconnect suppresses automatic
-        // AAP re-establishment (the manager tears the session down through the
-        // P2 stop path); an explicit connect - through the link toggle or a
-        // quick-connect click that reached the device - lifts it again.
-        connect(
-            _quickConnect.get(), &Core::QuickConnect::Controller::LinkOutcomeChanged, this,
-            [manager](Core::BluetoothLink::Outcome outcome, int) {
-                const auto suppression = Core::BluetoothLink::SuppressionFor(outcome);
-                if (suppression.has_value()) {
-                    manager->SetLinkSuppressed(suppression.value());
+    // Blueprint 2.8: a successful manual link disconnect suppresses automatic
+    // AAP re-establishment (the manager tears the session down through the
+    // P2 stop path); an explicit connect - through the link toggle or a
+    // quick-connect click that reached the device - lifts it again.
+    connect(
+        _quickConnect.get(), &Core::QuickConnect::Controller::LinkOutcomeChanged, this,
+        [manager](Core::BluetoothLink::Outcome outcome, int) {
+            const auto suppression = Core::BluetoothLink::SuppressionFor(outcome);
+            if (suppression.has_value()) {
+                manager->SetLinkSuppressed(suppression.value());
+            }
+        },
+        Qt::QueuedConnection);
+    connect(
+        _quickConnect.get(), &Core::QuickConnect::Controller::OutcomeChanged, this,
+        [manager,
+         quickConnect = _quickConnect.get()](Core::QuickConnect::Outcome outcome, const QString &) {
+            if (outcome == Core::QuickConnect::Outcome::Connected ||
+                outcome == Core::QuickConnect::Outcome::AlreadyConnected)
+            {
+                // A queued Connected from work retired by explicit disconnect
+                // must never lift the newer manual-disconnect suppression.
+                if (!quickConnect->IsLinkDisconnectPending() && !quickConnect->IsLinkSuppressed()) {
+                    manager->SetLinkSuppressed(false);
                 }
-            },
-            Qt::QueuedConnection);
-        connect(
-            _quickConnect.get(), &Core::QuickConnect::Controller::OutcomeChanged, this,
-            [manager, quickConnect = _quickConnect.get()](
-                Core::QuickConnect::Outcome outcome, const QString &) {
-                if (outcome == Core::QuickConnect::Outcome::Connected ||
-                    outcome == Core::QuickConnect::Outcome::AlreadyConnected)
-                {
-                    // A queued Connected from work retired by explicit disconnect
-                    // must never lift the newer manual-disconnect suppression.
-                    if (!quickConnect->IsLinkDisconnectPending() &&
-                        !quickConnect->IsLinkSuppressed()) {
-                        manager->SetLinkSuppressed(false);
-                    }
-                }
-            },
-            Qt::QueuedConnection);
-        // Blueprint 1.3: surface AAP connection failures as a tray balloon with an
-        // actionable hint instead of a silent feature blackout.
-        connect(
-            manager, &Core::AirPods::Manager::AapConnectionFailedSafely, _trayIcon.get(),
-            [this](int failure) {
-                const auto hint = Gui::DriverStatusCard::FailureHint(
-                    static_cast<Core::AAP::ConnectFailure>(failure));
-                if (!hint.isEmpty()) {
-                    _trayIcon->ShowMessage(tr("ANC connection failed"), hint);
-                }
-            },
-            Qt::QueuedConnection);
+            }
+        },
+        Qt::QueuedConnection);
+    // Blueprint 1.3: surface AAP connection failures as a tray balloon with an
+    // actionable hint instead of a silent feature blackout.
+    connect(
+        manager, &Core::AirPods::Manager::AapConnectionFailedSafely, _trayIcon.get(),
+        [this](int failure) {
+            const auto hint =
+                Gui::DriverStatusCard::FailureHint(static_cast<Core::AAP::ConnectFailure>(failure));
+            if (!hint.isEmpty()) {
+                _trayIcon->ShowMessage(tr("ANC connection failed"), hint);
+            }
+        },
+        Qt::QueuedConnection);
 }
 
 void ApdApplication::ConnectGuiComponents()
