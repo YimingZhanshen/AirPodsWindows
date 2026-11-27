@@ -86,19 +86,25 @@ AAPCommandResult AAPCommandBroker::Submit(AAPCommand command, std::stop_token st
         return {false, false, AAPCommandFailure::Rejected, 0};
     }
 
-    std::lock_guard lock{_mutex};
+    std::unique_lock lock{_mutex};
     if (_stopping) {
         return {false, false, AAPCommandFailure::Rejected, 0};
     }
     command.requestId = _nextRequestId++;
     // Replace desired and pending work under one lock, including when this Submit is about to
     // discover that the session is already offline.
-    RecordDesiredLocked(command, stop, true);
-    if (!_sessionOpen || _generation == 0) {
-        return {false, false, AAPCommandFailure::TransportClosed, command.requestId};
+    std::shared_ptr<FlightControl> cancellationControl;
+    const auto requestId = RecordDesiredLocked(command, stop, true, &cancellationControl);
+    const bool open = _sessionOpen && _generation != 0;
+    lock.unlock();
+    if (cancellationControl) {
+        RegisterCancellation(std::move(cancellationControl), stop);
+    }
+    if (!open) {
+        return {false, false, AAPCommandFailure::TransportClosed, requestId};
     }
 
-    return {true, false, std::nullopt, command.requestId};
+    return {true, false, std::nullopt, requestId};
 }
 
 AAPCommandResult AAPCommandBroker::RecordDesired(AAPCommand command)
@@ -106,25 +112,59 @@ AAPCommandResult AAPCommandBroker::RecordDesired(AAPCommand command)
     if (static_cast<size_t>(command.kind) >= kAAPCommandKindCount || command.value > 0xFF) {
         return {false, false, AAPCommandFailure::Rejected};
     }
+    std::lock_guard lock{_mutex};
+    if (_stopping) {
+        return {false, false, AAPCommandFailure::Rejected};
+    }
     command.requestId = _nextRequestId++;
-    RecordDesiredLocked(command, {}, false);
-    return {false, false, AAPCommandFailure::TransportClosed, command.requestId};
+    const auto requestId = RecordDesiredLocked(command, {}, false);
+    return {false, false, AAPCommandFailure::TransportClosed, requestId};
 }
 
-void AAPCommandBroker::RecordDesiredLocked(
-    AAPCommand command, std::stop_token stop, bool queueWhenOpen)
+uint64_t AAPCommandBroker::RecordDesiredLocked(
+    AAPCommand command, std::stop_token stop, bool queueWhenOpen,
+    std::shared_ptr<FlightControl> *cancellationControl)
 {
     auto &state = _kinds[kKindIndex(command.kind)];
-    // The user's intent survives transport failure so a reconnect can replay it. The request id
-    // travels with the desire so a replay can correlate its eventual outcome with this caller.
-    state.desired = command.value;
-    state.desiredRequestId = command.requestId;
-
     const bool sameQueued = state.queued && *state.queued == command.value;
     const bool sameFlight = _flight && !_flight->superseded && !_flight->sessionLost &&
                             _flight->generation == _generation &&
                             _flight->command.kind == command.kind &&
                             _flight->command.value == command.value;
+    const bool sameKindFlight = _flight && !_flight->superseded && !_flight->sessionLost &&
+                                _flight->generation == _generation &&
+                                _flight->command.kind == command.kind;
+    const bool sameConfirmed = queueWhenOpen && _sessionOpen && _generation != 0 && !state.queued &&
+                               !sameKindFlight && state.confirmed == command.value;
+    const bool sameOnlineFlight = sameFlight && queueWhenOpen;
+    if (sameOnlineFlight || (queueWhenOpen && _sessionOpen && _generation != 0 && sameQueued) ||
+        sameConfirmed)
+    {
+        const auto requestId = sameOnlineFlight ? _flight->command.requestId
+                               : sameQueued     ? state.queuedRequestId
+                                                : state.desiredRequestId;
+        state.desired = command.value;
+        state.desiredRequestId = requestId;
+        if (sameOnlineFlight && state.queued) {
+            std::erase(_queue, command.kind);
+            state.queued.reset();
+            state.queuedRequestId = 0;
+            state.queuedStop = {};
+        }
+        else if (sameQueued) {
+            state.queuedStop = stop;
+        }
+        if (sameOnlineFlight && cancellationControl) {
+            *cancellationControl = _flight->control;
+        }
+        return requestId;
+    }
+
+    // The user's intent survives transport failure so a reconnect can replay it. The request id
+    // travels with the desire so a replay can correlate its eventual outcome with this caller.
+    state.desired = command.value;
+    state.desiredRequestId = command.requestId;
+
     bool replacedQueued = false;
     if (state.queued) {
         if (queueWhenOpen && !sameFlight) {
@@ -149,7 +189,8 @@ void AAPCommandBroker::RecordDesiredLocked(
         }
     }
     if (_flight && !_flight->superseded && !_flight->sessionLost &&
-        _flight->generation == _generation && _flight->command.kind == command.kind && !sameFlight)
+        _flight->generation == _generation && _flight->command.kind == command.kind &&
+        !sameOnlineFlight)
     {
         _flight->superseded = true;
         if (_flight->stopSource) {
@@ -160,7 +201,7 @@ void AAPCommandBroker::RecordDesiredLocked(
 
     // A value the device already holds needs no write; the replay path applies desires that
     // differ from the confirmed baseline, so a redundant queue entry can never be useful.
-    if (!sameFlight && !replacedQueued && queueWhenOpen && _sessionOpen && _generation != 0 &&
+    if (!sameOnlineFlight && !replacedQueued && queueWhenOpen && _sessionOpen && _generation != 0 &&
         !state.queued && state.confirmed != command.value)
     {
         state.queued = command.value;
@@ -169,6 +210,32 @@ void AAPCommandBroker::RecordDesiredLocked(
         _queue.push_back(command.kind);
         _workCondition.notify_all();
     }
+    return command.requestId;
+}
+
+void AAPCommandBroker::RegisterCancellation(
+    std::shared_ptr<FlightControl> control, std::stop_token stop)
+{
+    if (!control) {
+        return;
+    }
+    if (stop.stop_requested()) {
+        control->cancelled.store(true);
+        control->stopSource->request_stop();
+        return;
+    }
+
+    auto callback =
+        std::make_unique<std::stop_callback<std::function<void()>>>(stop, [this, control] {
+            {
+                std::lock_guard lock{_mutex};
+                control->cancelled.store(true);
+            }
+            control->stopSource->request_stop();
+            _settleCondition.notify_all();
+        });
+    std::lock_guard lock{control->callbacksMutex};
+    control->callbacks.push_back(std::move(callback));
 }
 
 void AAPCommandBroker::OnEcho(AAPCommand command, uint64_t generation)
@@ -498,6 +565,7 @@ void AAPCommandBroker::WorkerLoop(std::stop_token stopToken)
     std::vector<AAPCommandOutcome> outcomes;
     while (true) {
         outcomes.clear();
+        std::shared_ptr<FlightControl> retiredControl;
         std::unique_lock lock{_mutex};
         _workCondition.wait(lock, stopToken, [this] { return !_queue.empty() || _stopping; });
         if (stopToken.stop_requested() || _stopping) {
@@ -516,23 +584,29 @@ void AAPCommandBroker::WorkerLoop(std::stop_token stopToken)
         flight.generation = _generation;
         flight.mode = ModeLocked(kind, value);
         flight.cancelled = queuedStop.stop_requested();
-        flight.stopSource = std::make_shared<std::stop_source>();
+        flight.control = std::make_shared<FlightControl>();
+        flight.stopSource = flight.control->stopSource;
         _flight = flight;
         // The reference stays valid because only this thread clears the slot; EndSession only
         // flags it, which keeps the wait predicate below from dangling.
         Flight *live = &*_flight;
 
         state.queued.reset();
+        lock.unlock();
+        RegisterCancellation(live->control, queuedStop);
+        lock.lock();
+        live->cancelled =
+            live->cancelled || queuedStop.stop_requested() || live->control->cancelled.load();
+        if (stopToken.stop_requested() || _stopping) {
+            retiredControl = RetireFlightLocked();
+            return;
+        }
         const bool send = !live->cancelled && _sessionOpen && live->generation == _generation;
         lock.unlock();
         // Forward both the caller's cancellation and broker shutdown into the one token passed to
         // the wire. The callbacks live through the echo window, so cancellation also wakes a wait.
         auto flightStop = live->stopSource;
         std::stop_callback workerStop{stopToken, [flightStop] { flightStop->request_stop(); }};
-        std::stop_callback callerStop{queuedStop, [this, flightStop] {
-                                          flightStop->request_stop();
-                                          _settleCondition.notify_all();
-                                      }};
         bool sent = false;
         const unsigned attempts =
             kind == AAPCommandKind::SetHeadTracking ? kHeadTrackingSendAttempts : 1;
@@ -543,9 +617,10 @@ void AAPCommandBroker::WorkerLoop(std::stop_token stopToken)
             sent = _sender ? _sender(flight.command, flight.generation, flightStop->get_token())
                            : false;
             lock.lock();
-            live->cancelled = live->cancelled || queuedStop.stop_requested();
+            live->cancelled =
+                live->cancelled || queuedStop.stop_requested() || live->control->cancelled.load();
             if (stopToken.stop_requested() || _stopping) {
-                _flight.reset();
+                retiredControl = RetireFlightLocked();
                 return;
             }
 
@@ -558,10 +633,11 @@ void AAPCommandBroker::WorkerLoop(std::stop_token stopToken)
             }
         }
         lock.lock();
-        live->cancelled = live->cancelled || queuedStop.stop_requested();
+        live->cancelled =
+            live->cancelled || queuedStop.stop_requested() || live->control->cancelled.load();
 
         if (stopToken.stop_requested() || _stopping) {
-            _flight.reset();
+            retiredControl = RetireFlightLocked();
             return;
         }
 
@@ -575,7 +651,7 @@ void AAPCommandBroker::WorkerLoop(std::stop_token stopToken)
             const auto settled = [live, this, &stopToken, &queuedStop, &expired] {
                 return live->evidence || live->superseded || live->sessionLost || live->cancelled ||
                        live->capabilityWithdrawn || _stopping || stopToken.stop_requested() ||
-                       queuedStop.stop_requested() || expired();
+                       queuedStop.stop_requested() || live->control->cancelled.load() || expired();
             };
             if (_clock.now) {
                 // An injected clock has no timer thread. Its Advance() notifies _settleCondition,
@@ -587,15 +663,30 @@ void AAPCommandBroker::WorkerLoop(std::stop_token stopToken)
             }
         }
 
+        // Cancellation can arrive after the sender returned and the wait began. The stop callback
+        // wakes the condition, but the terminal classification must sample every caller again here.
+        live->cancelled =
+            live->cancelled || queuedStop.stop_requested() || live->control->cancelled.load();
+
         if (_flight) {
             SettleLocked(*_flight, sent, outcomes);
-            _flight.reset();
+            retiredControl = RetireFlightLocked();
         }
         _settleCondition.notify_all();
         lock.unlock();
 
         Publish(outcomes);
     }
+}
+
+std::shared_ptr<AAPCommandBroker::FlightControl> AAPCommandBroker::RetireFlightLocked()
+{
+    if (!_flight) {
+        return {};
+    }
+    auto control = std::move(_flight->control);
+    _flight.reset();
+    return control;
 }
 
 void AAPCommandBroker::SettleLocked(
@@ -608,19 +699,24 @@ void AAPCommandBroker::SettleLocked(
     outcome.mode = flight.mode;
     auto &state = _kinds[kKindIndex(flight.command.kind)];
 
-    const auto rollback =
-        [&] { // A value the device demonstrably does not hold: hand the caller the last value it is
-            // known to hold. Without a baseline the caller must refresh from the device instead of
-            // inventing one.
-            outcome.rollBackDesired = true;
-            outcome.rollbackValue = state.confirmed;
-            // Revert the broker's replay state only if no newer user request owns this kind.
-            // Keeping the request identity lets the queued UI consumer distinguish this settlement
-            // from a superseded one without racing a newer slider move.
-            if (state.desiredRequestId == flight.command.requestId) {
-                state.desired = state.confirmed;
-            }
-        };
+    const auto rollback = [&](bool retainReplayIntent) {
+        // A value the device demonstrably does not hold: hand the caller the last value it is
+        // known to hold. Without a baseline the caller must refresh from the device instead of
+        // inventing one.
+        outcome.rollBackDesired = true;
+        outcome.rollbackValue = state.confirmed;
+        // Revert the broker's replay state only if no newer user request owns this kind.
+        // Adaptive strength and head tracking retain their desire across missing evidence so a
+        // reconnect can retry it; the caller still receives the confirmed rollback value.
+        const bool keepReplayIntent =
+            retainReplayIntent && (flight.command.kind == AAPCommandKind::SetAdaptiveNoiseLevel ||
+                                   flight.command.kind == AAPCommandKind::SetHeadTracking);
+        if (!keepReplayIntent && state.desiredRequestId == flight.command.requestId) {
+            state.desired = state.confirmed;
+            // Keep the failed id current until its rollback notification is consumed; the UI
+            // consumer rejects a baseline whose request identity no longer matches.
+        }
+    };
 
     if (flight.sessionLost) {
         // Never a user-visible failure: a cancelled or dropped connect leaves the desired value
@@ -640,12 +736,12 @@ void AAPCommandBroker::SettleLocked(
     else if (flight.cancelled) {
         outcome.settlement = AAPCommandSettlement::Rejected;
         outcome.failure = AAPCommandFailure::Rejected;
-        rollback();
+        rollback(false);
     }
     else if (!sent) {
         outcome.settlement = AAPCommandSettlement::Rejected;
         outcome.failure = AAPCommandFailure::Rejected;
-        rollback();
+        rollback(false);
     }
     else if (!RequiresEvidence(flight.mode)) {
         outcome.settlement = AAPCommandSettlement::AppliedUnconfirmed;
@@ -653,7 +749,7 @@ void AAPCommandBroker::SettleLocked(
     else {
         outcome.settlement = AAPCommandSettlement::TimedOut;
         outcome.failure = AAPCommandFailure::Timeout;
-        rollback();
+        rollback(true);
     }
 
     outcomes.push_back(outcome);

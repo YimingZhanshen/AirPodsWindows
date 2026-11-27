@@ -202,6 +202,8 @@ public:
     // Blocks until the broker has nothing queued or in flight. Only for tests and shutdown
     // drain; never call it from a thread that owns the wire.
     bool WaitForCommandsIdle(std::chrono::milliseconds timeout);
+    // Joins the command worker after all in-flight publications finish. Terminal use only.
+    void ShutdownCommands();
 
     // Callbacks
     void SetCallbacks(Callbacks callbacks);
@@ -331,6 +333,7 @@ private:
     std::function<void(AAPAttempt)> _beforeConnectLockForTest;
     std::function<void()> _beforePendingPublishForTest;
     std::function<void()> _publicSendBarrierForTest;
+    std::function<void()> _afterCommandIdentityCheckForTest;
 
     // Internal methods
     bool SendPacket(const std::vector<uint8_t> &packet);

@@ -140,6 +140,22 @@ public:
     }
 };
 
+class LinkParkReleaseGuard final
+{
+public:
+    explicit LinkParkReleaseGuard(std::shared_ptr<FakeLinkAdapter> adapter)
+        : _adapter{std::move(adapter)}
+    {
+    }
+    ~LinkParkReleaseGuard()
+    {
+        _adapter->parkQuery = false;
+    }
+
+private:
+    std::shared_ptr<FakeLinkAdapter> _adapter;
+};
+
 Core::BluetoothLink::DeviceLinkState MakeLinkState(
     bool known, Core::BluetoothLink::ServiceStatus a2dp, Core::BluetoothLink::ServiceStatus hfp,
     bool linkReadable = true, bool linkConnected = false)
@@ -1047,7 +1063,8 @@ void QuickConnectTests::endpointEvidenceDoesNotUseActiveAlone()
     evidence.front().connected = true;
     QVERIFY(Core::BluetoothLink::AggregateEndpointEvidence(evidence) == ServiceStatus::Connected);
     evidence.front().controllable = false;
-    QVERIFY(Core::BluetoothLink::AggregateEndpointEvidence(evidence) == ServiceStatus::Absent);
+    QVERIFY(
+        Core::BluetoothLink::AggregateEndpointEvidence(evidence) == ServiceStatus::Uncontrollable);
 }
 
 void QuickConnectTests::unknownHfpCanReconnect()
@@ -1172,6 +1189,7 @@ void QuickConnectTests::timedOutLinkRetryDoesNotJoinBlockedWorker()
     adapter->after =
         MakeLinkState(true, ServiceStatus::Connected, ServiceStatus::Absent, true, true);
     adapter->parkQuery = true;
+    LinkParkReleaseGuard releasePark{adapter};
     auto backend = MakeLinkBackend(adapter);
     Controller controller{
         backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, 100ms, kTestLinkPoll};
@@ -1184,17 +1202,19 @@ void QuickConnectTests::timedOutLinkRetryDoesNotJoinBlockedWorker()
     QVERIFY(LastLinkOutcome(spy) == Outcome::TimedOut);
     QCOMPARE(adapter->parkedWorkers.load(), 1);
 
-    // The first driver call is still parked. A retry must start a fresh logical
-    // request immediately rather than joining that worker on the GUI thread.
+    // The first driver call is still parked. A retry starts a fresh logical request
+    // immediately but remains queued behind the process-lifetime mutation worker.
     QVERIFY(controller.RequestLinkConnect() == Outcome::Started);
-    QVERIFY(spy.wait(2'000));
-    QVERIFY(LastLinkOutcome(spy) == Outcome::Connected);
+    QCOMPARE(spy.count(), 1);
+    QVERIFY(controller.IsLinkBusy());
     QCOMPARE(adapter->parkedWorkers.load(), 1);
-    QCOMPARE(adapter->submits.load(), 1);
+    QCOMPARE(adapter->submits.load(), 0);
 
     adapter->parkQuery = false;
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 2, 2'000);
+    QVERIFY(LastLinkOutcome(spy) == Outcome::Connected);
     QTRY_COMPARE_WITH_TIMEOUT(adapter->parkedWorkers.load(), 0, 2'000);
-    QTest::qWait(50);
+    QCOMPARE(adapter->submits.load(), 1);
     QCOMPARE(spy.count(), 2);
 }
 
@@ -1276,6 +1296,7 @@ void QuickConnectTests::rebindingRetiresInFlightLinkRequest()
     auto adapter = std::make_shared<FakeLinkAdapter>();
     adapter->before = MakeLinkState(true, ServiceStatus::Disconnected, ServiceStatus::Absent);
     adapter->parkQuery = true;
+    LinkParkReleaseGuard releasePark{adapter};
     auto backend = MakeLinkBackend(adapter);
     Controller controller{
         backend, kTestResolveTimeout, Controller::kAutoRetryCooldown, 5'000ms, kTestLinkPoll};

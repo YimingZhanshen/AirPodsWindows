@@ -19,6 +19,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -78,7 +79,8 @@ inline constexpr size_t kAAPCommandKindCount = 8;
 struct AAPCommand {
     AAPCommandKind kind{AAPCommandKind::SetNoiseControl};
     uint32_t value{0};
-    // Unique across submissions and preserved when a desired value is replayed after reconnect.
+    // Unique for each new desired request and preserved when that request is replayed. A
+    // duplicate queued, in-flight, or already-confirmed submission retains the original id.
     uint64_t requestId{0};
 
     bool operator==(const AAPCommand &rhs) const = default;
@@ -268,6 +270,13 @@ private:
         std::stop_token queuedStop;
     };
 
+    struct FlightControl {
+        std::atomic<bool> cancelled{false};
+        std::shared_ptr<std::stop_source> stopSource{std::make_shared<std::stop_source>()};
+        std::mutex callbacksMutex;
+        std::vector<std::unique_ptr<std::stop_callback<std::function<void()>>>> callbacks;
+    };
+
     struct Flight {
         AAPCommand command;
         uint64_t generation{0};
@@ -277,6 +286,7 @@ private:
         bool evidence{false};
         bool capabilityWithdrawn{false};
         bool cancelled{false};
+        std::shared_ptr<FlightControl> control;
         // Supersession wakes a sender already inside a stop-aware transport write.
         std::shared_ptr<std::stop_source> stopSource;
     };
@@ -284,9 +294,15 @@ private:
     void WorkerLoop(std::stop_token stopToken);
     // Caller must hold _mutex. Atomically replaces same-kind desired/pending work, optionally
     // queueing the new value for an open session. Disconnected callers never queue wire work.
-    void RecordDesiredLocked(AAPCommand command, std::stop_token stop, bool queueWhenOpen);
+    uint64_t RecordDesiredLocked(
+        AAPCommand command, std::stop_token stop, bool queueWhenOpen,
+        std::shared_ptr<FlightControl> *cancellationControl = nullptr);
+    // Registers outside _mutex so an already-racing stop cannot invoke its callback reentrantly.
+    void RegisterCancellation(std::shared_ptr<FlightControl> control, std::stop_token stop);
     // Caller must hold _mutex. Retires queued/in-flight work but preserves desired values.
     void CloseSessionLocked(std::vector<AAPCommandOutcome> &outcomes);
+    // Caller holds _mutex. Moves cancellation callbacks out so they are destroyed after unlock.
+    std::shared_ptr<FlightControl> RetireFlightLocked();
     void SettleLocked(Flight &flight, bool sent, std::vector<AAPCommandOutcome> &outcomes);
     void Publish(const std::vector<AAPCommandOutcome> &outcomes);
     std::chrono::steady_clock::time_point Now() const;

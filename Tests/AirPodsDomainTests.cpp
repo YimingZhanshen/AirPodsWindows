@@ -24,6 +24,7 @@
 #include <QXmlStreamReader>
 
 #include <Config.h>
+#include "AAPTestSupport.h"
 #include "Source/Core/AirPods.h"
 #include "Source/Core/BatteryFusion.h"
 #include "Source/Core/AdaptiveNoiseLevel.h"
@@ -359,6 +360,7 @@ private Q_SLOTS:
     void HeadTrackingIntentReplaysStartAndStop();
     void HeadTrackingSettingPersistsWithoutAbiBump();
     void ConcurrentHeadTrackingTogglesKeepMirrorConsistent();
+    void HeadTrackingSettlementSignalAllowsReentrantToggle();
     void DebouncesRapidRemovalAndInsertion();
     void DebounceCompletesAtDeadlineWithoutAnotherPacket();
     void SingleEarAlternationUsesFusedResult();
@@ -651,7 +653,7 @@ void AirPodsDomainTests::ManagerUsesResolvedModelForStateAndFiltering()
     state.model = Model::AirPods_5;
     manager.OnStateChanged(
         {std::nullopt, state, manager._stateMgr.Generation()}, manager._earResetGeneration.load());
-    QCOMPARE(updates, 1);
+    QTRY_COMPARE(updates, 1);
     QCOMPARE(emitted.model, Model::AirPods_5_WCC);
     QCOMPARE(emitted.displayName, QString{"AirPods 5 (Wireless Charging Case)"});
 
@@ -659,7 +661,7 @@ void AirPodsDomainTests::ManagerUsesResolvedModelForStateAndFiltering()
     QVERIFY(manager.OnAdvertisementReceived(
         MakeAdvertisementData(0x1234, -45, Side::Left, 8, 7, 5, 0x2030),
         manager._earResetGeneration.load()));
-    QCOMPARE(updates, 2);
+    QTRY_COMPARE(updates, 2);
     QCOMPARE(emitted.model, Model::AirPods_5_WCC);
 
     QVERIFY(!manager.OnAdvertisementReceived(
@@ -921,7 +923,7 @@ void AirPodsDomainTests::HeadTrackingIntentReplaysStartAndStop()
     port.result = {false, false, AAPCommandFailure::Rejected};
     QCOMPARE(intent.Flush(port).action, Intent::Action::None);
     QVERIFY(intent.IsPending());
-    QCOMPARE(port.requests.size(), size_t{1});
+    QCOMPARE(port.requests.size(), size_t{2});
 
     port.result = {true, false, std::nullopt};
     auto flushed = intent.Flush(port);
@@ -1005,6 +1007,39 @@ void AirPodsDomainTests::ConcurrentHeadTrackingTogglesKeepMirrorConsistent()
     QVERIFY(!emitted.empty());
     // The last flush observes the serialized intent. It must agree with the public mirror.
     QCOMPARE(emitted.back(), manager.IsHeadTrackingEnabled());
+}
+
+void AirPodsDomainTests::HeadTrackingSettlementSignalAllowsReentrantToggle()
+{
+    Core::AirPods::Manager manager;
+    const Core::AAP::AAPAttempt attempt{0xAABBCCDDEEFFULL, 1};
+    manager._aapConnectInProgress = true;
+    manager._aapActiveAttempt = attempt;
+    const auto submission =
+        manager._aapMgr.SubmitCommand({Core::AAP::AAPCommandKind::SetHeadTracking, 1});
+    QVERIFY(!submission.accepted);
+    QVERIFY(submission.requestId != 0);
+
+    Core::AAP::AAPCommandOutcome outcome;
+    outcome.command = {Core::AAP::AAPCommandKind::SetHeadTracking, 1, submission.requestId};
+    outcome.generation = attempt.generation;
+    outcome.requestId = submission.requestId;
+    outcome.mode = Core::AAP::AAPConfirmMode::Readback;
+    outcome.settlement = Core::AAP::AAPCommandSettlement::Confirmed;
+    std::atomic<bool> reentered{false};
+    QObject::connect(
+        &manager, &Core::AirPods::Manager::AapCommandStateSafely, &manager,
+        [&](uint64_t, int kind, uint32_t) {
+            if (kind == static_cast<int>(Core::AAP::AAPCommandKind::SetHeadTracking)) {
+                reentered.store(true);
+                manager.StopHeadTracking();
+            }
+        },
+        Qt::DirectConnection);
+    AAPTestSupport::Worker worker{[&] { manager.OnAAPCommandSettled(outcome, attempt); }};
+    QVERIFY(worker.Finished(2s));
+    QVERIFY(reentered.load());
+    QVERIFY(!manager.IsHeadTrackingEnabled());
 }
 
 void AirPodsDomainTests::HeadTrackingSettingPersistsWithoutAbiBump()
@@ -1542,6 +1577,7 @@ void AirPodsDomainTests::AcceptsSmallBatteryDropsAndRisesImmediately()
     QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(96)));
     auto pendingCleared = fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt);
     QCOMPARE(pendingCleared->level, uint8_t(96));
+    QVERIFY(!fusion.OnAapSnapshot(LeftSnapshot(30)));
     QVERIFY(fusion.OnAapSnapshot(LeftSnapshot(30)));
     QCOMPARE(fusion.Resolve(Core::AAP::BatteryComponent::Left, std::nullopt)->level, uint8_t(30));
 }
@@ -2657,6 +2693,7 @@ void AirPodsDomainTests::AdaptiveNoiseTranslationsAreCompleteInAllCatalogs()
         QString translation;
         bool inSource = false;
         bool inTranslation = false;
+        bool inContext = false;
         bool unfinished = true;
         QMap<QString, Entry> entries;
         while (!xml.atEnd()) {
@@ -2664,6 +2701,7 @@ void AirPodsDomainTests::AdaptiveNoiseTranslationsAreCompleteInAllCatalogs()
             if (xml.isStartElement()) {
                 if (xml.name() == QLatin1String("context")) {
                     context.clear();
+                    inContext = true;
                 }
                 else if (xml.name() == QLatin1String("message")) {
                     source.clear();
@@ -2680,8 +2718,16 @@ void AirPodsDomainTests::AdaptiveNoiseTranslationsAreCompleteInAllCatalogs()
                 }
             }
             else if (xml.isEndElement()) {
-                if (xml.name() == QLatin1String("source")) {
+                if (xml.name() == QLatin1String("context")) {
+                    context = context.trimmed();
+                    inContext = false;
+                }
+                else if (xml.name() == QLatin1String("source")) {
                     inSource = false;
+                }
+                else if (xml.name() == QLatin1String("name")) {
+                    context = context.trimmed();
+                    inContext = false;
                 }
                 else if (xml.name() == QLatin1String("translation")) {
                     inTranslation = false;
@@ -2694,6 +2740,9 @@ void AirPodsDomainTests::AdaptiveNoiseTranslationsAreCompleteInAllCatalogs()
                 }
             }
             else if (xml.isCharacters()) {
+                if (inContext) {
+                    context += xml.text().toString();
+                }
                 if (inSource) {
                     source += xml.text().toString();
                 }

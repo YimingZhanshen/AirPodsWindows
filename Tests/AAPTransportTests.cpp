@@ -1243,8 +1243,9 @@ private slots:
         manager.ProcessAttFrame({0x01, 0x0A, 0x1B, 0x00, 0x0A}, manager._attempt, callbacks);
         auto future = settled.get_future();
         QVERIFY(future.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
-        QCOMPARE(future.get().settlement, Core::AAP::AAPCommandSettlement::AppliedUnconfirmed);
-        QVERIFY(!future.get().rollBackDesired);
+        const auto outcome = future.get();
+        QCOMPARE(outcome.settlement, Core::AAP::AAPCommandSettlement::AppliedUnconfirmed);
+        QVERIFY(!outcome.rollBackDesired);
         manager._connected = false;
         manager._transport.store(nullptr);
         manager._commandBroker->EndSession();

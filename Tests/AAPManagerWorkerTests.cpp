@@ -137,14 +137,146 @@ private slots:
         QVERIFY(transport != nullptr);
 
         const auto sent = transport->SentRecords();
-        QCOMPARE(sent.size(), size_t{4});
+        QCOMPARE(sent.size(), size_t{5});
         QCOMPARE(sent[0], Core::AAP::Packets::Handshake);
-        QCOMPARE(sent[1], Core::AAP::Packets::EnableFeatures);
-        QCOMPARE(sent[2], Core::AAP::Packets::RequestNotifications);
-        QCOMPARE(sent[3], AAPTestSupport::Records::AttReadRequest());
+        QCOMPARE(sent[1], Core::AAP::Packets::BuildStemConfigPacket(Core::AAP::kAllStemMasks));
+        QCOMPARE(sent[2], Core::AAP::Packets::EnableFeatures);
+        QCOMPARE(sent[3], Core::AAP::Packets::RequestNotifications);
+        QCOMPARE(sent[4], AAPTestSupport::Records::AttReadRequest());
 
         QVERIFY(DisconnectWithin(manager, factory));
         QVERIFY(!manager.IsConnected());
+    }
+
+    void StaleCommandSettlementCannotOverwriteNewerRequest()
+    {
+        using namespace Core::AAP;
+        TransportFactory<BlockingTransport> factory{
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        std::atomic<size_t> settlements{0};
+        Core::AAP::Callbacks callbacks;
+        callbacks.onCommandSettled = [&](const AAPCommandOutcome &, AAPAttempt) { ++settlements; };
+        Core::AAP::Manager manager;
+        manager._transportFactoryForTest = [&factory] { return factory.Build(); };
+        manager.SetCallbacks(std::move(callbacks));
+        const Core::AAP::AAPAttempt attempt{42, 1};
+        QVERIFY(manager.Connect(attempt));
+        {
+            std::lock_guard lock{manager._mutex};
+            manager._noiseControlMode = NoiseControlMode::Transparency;
+        }
+
+        const auto stale = manager._commandBroker->RecordDesired(
+            {AAPCommandKind::SetNoiseControl, static_cast<uint32_t>(NoiseControlMode::Off)});
+        const auto current = manager._commandBroker->RecordDesired(
+            {AAPCommandKind::SetNoiseControl,
+             static_cast<uint32_t>(NoiseControlMode::NoiseCancellation)});
+        QVERIFY(stale.requestId != 0);
+        QVERIFY(current.requestId != 0);
+        QVERIFY(stale.requestId != current.requestId);
+
+        AAPCommandOutcome outcome;
+        outcome.command = {
+            AAPCommandKind::SetNoiseControl, static_cast<uint32_t>(NoiseControlMode::Off),
+            stale.requestId};
+        outcome.generation = attempt.generation;
+        outcome.requestId = stale.requestId;
+        outcome.mode = AAPConfirmMode::Echo;
+        outcome.settlement = AAPCommandSettlement::Confirmed;
+        manager.HandleCommandSettled(outcome);
+        QCOMPARE(
+            manager.GetNoiseControlMode(),
+            std::optional<NoiseControlMode>{NoiseControlMode::Transparency});
+        QCOMPARE(settlements.load(), size_t{0});
+
+        outcome.command.value = static_cast<uint32_t>(NoiseControlMode::NoiseCancellation);
+        outcome.requestId = current.requestId;
+        manager.HandleCommandSettled(outcome);
+        QCOMPARE(
+            manager.GetNoiseControlMode(),
+            std::optional<NoiseControlMode>{NoiseControlMode::NoiseCancellation});
+        QCOMPARE(settlements.load(), size_t{1});
+        QVERIFY(DisconnectWithin(manager, factory));
+    }
+
+    void CommandSubmissionWaitsForSettlementCacheUpdate()
+    {
+        using namespace Core::AAP;
+        TransportFactory<BlockingTransport> factory{
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        auto identityChecked = std::make_shared<PromiseGate>();
+        auto identityRelease = std::make_shared<PromiseGate>();
+        ScopedUnblock unblock{*identityRelease};
+        Core::AAP::Manager manager;
+        manager._transportFactoryForTest = [&factory] { return factory.Build(); };
+        const Core::AAP::AAPAttempt attempt{42, 1};
+        QVERIFY(manager.Connect(attempt));
+        {
+            std::lock_guard lock{manager._mutex};
+            manager._noiseControlMode = NoiseControlMode::Transparency;
+        }
+        const auto current = manager._commandBroker->RecordDesired(
+            {AAPCommandKind::SetNoiseControl, static_cast<uint32_t>(NoiseControlMode::Off)});
+        QVERIFY(current.requestId != 0);
+        manager._afterCommandIdentityCheckForTest = [&] {
+            identityChecked->Signal();
+            identityRelease->Wait(AAPTestSupport::kRendezvousTimeout);
+        };
+
+        AAPCommandOutcome outcome;
+        outcome.command = {
+            AAPCommandKind::SetNoiseControl, static_cast<uint32_t>(NoiseControlMode::Off),
+            current.requestId};
+        outcome.generation = attempt.generation;
+        outcome.requestId = current.requestId;
+        outcome.mode = AAPConfirmMode::Echo;
+        outcome.settlement = AAPCommandSettlement::Confirmed;
+        Worker settlement{[&] { manager.HandleCommandSettled(outcome); }};
+        QVERIFY(identityChecked->Wait(2s));
+        Worker submission{
+            [&] {
+                manager.SubmitCommand(
+                    {AAPCommandKind::SetNoiseControl,
+                     static_cast<uint32_t>(NoiseControlMode::NoiseCancellation)});
+            },
+            [&] { factory.ReleaseAllBuilt(); }};
+        QVERIFY(!submission.Finished(100ms));
+        identityRelease->Signal();
+        QVERIFY(settlement.Finished(2s));
+        QVERIFY(submission.Finished(2s));
+        QCOMPARE(
+            manager.GetNoiseControlMode(), std::optional<NoiseControlMode>{NoiseControlMode::Off});
+        QCOMPARE(
+            manager.DesiredCommand(AAPCommandKind::SetNoiseControl),
+            std::optional<uint32_t>{static_cast<uint32_t>(NoiseControlMode::NoiseCancellation)});
+        QVERIFY(DisconnectWithin(manager, factory));
+    }
+
+    void ShutdownCommandsDrainsPublishedCallbacks()
+    {
+        using namespace Core::AAP;
+        TransportFactory<BlockingTransport> factory{
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        auto callbackEntered = std::make_shared<PromiseGate>();
+        auto callbackRelease = std::make_shared<PromiseGate>();
+        ScopedUnblock unblock{*callbackRelease};
+        Core::AAP::Callbacks callbacks;
+        callbacks.onCommandSettled = [&](const AAPCommandOutcome &, AAPAttempt) {
+            callbackEntered->Signal();
+            callbackRelease->Wait(AAPTestSupport::kRendezvousTimeout);
+        };
+        Core::AAP::Manager manager;
+        manager._transportFactoryForTest = [&factory] { return factory.Build(); };
+        manager.SetCallbacks(std::move(callbacks));
+        QVERIFY(manager.Connect(Core::AAP::AAPAttempt{42, 1}));
+        QVERIFY(manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0}).accepted);
+        QVERIFY(callbackEntered->Wait(2s));
+
+        Worker shutdown{[&] { manager.ShutdownCommands(); }, [&] { factory.ReleaseAllBuilt(); }};
+        QVERIFY(!shutdown.Finished(100ms));
+        callbackRelease->Signal();
+        QVERIFY(shutdown.Finished(2s));
+        QVERIFY(DisconnectWithin(manager, factory));
     }
 
     // Initialization uses the pinned raw sender, but every later send must still honor
@@ -163,17 +295,17 @@ private slots:
         auto transport = factory.Last();
         QVERIFY(transport != nullptr);
         const auto sendsBefore = transport->CallCount(BlockingTransport::Op::Send);
-        QCOMPARE(sendsBefore, size_t{4});
+        QCOMPARE(sendsBefore, size_t{5});
 
         manager._publicSendBarrierForTest = [&] {
             sendEntered->Signal();
             sendRelease->Wait(AAPTestSupport::kRendezvousTimeout);
         };
         ScopedUnblock unblock{*sendRelease};
-        bool result = true;
-        Worker sender{
-            [&] { result = manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Off); },
-            [&] { factory.ReleaseAllBuilt(); }};
+        const auto submission = manager.SubmitCommand(
+            {Core::AAP::AAPCommandKind::SetNoiseControl,
+             static_cast<uint32_t>(Core::AAP::NoiseControlMode::Off)});
+        QVERIFY(submission.accepted);
         QVERIFY(sendEntered->Wait(2s));
         QVERIFY(manager.IsConnected());
         QVERIFY(manager._transport.load() == transport);
@@ -184,8 +316,7 @@ private slots:
         QVERIFY(manager._transport.load() == transport);
 
         sendRelease->Signal();
-        QVERIFY(sender.Finished(2s));
-        QVERIFY(!result);
+        QVERIFY(manager.WaitForCommandsIdle(2s));
         QCOMPARE(transport->CallCount(BlockingTransport::Op::Send), sendsBefore);
         QVERIFY(DisconnectWithin(manager, factory));
         QVERIFY(!manager._readerThread.joinable());
@@ -211,10 +342,10 @@ private slots:
             sendRelease->Wait(AAPTestSupport::kRendezvousTimeout);
         };
         ScopedUnblock unblock{*sendRelease};
-        bool result = true;
-        Worker sender{
-            [&] { result = manager.SetNoiseControlMode(Core::AAP::NoiseControlMode::Off); },
-            [&] { factory.ReleaseAllBuilt(); }};
+        const auto submission = manager.SubmitCommand(
+            {Core::AAP::AAPCommandKind::SetNoiseControl,
+             static_cast<uint32_t>(Core::AAP::NoiseControlMode::Off)});
+        QVERIFY(submission.accepted);
         QVERIFY(sendEntered->Wait(2s));
         QVERIFY(manager._transport.load() == first);
 
@@ -224,13 +355,16 @@ private slots:
         QVERIFY(replacement != nullptr);
         QVERIFY(replacement != first);
         const auto replacementSends = replacement->CallCount(BlockingTransport::Op::Send);
-        QCOMPARE(replacementSends, size_t{4});
+        QCOMPARE(replacementSends, size_t{5});
 
         sendRelease->Signal();
-        QVERIFY(sender.Finished(2s));
-        QVERIFY(!result);
+        QVERIFY(manager.WaitForCommandsIdle(4s));
         QCOMPARE(first->CallCount(BlockingTransport::Op::Send), firstSends);
-        QCOMPARE(replacement->CallCount(BlockingTransport::Op::Send), replacementSends);
+        QCOMPARE(replacement->CallCount(BlockingTransport::Op::Send), replacementSends + 1);
+        const auto replacementRecords = replacement->SentRecords();
+        QCOMPARE(
+            replacementRecords.back(),
+            Core::AAP::Packets::BuildNoiseControlPacket(Core::AAP::NoiseControlMode::Off));
         QVERIFY(DisconnectWithin(manager, factory));
         QVERIFY(!manager._readerThread.joinable());
     }

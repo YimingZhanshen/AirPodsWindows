@@ -91,6 +91,7 @@ Manager::Manager()
 Manager::~Manager()
 {
     Disconnect();
+    ShutdownCommands();
 }
 
 void Manager::CancelConnect()
@@ -695,17 +696,19 @@ bool Manager::IsHeadTrackingActive() const
 
 AAPCommandResult Manager::SubmitCommand(AAPCommand command, std::stop_token stopToken)
 {
-    // A disconnected submit is desired-state bookkeeping, never a late write on a retiring
-    // session. RecordDesired cancels stale pending work without synchronously publishing a
-    // session-close outcome, so callers may hold their intent lock.
-    if (!_connected) {
-        if (stopToken.stop_requested()) {
-            return {false, false, AAPCommandFailure::Rejected};
-        }
-        CommandMode(command.kind, command.value);
-        return _commandBroker->RecordDesired(command);
+    if (!_connected && stopToken.stop_requested()) {
+        return {false, false, AAPCommandFailure::Rejected};
     }
     CommandMode(command.kind, command.value);
+    if (!_connected) {
+        // A disconnected submit is desired-state bookkeeping, never a late write on a retiring
+        // session. Serialize it with settlement application so an offline replacement cannot race
+        // a cache update from the previous request.
+        std::lock_guard lock{_mutex};
+        if (!_connected) {
+            return _commandBroker->RecordDesired(command);
+        }
+    }
     if (command.kind == AAPCommandKind::SetAdaptiveNoiseLevel && IsConnected()) {
         std::optional<NoiseControlMode> reportedMode;
         {
@@ -735,6 +738,12 @@ AAPCommandResult Manager::SubmitCommand(AAPCommand command, std::stop_token stop
             return _commandBroker->RecordDesired(command);
         }
         return _commandBroker->Submit(command, stopToken);
+    }
+    // Submit and HandleCommandSettled share this lock: a newer request cannot be installed between
+    // the settlement's identity check and its cache update.
+    std::lock_guard lock{_mutex};
+    if (!_connected) {
+        return _commandBroker->RecordDesired(command);
     }
     return _commandBroker->Submit(command, stopToken);
 }
@@ -804,6 +813,11 @@ AAPConfirmMode Manager::CommandMode(AAPCommandKind kind, uint32_t value) const
 bool Manager::WaitForCommandsIdle(std::chrono::milliseconds timeout)
 {
     return _commandBroker->WaitForIdle(timeout);
+}
+
+void Manager::ShutdownCommands()
+{
+    _commandBroker->Shutdown();
 }
 
 bool Manager::SendCommand(const AAPCommand &command, uint64_t generation, std::stop_token stopToken)
@@ -902,6 +916,11 @@ void Manager::RouteCommandEcho(AAPCommand command, AAPAttempt attempt)
 
 void Manager::HandleCommandSettled(const AAPCommandOutcome &outcome)
 {
+    const auto isCurrentRequest = [&] {
+        return outcome.requestId == 0
+                   ? _commandBroker->LatestRequest(outcome.command.kind) == 0
+                   : _commandBroker->IsCurrentRequest(outcome.command.kind, outcome.requestId);
+    };
     const bool showValue = outcome.settlement == AAPCommandSettlement::Confirmed ||
                            outcome.settlement == AAPCommandSettlement::AppliedUnconfirmed ||
                            outcome.rollBackDesired;
@@ -912,8 +931,11 @@ void Manager::HandleCommandSettled(const AAPCommandOutcome &outcome)
         AAPAttempt attempt;
         {
             std::lock_guard lock{_mutex};
-            if (!_connected || outcome.generation != _attempt.generation) {
+            if (!_connected || outcome.generation != _attempt.generation || !isCurrentRequest()) {
                 return;
+            }
+            if (_afterCommandIdentityCheckForTest) {
+                _afterCommandIdentityCheckForTest();
             }
             callbacks = _callbacks;
             attempt = {_attempt.address, outcome.generation};
@@ -942,8 +964,11 @@ void Manager::HandleCommandSettled(const AAPCommandOutcome &outcome)
     std::optional<bool> earDetection;
     {
         std::lock_guard lock{_mutex};
-        if (!_connected || outcome.generation != _attempt.generation) {
+        if (!_connected || outcome.generation != _attempt.generation || !isCurrentRequest()) {
             return;
+        }
+        if (_afterCommandIdentityCheckForTest) {
+            _afterCommandIdentityCheckForTest();
         }
         attempt.address = _attempt.address;
         callbacks = _callbacks;
@@ -1278,9 +1303,6 @@ bool Manager::SendPacket(const std::vector<uint8_t> &packet)
     if (!transport || connectStop.get_token().stop_requested()) {
         return false;
     }
-    if (_publicSendBarrierForTest) {
-        _publicSendBarrierForTest();
-    }
 
     {
         // The barrier/teardown can retire this session after the snapshot. Revalidate the
@@ -1314,6 +1336,19 @@ bool Manager::SendPacket(
         // Pin the validated session's pipe. A later reconnect may replace _transport, but this
         // dispatch can only reach the transport that passed the identity gate above.
         transport = _transport.load();
+    }
+
+    // The barrier/teardown can retire this session after the snapshot. Revalidate the pinned
+    // attempt and cancellation state immediately before entering the raw sender.
+    {
+        std::lock_guard lock{_mutex};
+        if (!_connected || attempt.address != _attempt.address ||
+            attempt.generation != _attempt.generation ||
+            _cancelledGeneration.load() == attempt.generation || _transport.load() != transport ||
+            stopToken.stop_requested())
+        {
+            return false;
+        }
     }
 
     // Cancellation may have arrived while the snapshot was being taken. This is the latest check
@@ -1359,6 +1394,25 @@ bool Manager::SendPacketForAttempt(
     std::stop_callback attemptCallback{
         attemptStop.get_token(), [&sendStop] { sendStop.request_stop(); }};
     std::stop_callback callerCallback{stopToken, [&sendStop] { sendStop.request_stop(); }};
+
+    auto publicSendBarrier = _publicSendBarrierForTest;
+    _publicSendBarrierForTest = {};
+    if (publicSendBarrier) {
+        publicSendBarrier();
+    }
+    {
+        std::lock_guard lock{_mutex};
+        if (!_connected || attempt.generation == 0 || _attempt.address != attempt.address ||
+            _attempt.generation != attempt.generation || _transport.load() != transport ||
+            attemptStop.get_token().stop_requested() || stopToken.stop_requested() ||
+            !modeMatches())
+        {
+            return false;
+        }
+    }
+
+    // The transport and cancellation source are pinned together. Retiring the attempt stops this
+    // send even if a replacement transport is installed before a blocked driver write returns.
     if (!SendPacket(transport, packet, sendStop.get_token())) {
         return false;
     }
@@ -1858,6 +1912,7 @@ Manager::Manager()
 Manager::~Manager()
 {
     Disconnect();
+    ShutdownCommands();
 }
 bool Manager::Connect(AAPAttempt, std::stop_token)
 {
@@ -1987,6 +2042,11 @@ AAPConfirmMode Manager::CommandMode(AAPCommandKind kind, uint32_t value) const
 bool Manager::WaitForCommandsIdle(std::chrono::milliseconds timeout)
 {
     return _commandBroker->WaitForIdle(timeout);
+}
+
+void Manager::ShutdownCommands()
+{
+    _commandBroker->Shutdown();
 }
 bool Manager::IsMagicAAPDriverAvailable()
 {

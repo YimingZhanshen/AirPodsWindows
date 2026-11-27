@@ -308,6 +308,8 @@ private:
     EarDetectionDebounce _debounce;
     Helper::Sides<std::optional<EarState>> _ble;
     std::optional<Timestamp> _bleAt;
+    std::optional<Timestamp> _bleFenceAt;
+    std::optional<Timestamp> _lastUpdateAt;
     bool _bleConfirmed{false};
     std::optional<EarState> _aapPrimary;
     std::optional<EarState> _aapSecondary;
@@ -547,6 +549,7 @@ private:
     // Submits through the intent/broker seam and reports the resulting desire to the GUI.
     // Returns whether the broker accepted the desired value. Callers must not hold the mutex.
     bool FlushHeadTracking();
+    AAP::HeadTrackingIntent::FlushResult FlushHeadTrackingLocked();
     bool SetHeadTrackingDesired(bool enabled);
 
     void CompleteBoundDeviceLookup(uint64_t address, std::optional<Bluetooth::Device> device);

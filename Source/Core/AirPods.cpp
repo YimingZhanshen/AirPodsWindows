@@ -228,6 +228,9 @@ std::optional<EarState> Details::EarDetectionTracker::UpdateBle(
     if (expectedEpoch.has_value() && *expectedEpoch != _epoch) {
         return std::nullopt;
     }
+    if (_bleFenceAt.has_value() && now < *_bleFenceAt) {
+        return std::nullopt; // A pre-disconnect BLE report cannot confirm the new source.
+    }
     if (_bleAt.has_value() && now < *_bleAt) {
         return std::nullopt; // An out-of-order reading cannot refresh the source.
     }
@@ -266,6 +269,7 @@ std::optional<EarState> Details::EarDetectionTracker::UpdateAap(
 
 std::optional<EarState> Details::EarDetectionTracker::UpdateCandidate(Timestamp now)
 {
+    _lastUpdateAt = now;
     const auto bleLeft = _bleConfirmed ? _ble.left.value_or(EarState::Unknown) : EarState::Unknown;
     const auto bleRight =
         _bleConfirmed ? _ble.right.value_or(EarState::Unknown) : EarState::Unknown;
@@ -356,6 +360,7 @@ void Details::EarDetectionTracker::InvalidateAapReadings()
     // Cached BLE values are retained for display/fusion, but cannot authorize a source-switch
     // transition until a newly timestamped BLE reading confirms them after the disconnect.
     _bleConfirmed = false;
+    _bleFenceAt = _lastUpdateAt;
     _debounce.CancelPending();
     ++_epoch;
 }
@@ -386,6 +391,8 @@ void Details::EarDetectionTracker::Reset()
     _bleAt.reset();
     _bleConfirmed = false;
     InvalidateAapReadings();
+    _bleFenceAt.reset();
+    _lastUpdateAt.reset();
     _publishedState.reset();
     _debounce.Reset();
 }
@@ -549,6 +556,7 @@ Manager::~Manager()
     }
 
     DisconnectAAP();
+    _aapMgr.ShutdownCommands();
     StopScanner();
 
     {
@@ -1606,13 +1614,18 @@ Details::HeadTrackingCommandPort::SubmitHeadTracking(bool enable, std::uint64_t 
         {AAP::AAPCommandKind::SetHeadTracking, static_cast<uint32_t>(enable ? 0x01 : 0x00)});
 }
 
+AAP::HeadTrackingIntent::FlushResult Manager::FlushHeadTrackingLocked()
+{
+    return _headTrackingIntent.Flush(_headTrackingPort);
+}
+
 bool Manager::FlushHeadTracking()
 {
     AAP::HeadTrackingIntent::FlushResult result;
     bool desired{false};
     {
         std::lock_guard<std::mutex> lock{_headTrackingMutex};
-        result = _headTrackingIntent.Flush(_headTrackingPort);
+        result = FlushHeadTrackingLocked();
         desired = _headTrackingIntent.Enabled();
     }
 
@@ -1626,12 +1639,22 @@ bool Manager::FlushHeadTracking()
 
 bool Manager::SetHeadTrackingDesired(bool enabled)
 {
+    AAP::HeadTrackingIntent::FlushResult result;
+    bool desired{false};
     {
         std::lock_guard<std::mutex> lock{_headTrackingMutex};
         _headTrackingIntent.SetEnabled(enabled);
         _headTrackingEnabled = enabled;
+        result = FlushHeadTrackingLocked();
+        desired = _headTrackingIntent.Enabled();
     }
-    return FlushHeadTracking();
+
+    if (result.action != AAP::HeadTrackingIntent::Action::None) {
+        LOG(Info, "Head tracking intent submitted: {}",
+            result.action == AAP::HeadTrackingIntent::Action::Start ? "start" : "stop");
+    }
+    emit HeadTrackingDesiredSafely(desired);
+    return result.submission.accepted;
 }
 
 void Manager::OnHeadTrackingEnabledChanged(bool enable)
@@ -1792,35 +1815,62 @@ void Manager::OnPpeCapLevelNotification(uint8_t level, AAP::AAPAttempt attempt)
 
 void Manager::OnAAPCommandSettled(const AAP::AAPCommandOutcome &outcome, AAP::AAPAttempt attempt)
 {
+    const auto isCurrentRequest = [&] {
+        return outcome.requestId == 0
+                   ? _aapMgr.LatestCommandRequest(outcome.command.kind) == 0
+                   : _aapMgr.IsCurrentCommandRequest(outcome.command.kind, outcome.requestId);
+    };
+    std::optional<uint32_t> stateValue;
+    bool publishFailure = false;
     if (outcome.command.kind == AAP::AAPCommandKind::SetHeadTracking) {
-        // This can run just before OnAAPConnected: the intent retains a matching settlement and
-        // adopts it on transport-up. It rejects outcomes from any other live generation.
-        std::lock_guard<std::mutex> lock{_headTrackingMutex};
-        _headTrackingIntent.OnCommandSettled(outcome);
+        // Head-tracking submissions hold this same mutex through SubmitCommand. Keeping the
+        // identity check and Applied update inside it makes replacement and settlement atomic.
+        {
+            std::lock_guard<std::mutex> lock{_headTrackingMutex};
+            if (!isCurrentRequest()) {
+                return;
+            }
+            // This can run just before OnAAPConnected: the intent retains a matching settlement and
+            // adopts it on transport-up. It rejects outcomes from any other live generation.
+            _headTrackingIntent.OnCommandSettled(outcome);
+            if (!IsCurrentAAPAttempt(attempt)) {
+                return;
+            }
+            if (outcome.settlement == AAP::AAPCommandSettlement::Confirmed ||
+                outcome.settlement == AAP::AAPCommandSettlement::AppliedUnconfirmed)
+            {
+                _headTrackingEnabled = outcome.command.value != 0;
+                stateValue = outcome.command.value;
+            }
+            if (outcome.rollBackDesired) {
+                publishFailure = true;
+                if (outcome.rollbackValue) {
+                    _headTrackingEnabled = *outcome.rollbackValue != 0;
+                }
+            }
+        }
     }
-    if (!IsCurrentAAPAttempt(attempt)) {
-        return;
+    else {
+        if (!IsCurrentAAPAttempt(attempt) || !isCurrentRequest()) {
+            return;
+        }
+        publishFailure = outcome.rollBackDesired;
+        if (!publishFailure) {
+            return;
+        }
     }
-    if (outcome.command.kind == AAP::AAPCommandKind::SetHeadTracking &&
-        (outcome.settlement == AAP::AAPCommandSettlement::Confirmed ||
-         outcome.settlement == AAP::AAPCommandSettlement::AppliedUnconfirmed))
-    {
-        _headTrackingEnabled = outcome.command.value != 0;
+    if (stateValue) {
         emit AapCommandStateSafely(
-            attempt.generation, static_cast<int>(outcome.command.kind), outcome.command.value);
+            attempt.generation, static_cast<int>(outcome.command.kind), *stateValue);
     }
-    if (!outcome.rollBackDesired) {
-        return;
+    if (publishFailure) {
+        // Worker threads never touch settings/widgets. The queued consumer verifies generation,
+        // request identity and the optimistic value before applying the confirmed baseline.
+        emit AapCommandFailedSafely(
+            attempt.generation, outcome.requestId, static_cast<int>(outcome.command.kind),
+            outcome.command.value, outcome.rollbackValue.value_or(0),
+            outcome.rollbackValue.has_value());
     }
-    if (outcome.command.kind == AAP::AAPCommandKind::SetHeadTracking && outcome.rollbackValue) {
-        _headTrackingEnabled = *outcome.rollbackValue != 0;
-    }
-    // Worker threads never touch settings/widgets. The queued consumer verifies generation,
-    // request identity and the optimistic value before applying the confirmed baseline.
-    emit AapCommandFailedSafely(
-        attempt.generation, outcome.requestId, static_cast<int>(outcome.command.kind),
-        outcome.command.value, outcome.rollbackValue.value_or(0),
-        outcome.rollbackValue.has_value());
 }
 
 void Manager::OnAttProbeResult(AAP::AttPathState state, AAP::AAPAttempt attempt)
