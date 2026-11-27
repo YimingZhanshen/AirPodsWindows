@@ -734,12 +734,13 @@ private Q_SLOTS:
         manager.HeadTrackingSessionSafely(true, 42);
         QCOMPARE(card->View().phase, Gui::HeadTrackingPhase::Armed);
         const Core::AirPods::HeadTrackingEvent event{16384, -2, 32767, -32768, 42, 42};
-        QThread worker;
-        connect(&worker, &QThread::started, [&manager, event] {
-            manager.HeadTrackingRecordSafely(event);
-        });
-        worker.start();
-        QVERIFY(worker.wait(1000));
+        // QThread's default run() spins an event loop, so a started-lambda would never let
+        // wait() succeed; create() runs the emitter and returns, keeping the bounded wait.
+        QThread *worker =
+            QThread::create([&manager, event] { manager.HeadTrackingRecordSafely(event); });
+        worker->start();
+        QVERIFY(worker->wait(1000));
+        delete worker;
         // Auto connection must queue the worker's record: no widget has changed on that thread.
         QVERIFY(!card->View().hasSample);
         QCoreApplication::processEvents();
