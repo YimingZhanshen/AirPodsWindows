@@ -51,7 +51,7 @@ Enjoy it all.</source>
     </message>
     <message>
         <source>ANC connection failed</source>
-        <translation type="unfinished"></translation>
+        <translation>Връзката с АНС е неуспешна</translation>
     </message>
 </context>
 <context>
@@ -101,19 +101,19 @@ Enjoy it all.</source>
     <name>Gui::DriverStatusCard</name>
     <message>
         <source>Driver (MagicAAP)</source>
-        <translation type="unfinished"></translation>
+        <translation>Драйвер (MagicAAP)</translation>
     </message>
     <message>
         <source>Copy install command</source>
-        <translation type="unfinished"></translation>
+        <translation>Копирай командата за инсталиране</translation>
     </message>
     <message>
         <source>Open documentation</source>
-        <translation type="unfinished"></translation>
+        <translation>Отваряне на документацията</translation>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>Експортиране на диагностични данни</translation>
     </message>
 </context>
 <context>
@@ -164,39 +164,39 @@ Enjoy it all.</source>
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>Изключено</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>Анулиране на шума</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>Прозрачност</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>Adaptive</translation>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>Експортиране на диагностични данни</translation>
     </message>
     <message>
         <source>Text files (*.txt)</source>
-        <translation type="unfinished"></translation>
+        <translation>Текстови файлове (*.txt)</translation>
     </message>
     <message>
         <source>Could not write the diagnostics file.</source>
-        <translation type="unfinished"></translation>
+        <translation>Неуспешен запис на диагностичния файл.</translation>
     </message>
     <message>
         <source>installed</source>
-        <translation type="unfinished"></translation>
+        <translation>инсталиран</translation>
     </message>
     <message>
         <source>not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>не е инсталиран</translation>
     </message>
 </context>
 <context>
@@ -271,23 +271,23 @@ Enjoy it all.</source>
     </message>
     <message>
         <source>Noise Control</source>
-        <translation type="unfinished"></translation>
+        <translation>Контрол на шума</translation>
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>Изключено</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>Анулиране на шума</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>Прозрачност</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>Adaptive</translation>
     </message>
     <message>
         <source>AAP and BLE report different battery values.</source>
@@ -361,7 +361,7 @@ Enjoy it all.</source>
     <name>MainWindow</name>
     <message>
         <source>AirPodsWindows information</source>
-        <translation type="unfinished"></translation>
+        <translation>Информация за AirPodsWindows</translation>
     </message>
 </context>
 <context>
@@ -409,107 +409,107 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>Изключено</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>Анулиране на шума</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>Прозрачност</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>Adaptive</translation>
     </message>
     <message>
         <source>Unknown</source>
-        <translation type="unfinished"></translation>
+        <translation>Неизвестно</translation>
     </message>
     <message>
         <source>Enabled</source>
-        <translation type="unfinished"></translation>
+        <translation>Включено</translation>
     </message>
     <message>
         <source>Disabled</source>
-        <translation type="unfinished"></translation>
+        <translation>Изключено</translation>
     </message>
     <message>
         <source>Automatically lowers media volume when you start speaking (AirPods Pro/Max only).</source>
-        <translation type="unfinished"></translation>
+        <translation>Автоматично намалява силата на звука на медиите, когато започнете да говорите (само за AirPods Pro/Max).</translation>
     </message>
     <message>
         <source>Adjusts media volume based on your environment and listening habits.</source>
-        <translation type="unfinished"></translation>
+        <translation>Регулира силата на звука на медиите според околната среда и навиците ви за слушане.</translation>
     </message>
     <message>
         <source>Protects your hearing by reducing loud sounds.</source>
-        <translation type="unfinished"></translation>
+        <translation>Защитава слуха ви, като намалява силните звуци.</translation>
     </message>
     <message>
         <source>Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).</source>
-        <translation type="unfinished"></translation>
+        <translation>Текущ режим на контрола на шума (1=Изключено, 2=АНС, 3=Прозрачност, 4=Adaptive).</translation>
     </message>
     <message>
         <source>Volume percentage when speaking (based on your pre-speaking volume).</source>
-        <translation type="unfinished"></translation>
+        <translation>Процент на силата на звука при говорене (въз основа на силата преди говоренето).</translation>
     </message>
     <message>
         <source>Caps how loud loud sounds get, for hearing protection (0-100).</source>
-        <translation type="unfinished"></translation>
+        <translation>Ограничава силата на силните звуци, за защита на слуха (0-100).</translation>
     </message>
     <message>
         <source>Driver not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>Драйверът не е инсталиран</translation>
     </message>
     <message>
         <source>Driver ready - waiting for the earbuds</source>
-        <translation type="unfinished"></translation>
+        <translation>Драйверът е готов - изчакване на слушалките</translation>
     </message>
     <message>
         <source>Connected (driver channel)</source>
-        <translation type="unfinished"></translation>
+        <translation>Свързан (канал на драйвера)</translation>
     </message>
     <message>
         <source>Connected (native channel - driver features limited)</source>
-        <translation type="unfinished"></translation>
+        <translation>Свързан (нативен канал - ограничени функции на драйвера)</translation>
     </message>
     <message>
         <source>Install the driver to unlock ANC control, loud sound reduction and other AAP features. Copy the install command or open the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>Инсталирайте драйвера, за да отключите контрола на АНС, намаляването на силни звуци и други AAP функции. Копирай командата за инсталиране или отвори документацията.</translation>
     </message>
     <message>
         <source>Open the earbud case near this computer to connect.</source>
-        <translation type="unfinished"></translation>
+        <translation>Отвори кутията на слушалките близо до този компютър, за да се свържеш.</translation>
     </message>
     <message>
         <source>All driver features available.</source>
-        <translation type="unfinished"></translation>
+        <translation>Всички функции на драйвера са достъпни.</translation>
     </message>
     <message>
         <source>The earbuds do not answer attribute reads on this channel; loud sound reduction state cannot be read back.</source>
-        <translation type="unfinished"></translation>
+        <translation>Слушалките не отговарят на четенията на атрибути на този канал; състоянието на намаляване на силни звуци не може да бъде прочетено.</translation>
     </message>
     <message>
         <source>Connected without the driver channel; features that require the driver (loud sound reduction, precise battery) may not work. See the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>Свързан без канала на драйвера; функциите, които изискват драйвер (намаляване на силни звуци, точно зареждане), може да не работят. Виж документацията.</translation>
     </message>
     <message>
         <source>Last connection failed: the MagicAAP driver is not installed or not running. Install it (see documentation), then reconnect.</source>
-        <translation type="unfinished"></translation>
+        <translation>Последната връзка е неуспешна: драйверът MagicAAP не е инсталиран или не работи. Инсталирай го (виж документацията), после свържи отново.</translation>
     </message>
     <message>
         <source>Last connection failed: the earbuds did not offer the ANC service. Make sure they are paired, in range, and the case is open.</source>
-        <translation type="unfinished"></translation>
+        <translation>Последната връзка е неуспешна: слушалките не предложиха услугата АНС. Увери се, че са сдвоени, в обхват и кутията е отворена.</translation>
     </message>
     <message>
         <source>Last connection failed: the Bluetooth transport could not be opened. Check that Bluetooth is on and the earbuds are close to this computer.</source>
-        <translation type="unfinished"></translation>
+        <translation>Последната връзка е неуспешна: транспортът Bluetooth не можа да бъде отворен. Провери дали Bluetooth е включен и слушалките са близо до компютъра.</translation>
     </message>
     <message>
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
-        <translation type="unfinished"></translation>
+        <translation>Последната връзка е неуспешна по време на ръкостискането на протокола. Постави слушалките по-близо и свържи отново; виж документацията, ако проблемът продължава.</translation>
     </message>
     <message>
         <source>Action for a single press of the left stem.</source>
@@ -687,43 +687,43 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
 <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation type="unfinished"></translation>
+        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Отворен код: &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;хранилище&lt;/span&gt;&lt;/a&gt; и лиценз по &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
 <message>
         <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
-        <translation type="unfinished"></translation>
+        <translation>Авторски права © 2021-2026 SpriteOvO и YimingZhanshen. Всички права запазени.</translation>
     </message>
 <message>
         <source>AirPodsWindows Settings</source>
-        <translation type="unfinished"></translation>
+        <translation>Настройки на AirPodsWindows</translation>
     </message>
 <message>
         <source>Conversational awareness</source>
-        <translation type="unfinished"></translation>
+        <translation>Осведоменост за разговори</translation>
     </message>
 <message>
         <source>Personalized volume</source>
-        <translation type="unfinished"></translation>
+        <translation>Персонализирана сила на звука</translation>
     </message>
 <message>
         <source>Reduce loud sounds</source>
-        <translation type="unfinished"></translation>
+        <translation>Намаляване на силните звуци</translation>
     </message>
 <message>
         <source>Noise control mode</source>
-        <translation type="unfinished"></translation>
+        <translation>Режим на контрола на шума</translation>
     </message>
 <message>
         <source>Speaking volume reduction:</source>
-        <translation type="unfinished"></translation>
+        <translation>Намаляване на силата на звука при говорене:</translation>
     </message>
 <message>
         <source>40%</source>
-        <translation type="unfinished"></translation>
+        <translation>40%</translation>
     </message>
 <message>
         <source>Hearing protection cap (PPE)</source>
-        <translation type="unfinished"></translation>
+        <translation>Таван на защита на слуха (PPE)</translation>
     </message>
 <message>
         <source>Stem press actions</source>

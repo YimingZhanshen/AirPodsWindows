@@ -51,7 +51,7 @@ Enjoy it all.</source>
     </message>
     <message>
         <source>ANC connection failed</source>
-        <translation type="unfinished"></translation>
+        <translation>ANC 연결 실패</translation>
     </message>
 </context>
 <context>
@@ -101,19 +101,19 @@ Enjoy it all.</source>
     <name>Gui::DriverStatusCard</name>
     <message>
         <source>Driver (MagicAAP)</source>
-        <translation type="unfinished"></translation>
+        <translation>드라이버(MagicAAP)</translation>
     </message>
     <message>
         <source>Copy install command</source>
-        <translation type="unfinished"></translation>
+        <translation>설치 명령 복사</translation>
     </message>
     <message>
         <source>Open documentation</source>
-        <translation type="unfinished"></translation>
+        <translation>문서 열기</translation>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>진단 정보 내보내기</translation>
     </message>
 </context>
 <context>
@@ -180,23 +180,23 @@ Enjoy it all.</source>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>진단 정보 내보내기</translation>
     </message>
     <message>
         <source>Text files (*.txt)</source>
-        <translation type="unfinished"></translation>
+        <translation>텍스트 파일 (*.txt)</translation>
     </message>
     <message>
         <source>Could not write the diagnostics file.</source>
-        <translation type="unfinished"></translation>
+        <translation>진단 파일을 쓸 수 없습니다.</translation>
     </message>
     <message>
         <source>installed</source>
-        <translation type="unfinished"></translation>
+        <translation>설치됨</translation>
     </message>
     <message>
         <source>not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>설치되지 않음</translation>
     </message>
 </context>
 <context>
@@ -453,63 +453,63 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
     </message>
     <message>
         <source>Volume percentage when speaking (based on your pre-speaking volume).</source>
-        <translation type="unfinished"></translation>
+        <translation>말할 때의 볼륨 백분율(말하기 전 볼륨 기준).</translation>
     </message>
     <message>
         <source>Caps how loud loud sounds get, for hearing protection (0-100).</source>
-        <translation type="unfinished"></translation>
+        <translation>청력 보호를 위해 큰 소리의 크기를 제한합니다(0-100).</translation>
     </message>
     <message>
         <source>Driver not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>드라이버가 설치되지 않음</translation>
     </message>
     <message>
         <source>Driver ready - waiting for the earbuds</source>
-        <translation type="unfinished"></translation>
+        <translation>드라이버 준비됨 - 이어버드 대기 중</translation>
     </message>
     <message>
         <source>Connected (driver channel)</source>
-        <translation type="unfinished"></translation>
+        <translation>연결됨(드라이버 채널)</translation>
     </message>
     <message>
         <source>Connected (native channel - driver features limited)</source>
-        <translation type="unfinished"></translation>
+        <translation>연결됨(네이티브 채널 - 드라이버 기능 제한)</translation>
     </message>
     <message>
         <source>Install the driver to unlock ANC control, loud sound reduction and other AAP features. Copy the install command or open the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>ANC 제어, 큰 소리 감소 및 기타 AAP 기능을 사용하려면 드라이버를 설치하세요. 설치 명령을 복사하거나 문서를 엽니다.</translation>
     </message>
     <message>
         <source>Open the earbud case near this computer to connect.</source>
-        <translation type="unfinished"></translation>
+        <translation>연결하려면 이 컴퓨터 근처에서 이어버드 케이스를 여세요.</translation>
     </message>
     <message>
         <source>All driver features available.</source>
-        <translation type="unfinished"></translation>
+        <translation>모든 드라이버 기능을 사용할 수 있습니다.</translation>
     </message>
     <message>
         <source>The earbuds do not answer attribute reads on this channel; loud sound reduction state cannot be read back.</source>
-        <translation type="unfinished"></translation>
+        <translation>이어버드가 이 채널의 속성 응답에 답하지 않습니다. 큰 소리 감소 상태를 읽을 수 없습니다.</translation>
     </message>
     <message>
         <source>Connected without the driver channel; features that require the driver (loud sound reduction, precise battery) may not work. See the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>드라이버 채널 없이 연결됨; 드라이버가 필요한 기능(큰 소리 감소, 정확한 배터리)은 작동하지 않을 수 있습니다. 문서를 참조하세요.</translation>
     </message>
     <message>
         <source>Last connection failed: the MagicAAP driver is not installed or not running. Install it (see documentation), then reconnect.</source>
-        <translation type="unfinished"></translation>
+        <translation>마지막 연결 실패: MagicAAP 드라이버가 설치되어 있지 않거나 실행 중이 아닙니다. 설치(문서 참조)한 후 다시 연결하세요.</translation>
     </message>
     <message>
         <source>Last connection failed: the earbuds did not offer the ANC service. Make sure they are paired, in range, and the case is open.</source>
-        <translation type="unfinished"></translation>
+        <translation>마지막 연결 실패: 이어버드가 ANC 서비스를 제공하지 않았습니다. 페어링되어 있고 범위 내에 있으며 케이스가 열려 있는지 확인하세요.</translation>
     </message>
     <message>
         <source>Last connection failed: the Bluetooth transport could not be opened. Check that Bluetooth is on and the earbuds are close to this computer.</source>
-        <translation type="unfinished"></translation>
+        <translation>마지막 연결 실패: Bluetooth 전송을 열 수 없습니다. Bluetooth가 켜져 있고 이어버드가 이 컴퓨터 가까이 있는지 확인하세요.</translation>
     </message>
     <message>
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
-        <translation type="unfinished"></translation>
+        <translation>마지막 연결이 프로토콜 핸드셰이크 중 실패했습니다. 이어버드를 가까이 대고 다시 연결하세요. 문제가 계속되면 문서를 참조하세요.</translation>
     </message>
     <message>
         <source>Action for a single press of the left stem.</source>
@@ -715,15 +715,15 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
     </message>
 <message>
         <source>Speaking volume reduction:</source>
-        <translation type="unfinished"></translation>
+        <translation>말할 때 볼륨 감소:</translation>
     </message>
 <message>
         <source>40%</source>
-        <translation type="unfinished"></translation>
+        <translation>40%</translation>
     </message>
 <message>
         <source>Hearing protection cap (PPE)</source>
-        <translation type="unfinished"></translation>
+        <translation>청력 보호 상한(PPE)</translation>
     </message>
 <message>
         <source>Stem press actions</source>

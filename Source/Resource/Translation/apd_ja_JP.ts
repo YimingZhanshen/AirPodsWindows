@@ -51,7 +51,7 @@ Enjoy it all.</source>
     </message>
     <message>
         <source>ANC connection failed</source>
-        <translation type="unfinished"></translation>
+        <translation>ANC接続に失敗しました</translation>
     </message>
 </context>
 <context>
@@ -101,19 +101,19 @@ Enjoy it all.</source>
     <name>Gui::DriverStatusCard</name>
     <message>
         <source>Driver (MagicAAP)</source>
-        <translation type="unfinished"></translation>
+        <translation>ドライバー（MagicAAP）</translation>
     </message>
     <message>
         <source>Copy install command</source>
-        <translation type="unfinished"></translation>
+        <translation>インストールコマンドをコピー</translation>
     </message>
     <message>
         <source>Open documentation</source>
-        <translation type="unfinished"></translation>
+        <translation>ドキュメントを開く</translation>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>診断情報をエクスポート</translation>
     </message>
 </context>
 <context>
@@ -180,23 +180,23 @@ Enjoy it all.</source>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>診断情報をエクスポート</translation>
     </message>
     <message>
         <source>Text files (*.txt)</source>
-        <translation type="unfinished"></translation>
+        <translation>テキストファイル (*.txt)</translation>
     </message>
     <message>
         <source>Could not write the diagnostics file.</source>
-        <translation type="unfinished"></translation>
+        <translation>診断ファイルを書き込めませんでした。</translation>
     </message>
     <message>
         <source>installed</source>
-        <translation type="unfinished"></translation>
+        <translation>インストール済み</translation>
     </message>
     <message>
         <source>not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>未インストール</translation>
     </message>
 </context>
 <context>
@@ -453,63 +453,63 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>Volume percentage when speaking (based on your pre-speaking volume).</source>
-        <translation type="unfinished"></translation>
+        <translation>話す際の音量割合（話す前の音量に基づく）。</translation>
     </message>
     <message>
         <source>Caps how loud loud sounds get, for hearing protection (0-100).</source>
-        <translation type="unfinished"></translation>
+        <translation>聴覚保護のため、大きな音の大きさを制限します（0-100）。</translation>
     </message>
     <message>
         <source>Driver not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>ドライバーがインストールされていません</translation>
     </message>
     <message>
         <source>Driver ready - waiting for the earbuds</source>
-        <translation type="unfinished"></translation>
+        <translation>ドライバー準備完了 - イヤホンを待機中</translation>
     </message>
     <message>
         <source>Connected (driver channel)</source>
-        <translation type="unfinished"></translation>
+        <translation>接続済み（ドライバーチャンネル）</translation>
     </message>
     <message>
         <source>Connected (native channel - driver features limited)</source>
-        <translation type="unfinished"></translation>
+        <translation>接続済み（ネイティブチャンネル - ドライバー機能は制限付き）</translation>
     </message>
     <message>
         <source>Install the driver to unlock ANC control, loud sound reduction and other AAP features. Copy the install command or open the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>ANC制御、大きすぎる音の抑制、その他のAAP機能を利用するにはドライバーをインストールしてください。インストールコマンドをコピーするか、ドキュメントを開いてください。</translation>
     </message>
     <message>
         <source>Open the earbud case near this computer to connect.</source>
-        <translation type="unfinished"></translation>
+        <translation>接続するには、このコンピューターの近くでイヤホンのケースを開けてください。</translation>
     </message>
     <message>
         <source>All driver features available.</source>
-        <translation type="unfinished"></translation>
+        <translation>すべてのドライバー機能が利用可能です。</translation>
     </message>
     <message>
         <source>The earbuds do not answer attribute reads on this channel; loud sound reduction state cannot be read back.</source>
-        <translation type="unfinished"></translation>
+        <translation>イヤホンがこのチャンネルの属性読み取りに応答しません。大きすぎる音の抑制状態を読み取れません。</translation>
     </message>
     <message>
         <source>Connected without the driver channel; features that require the driver (loud sound reduction, precise battery) may not work. See the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>ドライバーチャンネルなしで接続しました。ドライバーが必要な機能（大きすぎる音の抑制、正確なバッテリー表示）は動作しない場合があります。ドキュメントを参照してください。</translation>
     </message>
     <message>
         <source>Last connection failed: the MagicAAP driver is not installed or not running. Install it (see documentation), then reconnect.</source>
-        <translation type="unfinished"></translation>
+        <translation>前回の接続は失敗しました：MagicAAPドライバーがインストールされていないか、実行されていません。インストール（ドキュメント参照）してから再接続してください。</translation>
     </message>
     <message>
         <source>Last connection failed: the earbuds did not offer the ANC service. Make sure they are paired, in range, and the case is open.</source>
-        <translation type="unfinished"></translation>
+        <translation>前回の接続は失敗しました：イヤホンがANCサービスを提供しませんでした。ペアリング済みで、範囲内にあり、ケースが開いていることを確認してください。</translation>
     </message>
     <message>
         <source>Last connection failed: the Bluetooth transport could not be opened. Check that Bluetooth is on and the earbuds are close to this computer.</source>
-        <translation type="unfinished"></translation>
+        <translation>前回の接続は失敗しました：Bluetoothトランスポートを開けませんでした。Bluetoothがオンで、イヤホンがこのコンピューターに近いことを確認してください。</translation>
     </message>
     <message>
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
-        <translation type="unfinished"></translation>
+        <translation>前回の接続はプロトコルのハンドシェイク中に失敗しました。イヤホンを近づけて再接続してください。問題が続く場合はドキュメントを参照してください。</translation>
     </message>
     <message>
         <source>Action for a single press of the left stem.</source>
@@ -715,15 +715,15 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
 <message>
         <source>Speaking volume reduction:</source>
-        <translation type="unfinished"></translation>
+        <translation>会話中の音量低下：</translation>
     </message>
 <message>
         <source>40%</source>
-        <translation type="unfinished"></translation>
+        <translation>40%</translation>
     </message>
 <message>
         <source>Hearing protection cap (PPE)</source>
-        <translation type="unfinished"></translation>
+        <translation>聴覚保護上限（PPE）</translation>
     </message>
 <message>
         <source>Stem press actions</source>

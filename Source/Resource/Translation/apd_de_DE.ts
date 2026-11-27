@@ -51,7 +51,7 @@ Genieße es.</translation>
     </message>
     <message>
         <source>ANC connection failed</source>
-        <translation type="unfinished"></translation>
+        <translation>ANC-Verbindung fehlgeschlagen</translation>
     </message>
 </context>
 <context>
@@ -101,19 +101,19 @@ Genieße es.</translation>
     <name>Gui::DriverStatusCard</name>
     <message>
         <source>Driver (MagicAAP)</source>
-        <translation type="unfinished"></translation>
+        <translation>Treiber (MagicAAP)</translation>
     </message>
     <message>
         <source>Copy install command</source>
-        <translation type="unfinished"></translation>
+        <translation>Installationsbefehl kopieren</translation>
     </message>
     <message>
         <source>Open documentation</source>
-        <translation type="unfinished"></translation>
+        <translation>Dokumentation öffnen</translation>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>Diagnostikdaten exportieren</translation>
     </message>
 </context>
 <context>
@@ -180,23 +180,23 @@ Genieße es.</translation>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>Diagnostikdaten exportieren</translation>
     </message>
     <message>
         <source>Text files (*.txt)</source>
-        <translation type="unfinished"></translation>
+        <translation>Textdateien (*.txt)</translation>
     </message>
     <message>
         <source>Could not write the diagnostics file.</source>
-        <translation type="unfinished"></translation>
+        <translation>Die Diagnosedatei konnte nicht geschrieben werden.</translation>
     </message>
     <message>
         <source>installed</source>
-        <translation type="unfinished"></translation>
+        <translation>installiert</translation>
     </message>
     <message>
         <source>not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>nicht installiert</translation>
     </message>
 </context>
 <context>
@@ -453,63 +453,63 @@ Kopple deine AirPods zuerst in den Windows Bluetooth-Einstellungen.</translation
     </message>
     <message>
         <source>Volume percentage when speaking (based on your pre-speaking volume).</source>
-        <translation type="unfinished"></translation>
+        <translation>Lautstärkeprozentsatz beim Sprechen (basierend auf der Lautstärke vor dem Sprechen).</translation>
     </message>
     <message>
         <source>Caps how loud loud sounds get, for hearing protection (0-100).</source>
-        <translation type="unfinished"></translation>
+        <translation>Begrenzt die Lautstärke lauter Geräusche zum Gehörschutz (0–100).</translation>
     </message>
     <message>
         <source>Driver not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>Treiber nicht installiert</translation>
     </message>
     <message>
         <source>Driver ready - waiting for the earbuds</source>
-        <translation type="unfinished"></translation>
+        <translation>Treiber bereit – warte auf die Ohrhörer</translation>
     </message>
     <message>
         <source>Connected (driver channel)</source>
-        <translation type="unfinished"></translation>
+        <translation>Verbunden (Treiberkanal)</translation>
     </message>
     <message>
         <source>Connected (native channel - driver features limited)</source>
-        <translation type="unfinished"></translation>
+        <translation>Verbunden (nativer Kanal – eingeschränkte Treiberfunktionen)</translation>
     </message>
     <message>
         <source>Install the driver to unlock ANC control, loud sound reduction and other AAP features. Copy the install command or open the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>Installiere den Treiber, um ANC-Steuerung, Lautstärkebegrenzung und weitere AAP-Funktionen freizuschalten. Kopiere den Installationsbefehl oder öffne die Dokumentation.</translation>
     </message>
     <message>
         <source>Open the earbud case near this computer to connect.</source>
-        <translation type="unfinished"></translation>
+        <translation>Öffne das Ohrhörer-Etui in der Nähe dieses Computers, um dich zu verbinden.</translation>
     </message>
     <message>
         <source>All driver features available.</source>
-        <translation type="unfinished"></translation>
+        <translation>Alle Treiberfunktionen verfügbar.</translation>
     </message>
     <message>
         <source>The earbuds do not answer attribute reads on this channel; loud sound reduction state cannot be read back.</source>
-        <translation type="unfinished"></translation>
+        <translation>Die Ohrhörer antworten nicht auf Attribut-Abfragen über diesen Kanal; der Zustand der Lautstärkebegrenzung kann nicht ausgelesen werden.</translation>
     </message>
     <message>
         <source>Connected without the driver channel; features that require the driver (loud sound reduction, precise battery) may not work. See the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>Verbunden ohne Treiberkanal; Funktionen, die den Treiber benötigen (Lautstärkebegrenzung, präziser Akkustand), funktionieren möglicherweise nicht. Siehe die Dokumentation.</translation>
     </message>
     <message>
         <source>Last connection failed: the MagicAAP driver is not installed or not running. Install it (see documentation), then reconnect.</source>
-        <translation type="unfinished"></translation>
+        <translation>Letzte Verbindung fehlgeschlagen: Der MagicAAP-Treiber ist nicht installiert oder läuft nicht. Installiere ihn (siehe Dokumentation) und verbinde dich erneut.</translation>
     </message>
     <message>
         <source>Last connection failed: the earbuds did not offer the ANC service. Make sure they are paired, in range, and the case is open.</source>
-        <translation type="unfinished"></translation>
+        <translation>Letzte Verbindung fehlgeschlagen: Die Ohrhörer haben den ANC-Dienst nicht angeboten. Stelle sicher, dass sie gekoppelt, in Reichweite und das Etui geöffnet ist.</translation>
     </message>
     <message>
         <source>Last connection failed: the Bluetooth transport could not be opened. Check that Bluetooth is on and the earbuds are close to this computer.</source>
-        <translation type="unfinished"></translation>
+        <translation>Letzte Verbindung fehlgeschlagen: Der Bluetooth-Transport konnte nicht geöffnet werden. Prüfe, ob Bluetooth aktiv ist und die Ohrhörer in der Nähe des Computers sind.</translation>
     </message>
     <message>
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
-        <translation type="unfinished"></translation>
+        <translation>Letzte Verbindung während des Protokoll-Handshakes fehlgeschlagen. Ohrhörer näher heranholen und neu verbinden; bei anhaltendem Problem die Dokumentation konsultieren.</translation>
     </message>
     <message>
         <source>Action for a single press of the left stem.</source>
@@ -715,15 +715,15 @@ Kopple deine AirPods zuerst in den Windows Bluetooth-Einstellungen.</translation
     </message>
 <message>
         <source>Speaking volume reduction:</source>
-        <translation type="unfinished"></translation>
+        <translation>Lautstärkereduzierung beim Sprechen:</translation>
     </message>
 <message>
         <source>40%</source>
-        <translation type="unfinished"></translation>
+        <translation>40%</translation>
     </message>
 <message>
         <source>Hearing protection cap (PPE)</source>
-        <translation type="unfinished"></translation>
+        <translation>Hörschutzgrenze (PPE)</translation>
     </message>
 <message>
         <source>Stem press actions</source>

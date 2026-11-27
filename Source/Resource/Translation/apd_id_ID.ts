@@ -51,7 +51,7 @@ Selamat menikmati.</translation>
     </message>
     <message>
         <source>ANC connection failed</source>
-        <translation type="unfinished"></translation>
+        <translation>Koneksi ANC gagal</translation>
     </message>
 </context>
 <context>
@@ -101,19 +101,19 @@ Selamat menikmati.</translation>
     <name>Gui::DriverStatusCard</name>
     <message>
         <source>Driver (MagicAAP)</source>
-        <translation type="unfinished"></translation>
+        <translation>Driver (MagicAAP)</translation>
     </message>
     <message>
         <source>Copy install command</source>
-        <translation type="unfinished"></translation>
+        <translation>Salin perintah pemasangan</translation>
     </message>
     <message>
         <source>Open documentation</source>
-        <translation type="unfinished"></translation>
+        <translation>Buka dokumentasi</translation>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>Ekspor diagnostik</translation>
     </message>
 </context>
 <context>
@@ -164,39 +164,39 @@ Selamat menikmati.</translation>
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>Mati</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>Pembatalan noise</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>Transparansi</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>Adaptif</translation>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>Ekspor diagnostik</translation>
     </message>
     <message>
         <source>Text files (*.txt)</source>
-        <translation type="unfinished"></translation>
+        <translation>File teks (*.txt)</translation>
     </message>
     <message>
         <source>Could not write the diagnostics file.</source>
-        <translation type="unfinished"></translation>
+        <translation>Tidak bisa menulis file diagnostik.</translation>
     </message>
     <message>
         <source>installed</source>
-        <translation type="unfinished"></translation>
+        <translation>terpasang</translation>
     </message>
     <message>
         <source>not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>tidak terpasang</translation>
     </message>
 </context>
 <context>
@@ -271,23 +271,23 @@ Selamat menikmati.</translation>
     </message>
     <message>
         <source>Noise Control</source>
-        <translation type="unfinished"></translation>
+        <translation>Kontrol noise</translation>
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>Mati</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>Pembatalan noise</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>Transparansi</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>Adaptif</translation>
     </message>
     <message>
         <source>AAP and BLE report different battery values.</source>
@@ -361,7 +361,7 @@ Selamat menikmati.</translation>
     <name>MainWindow</name>
     <message>
         <source>AirPodsWindows information</source>
-        <translation type="unfinished"></translation>
+        <translation>Informasi AirPodsWindows</translation>
     </message>
 </context>
 <context>
@@ -409,107 +409,107 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>Mati</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>Pembatalan noise</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>Transparansi</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>Adaptif</translation>
     </message>
     <message>
         <source>Unknown</source>
-        <translation type="unfinished"></translation>
+        <translation>Tidak diketahui</translation>
     </message>
     <message>
         <source>Enabled</source>
-        <translation type="unfinished"></translation>
+        <translation>Aktif</translation>
     </message>
     <message>
         <source>Disabled</source>
-        <translation type="unfinished"></translation>
+        <translation>Nonaktif</translation>
     </message>
     <message>
         <source>Automatically lowers media volume when you start speaking (AirPods Pro/Max only).</source>
-        <translation type="unfinished"></translation>
+        <translation>Secara otomatis menurunkan volume media saat Anda mulai berbicara (hanya AirPods Pro/Max).</translation>
     </message>
     <message>
         <source>Adjusts media volume based on your environment and listening habits.</source>
-        <translation type="unfinished"></translation>
+        <translation>Menyesuaikan volume media berdasarkan lingkungan dan kebiasaan mendengarkan Anda.</translation>
     </message>
     <message>
         <source>Protects your hearing by reducing loud sounds.</source>
-        <translation type="unfinished"></translation>
+        <translation>Melindungi pendengaran Anda dengan mengurangi suara keras.</translation>
     </message>
     <message>
         <source>Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).</source>
-        <translation type="unfinished"></translation>
+        <translation>Mode kontrol noise saat ini (1=Mati, 2=ANC, 3=Transparansi, 4=Adaptif).</translation>
     </message>
     <message>
         <source>Volume percentage when speaking (based on your pre-speaking volume).</source>
-        <translation type="unfinished"></translation>
+        <translation>Persentase volume saat berbicara (berdasarkan volume sebelum berbicara).</translation>
     </message>
     <message>
         <source>Caps how loud loud sounds get, for hearing protection (0-100).</source>
-        <translation type="unfinished"></translation>
+        <translation>Membatasi volume suara keras, untuk perlindungan pendengaran (0-100).</translation>
     </message>
     <message>
         <source>Driver not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>Driver tidak terpasang</translation>
     </message>
     <message>
         <source>Driver ready - waiting for the earbuds</source>
-        <translation type="unfinished"></translation>
+        <translation>Driver siap - menunggu earbud</translation>
     </message>
     <message>
         <source>Connected (driver channel)</source>
-        <translation type="unfinished"></translation>
+        <translation>Terhubung (kanal driver)</translation>
     </message>
     <message>
         <source>Connected (native channel - driver features limited)</source>
-        <translation type="unfinished"></translation>
+        <translation>Terhubung (kanal asli - fitur driver terbatas)</translation>
     </message>
     <message>
         <source>Install the driver to unlock ANC control, loud sound reduction and other AAP features. Copy the install command or open the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>Pasang driver untuk membuka kontrol ANC, pengurangan suara keras, dan fitur AAP lainnya. Salin perintah pemasangan atau buka dokumentasi.</translation>
     </message>
     <message>
         <source>Open the earbud case near this computer to connect.</source>
-        <translation type="unfinished"></translation>
+        <translation>Buka kotak earbud di dekat komputer ini untuk terhubung.</translation>
     </message>
     <message>
         <source>All driver features available.</source>
-        <translation type="unfinished"></translation>
+        <translation>Semua fitur driver tersedia.</translation>
     </message>
     <message>
         <source>The earbuds do not answer attribute reads on this channel; loud sound reduction state cannot be read back.</source>
-        <translation type="unfinished"></translation>
+        <translation>Earbud tidak menjawab pembacaan atribut di kanal ini; status pengurangan suara keras tidak bisa dibaca kembali.</translation>
     </message>
     <message>
         <source>Connected without the driver channel; features that require the driver (loud sound reduction, precise battery) may not work. See the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>Terhubung tanpa kanal driver; fitur yang memerlukan driver (pengurangan suara keras, baterai presisi) mungkin tidak berfungsi. Lihat dokumentasi.</translation>
     </message>
     <message>
         <source>Last connection failed: the MagicAAP driver is not installed or not running. Install it (see documentation), then reconnect.</source>
-        <translation type="unfinished"></translation>
+        <translation>Koneksi terakhir gagal: driver MagicAAP tidak terpasang atau tidak berjalan. Pasang (lihat dokumentasi), lalu sambungkan ulang.</translation>
     </message>
     <message>
         <source>Last connection failed: the earbuds did not offer the ANC service. Make sure they are paired, in range, and the case is open.</source>
-        <translation type="unfinished"></translation>
+        <translation>Koneksi terakhir gagal: earbud tidak menawarkan layanan ANC. Pastikan sudah dipasangkan, dalam jangkauan, dan kotak terbuka.</translation>
     </message>
     <message>
         <source>Last connection failed: the Bluetooth transport could not be opened. Check that Bluetooth is on and the earbuds are close to this computer.</source>
-        <translation type="unfinished"></translation>
+        <translation>Koneksi terakhir gagal: transport Bluetooth tidak bisa dibuka. Pastikan Bluetooth menyala dan earbud berdekatan dengan komputer ini.</translation>
     </message>
     <message>
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
-        <translation type="unfinished"></translation>
+        <translation>Koneksi terakhir gagal selama handshake protokol. Dekatkan earbud dan sambungkan ulang; lihat dokumentasi jika masalah berlanjut.</translation>
     </message>
     <message>
         <source>Action for a single press of the left stem.</source>
@@ -687,43 +687,43 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
     </message>
 <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation type="unfinished"></translation>
+        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Repositori &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;sumber terbuka&lt;/span&gt;&lt;/a&gt; dilisensikan di bawah &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
 <message>
         <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
-        <translation type="unfinished"></translation>
+        <translation>Hak cipta © 2021-2026 SpriteOvO &amp; YimingZhanshen. Seluruh hak cipta dilindungi.</translation>
     </message>
 <message>
         <source>AirPodsWindows Settings</source>
-        <translation type="unfinished"></translation>
+        <translation>Pengaturan AirPodsWindows</translation>
     </message>
 <message>
         <source>Conversational awareness</source>
-        <translation type="unfinished"></translation>
+        <translation>Deteksi percakapan</translation>
     </message>
 <message>
         <source>Personalized volume</source>
-        <translation type="unfinished"></translation>
+        <translation>Volume yang dipersonalisasi</translation>
     </message>
 <message>
         <source>Reduce loud sounds</source>
-        <translation type="unfinished"></translation>
+        <translation>Kurangi suara keras</translation>
     </message>
 <message>
         <source>Noise control mode</source>
-        <translation type="unfinished"></translation>
+        <translation>Mode kontrol noise</translation>
     </message>
 <message>
         <source>Speaking volume reduction:</source>
-        <translation type="unfinished"></translation>
+        <translation>Pengurangan volume saat berbicara:</translation>
     </message>
 <message>
         <source>40%</source>
-        <translation type="unfinished"></translation>
+        <translation>40%</translation>
     </message>
 <message>
         <source>Hearing protection cap (PPE)</source>
-        <translation type="unfinished"></translation>
+        <translation>Batas perlindungan pendengaran (PPE)</translation>
     </message>
 <message>
         <source>Stem press actions</source>

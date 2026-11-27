@@ -51,7 +51,7 @@ Enjoy it all.</source>
     </message>
     <message>
         <source>ANC connection failed</source>
-        <translation type="unfinished"></translation>
+        <translation>降噪連線失敗</translation>
     </message>
 </context>
 <context>
@@ -101,19 +101,19 @@ Enjoy it all.</source>
     <name>Gui::DriverStatusCard</name>
     <message>
         <source>Driver (MagicAAP)</source>
-        <translation type="unfinished"></translation>
+        <translation>驅動程式（MagicAAP）</translation>
     </message>
     <message>
         <source>Copy install command</source>
-        <translation type="unfinished"></translation>
+        <translation>複製安裝命令</translation>
     </message>
     <message>
         <source>Open documentation</source>
-        <translation type="unfinished"></translation>
+        <translation>開啟說明文件</translation>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>匯出診斷資訊</translation>
     </message>
 </context>
 <context>
@@ -180,23 +180,23 @@ Enjoy it all.</source>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>匯出診斷資訊</translation>
     </message>
     <message>
         <source>Text files (*.txt)</source>
-        <translation type="unfinished"></translation>
+        <translation>文字檔 (*.txt)</translation>
     </message>
     <message>
         <source>Could not write the diagnostics file.</source>
-        <translation type="unfinished"></translation>
+        <translation>無法寫入診斷檔。</translation>
     </message>
     <message>
         <source>installed</source>
-        <translation type="unfinished"></translation>
+        <translation>已安裝</translation>
     </message>
     <message>
         <source>not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>未安裝</translation>
     </message>
 </context>
 <context>
@@ -453,63 +453,63 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>Volume percentage when speaking (based on your pre-speaking volume).</source>
-        <translation type="unfinished"></translation>
+        <translation>說話時的音量百分比（基於說話前的音量）。</translation>
     </message>
     <message>
         <source>Caps how loud loud sounds get, for hearing protection (0-100).</source>
-        <translation type="unfinished"></translation>
+        <translation>限制過大音量，保護聽力（0-100）。</translation>
     </message>
     <message>
         <source>Driver not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>驅動程式未安裝</translation>
     </message>
     <message>
         <source>Driver ready - waiting for the earbuds</source>
-        <translation type="unfinished"></translation>
+        <translation>驅動程式已就緒 - 等待耳機</translation>
     </message>
     <message>
         <source>Connected (driver channel)</source>
-        <translation type="unfinished"></translation>
+        <translation>已連線（驅動通道）</translation>
     </message>
     <message>
         <source>Connected (native channel - driver features limited)</source>
-        <translation type="unfinished"></translation>
+        <translation>已連線（原生通道 - 驅動功能受限）</translation>
     </message>
     <message>
         <source>Install the driver to unlock ANC control, loud sound reduction and other AAP features. Copy the install command or open the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>安裝驅動程式以解鎖降噪控制、大音量降低及其他 AAP 功能。可複製安裝命令或開啟說明文件。</translation>
     </message>
     <message>
         <source>Open the earbud case near this computer to connect.</source>
-        <translation type="unfinished"></translation>
+        <translation>在本電腦附近開啟耳機充電盒即可連線。</translation>
     </message>
     <message>
         <source>All driver features available.</source>
-        <translation type="unfinished"></translation>
+        <translation>所有驅動程式功能皆可用。</translation>
     </message>
     <message>
         <source>The earbuds do not answer attribute reads on this channel; loud sound reduction state cannot be read back.</source>
-        <translation type="unfinished"></translation>
+        <translation>耳機未在此通道上回應屬性讀取；大音量降低狀態無法回讀。</translation>
     </message>
     <message>
         <source>Connected without the driver channel; features that require the driver (loud sound reduction, precise battery) may not work. See the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>已連線（無驅動通道）；依賴驅動的功能（大音量降低、精確電量）可能無法運作。詳見說明文件。</translation>
     </message>
     <message>
         <source>Last connection failed: the MagicAAP driver is not installed or not running. Install it (see documentation), then reconnect.</source>
-        <translation type="unfinished"></translation>
+        <translation>上次連線失敗：MagicAAP 驅動未安裝或未執行。請安裝（參見說明文件）後重新連線。</translation>
     </message>
     <message>
         <source>Last connection failed: the earbuds did not offer the ANC service. Make sure they are paired, in range, and the case is open.</source>
-        <translation type="unfinished"></translation>
+        <translation>上次連線失敗：耳機未提供降噪服務。請確認已配對、在範圍內且充電盒已開啟。</translation>
     </message>
     <message>
         <source>Last connection failed: the Bluetooth transport could not be opened. Check that Bluetooth is on and the earbuds are close to this computer.</source>
-        <translation type="unfinished"></translation>
+        <translation>上次連線失敗：無法開啟藍牙傳輸。請確認藍牙已開啟且耳機靠近本電腦。</translation>
     </message>
     <message>
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
-        <translation type="unfinished"></translation>
+        <translation>上次連線在交握協議期間失敗。請將耳機靠近後重新連線；若持續失敗請參閱說明文件。</translation>
     </message>
     <message>
         <source>Action for a single press of the left stem.</source>
@@ -719,11 +719,11 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
 <message>
         <source>40%</source>
-        <translation type="unfinished"></translation>
+        <translation>40%</translation>
     </message>
 <message>
         <source>Hearing protection cap (PPE)</source>
-        <translation type="unfinished"></translation>
+        <translation>聽力保護上限（PPE）</translation>
     </message>
 <message>
         <source>Stem press actions</source>

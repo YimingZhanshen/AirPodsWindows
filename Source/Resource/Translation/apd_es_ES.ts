@@ -51,7 +51,7 @@ Disfrútalo.</translation>
     </message>
     <message>
         <source>ANC connection failed</source>
-        <translation type="unfinished"></translation>
+        <translation>Error de conexión ANC</translation>
     </message>
 </context>
 <context>
@@ -101,19 +101,19 @@ Disfrútalo.</translation>
     <name>Gui::DriverStatusCard</name>
     <message>
         <source>Driver (MagicAAP)</source>
-        <translation type="unfinished"></translation>
+        <translation>Controlador (MagicAAP)</translation>
     </message>
     <message>
         <source>Copy install command</source>
-        <translation type="unfinished"></translation>
+        <translation>Copiar comando de instalación</translation>
     </message>
     <message>
         <source>Open documentation</source>
-        <translation type="unfinished"></translation>
+        <translation>Abrir documentación</translation>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>Exportar diagnóstico</translation>
     </message>
 </context>
 <context>
@@ -164,39 +164,39 @@ Disfrútalo.</translation>
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>Desactivado</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>Cancelación de ruido</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>Transparencia</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>Adaptive</translation>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>Exportar diagnóstico</translation>
     </message>
     <message>
         <source>Text files (*.txt)</source>
-        <translation type="unfinished"></translation>
+        <translation>Archivos de texto (*.txt)</translation>
     </message>
     <message>
         <source>Could not write the diagnostics file.</source>
-        <translation type="unfinished"></translation>
+        <translation>No se pudo escribir el archivo de diagnóstico.</translation>
     </message>
     <message>
         <source>installed</source>
-        <translation type="unfinished"></translation>
+        <translation>instalado</translation>
     </message>
     <message>
         <source>not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>no instalado</translation>
     </message>
 </context>
 <context>
@@ -271,23 +271,23 @@ Disfrútalo.</translation>
     </message>
     <message>
         <source>Noise Control</source>
-        <translation type="unfinished"></translation>
+        <translation>Control de ruido</translation>
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>Desactivado</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>Cancelación de ruido</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>Transparencia</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>Adaptive</translation>
     </message>
     <message>
         <source>AAP and BLE report different battery values.</source>
@@ -361,7 +361,7 @@ Disfrútalo.</translation>
     <name>MainWindow</name>
     <message>
         <source>AirPodsWindows information</source>
-        <translation type="unfinished"></translation>
+        <translation>Información de AirPodsWindows</translation>
     </message>
 </context>
 <context>
@@ -409,107 +409,107 @@ Primero debes emparejar tus AirPods en la configuración de Bluetooth de Windows
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>Desactivado</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>Cancelación de ruido</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>Transparencia</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>Adaptive</translation>
     </message>
     <message>
         <source>Unknown</source>
-        <translation type="unfinished"></translation>
+        <translation>Desconocido</translation>
     </message>
     <message>
         <source>Enabled</source>
-        <translation type="unfinished"></translation>
+        <translation>Activado</translation>
     </message>
     <message>
         <source>Disabled</source>
-        <translation type="unfinished"></translation>
+        <translation>Desactivado</translation>
     </message>
     <message>
         <source>Automatically lowers media volume when you start speaking (AirPods Pro/Max only).</source>
-        <translation type="unfinished"></translation>
+        <translation>Reduce automáticamente el volumen multimedia cuando empiezas a hablar (solo para AirPods Pro/Max).</translation>
     </message>
     <message>
         <source>Adjusts media volume based on your environment and listening habits.</source>
-        <translation type="unfinished"></translation>
+        <translation>Ajusta el volumen multimedia según el entorno y tus hábitos de escucha.</translation>
     </message>
     <message>
         <source>Protects your hearing by reducing loud sounds.</source>
-        <translation type="unfinished"></translation>
+        <translation>Protege tu oído al reducir los sonidos fuertes.</translation>
     </message>
     <message>
         <source>Current noise control mode (1=Off, 2=ANC, 3=Transparency, 4=Adaptive).</source>
-        <translation type="unfinished"></translation>
+        <translation>Modo de control de ruido actual (1=Desactivado, 2=ANC, 3=Transparencia, 4=Adaptive).</translation>
     </message>
     <message>
         <source>Volume percentage when speaking (based on your pre-speaking volume).</source>
-        <translation type="unfinished"></translation>
+        <translation>Porcentaje de volumen al hablar (según el volumen previo a hablar).</translation>
     </message>
     <message>
         <source>Caps how loud loud sounds get, for hearing protection (0-100).</source>
-        <translation type="unfinished"></translation>
+        <translation>Limita el volumen de los sonidos fuertes, para proteger el oído (0-100).</translation>
     </message>
     <message>
         <source>Driver not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>Controlador no instalado</translation>
     </message>
     <message>
         <source>Driver ready - waiting for the earbuds</source>
-        <translation type="unfinished"></translation>
+        <translation>Controlador listo - esperando los auriculares</translation>
     </message>
     <message>
         <source>Connected (driver channel)</source>
-        <translation type="unfinished"></translation>
+        <translation>Conectado (canal del controlador)</translation>
     </message>
     <message>
         <source>Connected (native channel - driver features limited)</source>
-        <translation type="unfinished"></translation>
+        <translation>Conectado (canal nativo - funciones del controlador limitadas)</translation>
     </message>
     <message>
         <source>Install the driver to unlock ANC control, loud sound reduction and other AAP features. Copy the install command or open the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>Instala el controlador para desbloquear el control ANC, la reducción de sonidos fuertes y otras funciones AAP. Copia el comando de instalación o abre la documentación.</translation>
     </message>
     <message>
         <source>Open the earbud case near this computer to connect.</source>
-        <translation type="unfinished"></translation>
+        <translation>Abre la funda de los auriculares cerca de este equipo para conectarte.</translation>
     </message>
     <message>
         <source>All driver features available.</source>
-        <translation type="unfinished"></translation>
+        <translation>Todas las funciones del controlador están disponibles.</translation>
     </message>
     <message>
         <source>The earbuds do not answer attribute reads on this channel; loud sound reduction state cannot be read back.</source>
-        <translation type="unfinished"></translation>
+        <translation>Los auriculares no responden a las lecturas de atributos en este canal; el estado de reducción de sonidos fuertes no se puede leer.</translation>
     </message>
     <message>
         <source>Connected without the driver channel; features that require the driver (loud sound reduction, precise battery) may not work. See the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>Conectado sin el canal del controlador; las funciones que requieren el controlador (reducción de sonidos fuertes, batería precisa) pueden no funcionar. Consulta la documentación.</translation>
     </message>
     <message>
         <source>Last connection failed: the MagicAAP driver is not installed or not running. Install it (see documentation), then reconnect.</source>
-        <translation type="unfinished"></translation>
+        <translation>La última conexión falló: el controlador MagicAAP no está instalado o no está en ejecución. Instálalo (consulta la documentación) y vuelve a conectarte.</translation>
     </message>
     <message>
         <source>Last connection failed: the earbuds did not offer the ANC service. Make sure they are paired, in range, and the case is open.</source>
-        <translation type="unfinished"></translation>
+        <translation>La última conexión falló: los auriculares no ofrecieron el servicio ANC. Asegúrate de que estén emparejados, a alcance y con la funda abierta.</translation>
     </message>
     <message>
         <source>Last connection failed: the Bluetooth transport could not be opened. Check that Bluetooth is on and the earbuds are close to this computer.</source>
-        <translation type="unfinished"></translation>
+        <translation>La última conexión falló: no se pudo abrir el transporte Bluetooth. Comprueba que Bluetooth esté activado y que los auriculares estén cerca de este equipo.</translation>
     </message>
     <message>
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
-        <translation type="unfinished"></translation>
+        <translation>La última conexión falló durante el protocolo de handshake. Acerca los auriculares y reconecta; consulta la documentación si el problema persiste.</translation>
     </message>
     <message>
         <source>Action for a single press of the left stem.</source>
@@ -687,43 +687,43 @@ Primero debes emparejar tus AirPods en la configuración de Bluetooth de Windows
     </message>
 <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Open source &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repository&lt;/span&gt;&lt;/a&gt; and licensed under &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation type="unfinished"></translation>
+        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Código abierto: &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;repositorio&lt;/span&gt;&lt;/a&gt; con licencia &lt;a href=&quot;https://github.com/YimingZhanshen/AirPodsWindows/blob/main/LICENSE&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;GPLv3&lt;/span&gt;&lt;/a&gt;.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
 <message>
         <source>Copyright © 2021-2026 SpriteOvO &amp; YimingZhanshen. All rights reserved.</source>
-        <translation type="unfinished"></translation>
+        <translation>Derechos de autor © 2021-2026 SpriteOvO y YimingZhanshen. Todos los derechos reservados.</translation>
     </message>
 <message>
         <source>AirPodsWindows Settings</source>
-        <translation type="unfinished"></translation>
+        <translation>Configuración de AirPodsWindows</translation>
     </message>
 <message>
         <source>Conversational awareness</source>
-        <translation type="unfinished"></translation>
+        <translation>Conciencia conversacional</translation>
     </message>
 <message>
         <source>Personalized volume</source>
-        <translation type="unfinished"></translation>
+        <translation>Volumen personalizado</translation>
     </message>
 <message>
         <source>Reduce loud sounds</source>
-        <translation type="unfinished"></translation>
+        <translation>Reducir sonidos fuertes</translation>
     </message>
 <message>
         <source>Noise control mode</source>
-        <translation type="unfinished"></translation>
+        <translation>Modo de control de ruido</translation>
     </message>
 <message>
         <source>Speaking volume reduction:</source>
-        <translation type="unfinished"></translation>
+        <translation>Reducción del volumen al hablar:</translation>
     </message>
 <message>
         <source>40%</source>
-        <translation type="unfinished"></translation>
+        <translation>40%</translation>
     </message>
 <message>
         <source>Hearing protection cap (PPE)</source>
-        <translation type="unfinished"></translation>
+        <translation>Límite de protección auditiva (PPE)</translation>
     </message>
 <message>
         <source>Stem press actions</source>

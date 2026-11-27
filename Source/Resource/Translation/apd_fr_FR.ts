@@ -51,7 +51,7 @@ Profitez bien de tout ça.</translation>
     </message>
     <message>
         <source>ANC connection failed</source>
-        <translation type="unfinished"></translation>
+        <translation>Échec de la connexion ANC</translation>
     </message>
 </context>
 <context>
@@ -101,19 +101,19 @@ Profitez bien de tout ça.</translation>
     <name>Gui::DriverStatusCard</name>
     <message>
         <source>Driver (MagicAAP)</source>
-        <translation type="unfinished"></translation>
+        <translation>Pilote (MagicAAP)</translation>
     </message>
     <message>
         <source>Copy install command</source>
-        <translation type="unfinished"></translation>
+        <translation>Copier la commande d'installation</translation>
     </message>
     <message>
         <source>Open documentation</source>
-        <translation type="unfinished"></translation>
+        <translation>Ouvrir la documentation</translation>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>Exporter les diagnostics</translation>
     </message>
 </context>
 <context>
@@ -180,23 +180,23 @@ Profitez bien de tout ça.</translation>
     </message>
     <message>
         <source>Export diagnostics</source>
-        <translation type="unfinished"></translation>
+        <translation>Exporter les diagnostics</translation>
     </message>
     <message>
         <source>Text files (*.txt)</source>
-        <translation type="unfinished"></translation>
+        <translation>Fichiers texte (*.txt)</translation>
     </message>
     <message>
         <source>Could not write the diagnostics file.</source>
-        <translation type="unfinished"></translation>
+        <translation>Impossible d'écrire le fichier de diagnostic.</translation>
     </message>
     <message>
         <source>installed</source>
-        <translation type="unfinished"></translation>
+        <translation>installé</translation>
     </message>
     <message>
         <source>not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>non installé</translation>
     </message>
 </context>
 <context>
@@ -453,63 +453,63 @@ Vous devez d&apos;abord appairer vos AirPods dans les paramètres Bluetooth de W
     </message>
     <message>
         <source>Volume percentage when speaking (based on your pre-speaking volume).</source>
-        <translation type="unfinished"></translation>
+        <translation>Pourcentage de volume pendant la parole (basé sur le volume avant de parler).</translation>
     </message>
     <message>
         <source>Caps how loud loud sounds get, for hearing protection (0-100).</source>
-        <translation type="unfinished"></translation>
+        <translation>Limite le volume des sons forts, pour protéger l’ouïe (0-100).</translation>
     </message>
     <message>
         <source>Driver not installed</source>
-        <translation type="unfinished"></translation>
+        <translation>Pilote non installé</translation>
     </message>
     <message>
         <source>Driver ready - waiting for the earbuds</source>
-        <translation type="unfinished"></translation>
+        <translation>Pilote prêt – en attente des écouteurs</translation>
     </message>
     <message>
         <source>Connected (driver channel)</source>
-        <translation type="unfinished"></translation>
+        <translation>Connecté (canal du pilote)</translation>
     </message>
     <message>
         <source>Connected (native channel - driver features limited)</source>
-        <translation type="unfinished"></translation>
+        <translation>Connecté (canal natif - fonctionnalités du pilote limitées)</translation>
     </message>
     <message>
         <source>Install the driver to unlock ANC control, loud sound reduction and other AAP features. Copy the install command or open the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>Installez le pilote pour débloquer le contrôle ANC, la réduction des sons forts et d’autres fonctionnalités AAP. Copiez la commande d’installation ou ouvrez la documentation.</translation>
     </message>
     <message>
         <source>Open the earbud case near this computer to connect.</source>
-        <translation type="unfinished"></translation>
+        <translation>Ouvrez le boîtier des écouteurs près de cet ordinateur pour vous connecter.</translation>
     </message>
     <message>
         <source>All driver features available.</source>
-        <translation type="unfinished"></translation>
+        <translation>Toutes les fonctionnalités du pilote sont disponibles.</translation>
     </message>
     <message>
         <source>The earbuds do not answer attribute reads on this channel; loud sound reduction state cannot be read back.</source>
-        <translation type="unfinished"></translation>
+        <translation>Les écouteurs ne répondent pas aux lectures d’attributs sur ce canal ; l’état de réduction des sons forts ne peut pas être lu.</translation>
     </message>
     <message>
         <source>Connected without the driver channel; features that require the driver (loud sound reduction, precise battery) may not work. See the documentation.</source>
-        <translation type="unfinished"></translation>
+        <translation>Connecté sans le canal du pilote ; les fonctionnalités nécessitant le pilote (réduction des sons forts, batterie précise) peuvent ne pas fonctionner. Voir la documentation.</translation>
     </message>
     <message>
         <source>Last connection failed: the MagicAAP driver is not installed or not running. Install it (see documentation), then reconnect.</source>
-        <translation type="unfinished"></translation>
+        <translation>Échec de la dernière connexion : le pilote MagicAAP n’est pas installé ou n’est pas en cours d’exécution. Installez-le (voir la documentation), puis reconnectez-vous.</translation>
     </message>
     <message>
         <source>Last connection failed: the earbuds did not offer the ANC service. Make sure they are paired, in range, and the case is open.</source>
-        <translation type="unfinished"></translation>
+        <translation>Échec de la dernière connexion : les écouteurs n’ont pas proposé le service ANC. Vérifiez qu’ils sont appairés, à portée et que le boîtier est ouvert.</translation>
     </message>
     <message>
         <source>Last connection failed: the Bluetooth transport could not be opened. Check that Bluetooth is on and the earbuds are close to this computer.</source>
-        <translation type="unfinished"></translation>
+        <translation>Échec de la dernière connexion : le transport Bluetooth n’a pas pu être ouvert. Vérifiez que Bluetooth est activé et que les écouteurs sont proches de cet ordinateur.</translation>
     </message>
     <message>
         <source>Last connection failed during the protocol handshake. Move the earbuds closer and reconnect; see the documentation if it persists.</source>
-        <translation type="unfinished"></translation>
+        <translation>La dernière connexion a échoué pendant la négociation du protocole. Rapprochez les écouteurs et reconnectez-vous ; voir la documentation si le problème persiste.</translation>
     </message>
     <message>
         <source>Action for a single press of the left stem.</source>
@@ -715,15 +715,15 @@ Vous devez d&apos;abord appairer vos AirPods dans les paramètres Bluetooth de W
     </message>
 <message>
         <source>Speaking volume reduction:</source>
-        <translation type="unfinished"></translation>
+        <translation>Réduction du volume pendant la parole :</translation>
     </message>
 <message>
         <source>40%</source>
-        <translation type="unfinished"></translation>
+        <translation>40%</translation>
     </message>
 <message>
         <source>Hearing protection cap (PPE)</source>
-        <translation type="unfinished"></translation>
+        <translation>Plafond de protection auditive (PPE)</translation>
     </message>
 <message>
         <source>Stem press actions</source>
