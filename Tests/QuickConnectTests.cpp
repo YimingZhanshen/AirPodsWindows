@@ -1141,8 +1141,8 @@ void QuickConnectTests::multiRadioEnumerationClosesEveryHandle()
             *radio = 7;
             return 0;
         },
-        [](int, int *) { return false; }, [](int) { ++failedRadioClosed; },
-        [](int) { ++failedRadioClosed; }, [] { return uint32_t{5}; }, [](int) { return true; });
+        [](int, int *) { return false; }, [&](int) { ++failedRadioClosed; },
+        [&](int) { ++failedRadioClosed; }, [] { return uint32_t{5}; }, [](int) { return true; });
     QVERIFY(!failed.started);
     QCOMPARE(failedRadioClosed, 1);
 }
