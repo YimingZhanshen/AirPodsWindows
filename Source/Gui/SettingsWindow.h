@@ -168,6 +168,7 @@ private:
             // QDialogButtonBox handles LanguageChange after its parent and resets standard-button
             // labels to Qt's platform text. Apply our app translations once propagation ends.
             QTimer::singleShot(0, this, [this] { UpdateStandardButtonTexts(); });
-        });
+        }
+    });
 };
 } // namespace Gui
