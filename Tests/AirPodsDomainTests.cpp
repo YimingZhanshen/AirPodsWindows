@@ -3230,7 +3230,7 @@ void AirPodsDomainTests::StemTranslationsAreFinished_data()
         QString{Config::TranslationLocales}.split(QStringLiteral(";"), Qt::SkipEmptyParts);
     QCOMPARE(locales.size(), 18);
     for (const auto &locale : locales) {
-        QTest::newRow(qPrintable(locale)) << locale;
+        QTest::newRow(qPrintable(locale)) << qPrintable(locale);
     }
 }
 
