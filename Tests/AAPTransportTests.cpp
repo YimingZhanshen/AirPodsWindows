@@ -911,6 +911,7 @@ private slots:
         manager._transport.store(transport);
         manager._attempt = Core::AAP::AAPAttempt{1, 12};
         manager._connected = true;
+        manager._commandBroker->BeginSession(manager._attempt.generation);
 
         // Unknown and every non-Adaptive mode reject the write without touching the wire.
         for (const auto mode :
@@ -924,18 +925,25 @@ private slots:
         QCOMPARE(transport->SendCalls(), size_t{0});
         QVERIFY(!manager.GetAdaptiveNoiseLevel().has_value());
 
+        // Adaptive accepts the submission; the broker queues it and the wire write can still
+        // fail. A failed write publishes no echo, so the cached value stays unknown.
         manager._noiseControlMode = Core::AAP::NoiseControlMode::Adaptive;
         transport->SetSendLimit(5);
-        QVERIFY(!manager.SetAdaptiveNoiseLevel(70));
+        QVERIFY(manager.SetAdaptiveNoiseLevel(70));
+        QTRY_VERIFY(transport->WaitForSendAttempts(1, std::chrono::seconds{1}));
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
         QVERIFY(!manager.GetAdaptiveNoiseLevel().has_value());
 
         transport->SetSendLimit(std::nullopt);
         QVERIFY(manager.SetAdaptiveNoiseLevel(255));
-        QCOMPARE(manager.GetAdaptiveNoiseLevel(), std::optional<uint8_t>{100});
+        QTRY_COMPARE(transport->SendCalls(), size_t{2});
         QCOMPARE(
             transport->LastSend(),
             (std::vector<uint8_t>{
                 0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 100, 0x00, 0x00, 0x00}));
+        // Only the device's echo publishes the cached value.
+        manager.ProcessPacket({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 100, 0x00, 0x00, 0x00});
+        QCOMPARE(manager.GetAdaptiveNoiseLevel(), std::optional<uint8_t>{100});
 
         manager._noiseControlMode = Core::AAP::NoiseControlMode::Off;
         const auto sends = transport->SendCalls();

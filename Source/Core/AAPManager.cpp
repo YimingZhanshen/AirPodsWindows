@@ -364,6 +364,7 @@ void Manager::Disconnect()
         _loudSoundReductionState.reset();
         _batterySnapshot.reset();
         _ppeCapLevel.reset();
+        _adaptiveNoiseLevel.reset();
         _attPathState.store(AttPathState::Unknown);
         _attProbeDeadlineMs.store(0);
     }
@@ -482,6 +483,12 @@ std::optional<uint8_t> Manager::GetPpeCapLevel() const
 {
     std::lock_guard<std::mutex> lock{_mutex};
     return _ppeCapLevel;
+}
+
+std::optional<uint8_t> Manager::GetAdaptiveNoiseLevel() const
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    return _adaptiveNoiseLevel;
 }
 
 bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
@@ -1652,6 +1659,11 @@ bool Manager::SetPpeCapLevel(uint8_t)
 }
 
 std::optional<uint8_t> Manager::GetPpeCapLevel() const
+{
+    return std::nullopt;
+}
+
+std::optional<uint8_t> Manager::GetAdaptiveNoiseLevel() const
 {
     return std::nullopt;
 }
