@@ -522,6 +522,7 @@ void Manager::Disconnect()
         // Privacy + correctness: device information (serials) belongs to this
         // session only (blueprint 2.1).
         _deviceInfo.reset();
+        _adaptiveNoiseLevel.reset();
         _attPathState.store(AttPathState::Unknown);
         _attProbeDeadlineMs.store(0);
     }
@@ -646,6 +647,12 @@ std::optional<AAPDeviceInfo> Manager::GetDeviceInfo() const
 {
     std::lock_guard<std::mutex> lock{_mutex};
     return _deviceInfo;
+}
+
+std::optional<uint8_t> Manager::GetAdaptiveNoiseLevel() const
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    return _adaptiveNoiseLevel;
 }
 
 bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
@@ -1922,6 +1929,11 @@ std::optional<uint8_t> Manager::GetPpeCapLevel() const
     return std::nullopt;
 }
 std::optional<AAPDeviceInfo> Manager::GetDeviceInfo() const
+{
+    return std::nullopt;
+}
+
+std::optional<uint8_t> Manager::GetAdaptiveNoiseLevel() const
 {
     return std::nullopt;
 }
