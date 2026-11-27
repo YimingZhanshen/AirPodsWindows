@@ -231,6 +231,9 @@ std::optional<EarState> Details::EarDetectionTracker::UpdateBle(
     if (_bleFenceAt.has_value() && now < *_bleFenceAt) {
         return std::nullopt; // A pre-disconnect BLE report cannot confirm the new source.
     }
+    if (_lastUpdateAt.has_value() && now < *_lastUpdateAt) {
+        return std::nullopt;
+    }
     if (_bleAt.has_value() && now < *_bleAt) {
         return std::nullopt; // An out-of-order reading cannot refresh the source.
     }

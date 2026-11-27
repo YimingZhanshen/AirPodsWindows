@@ -335,6 +335,7 @@ private:
     std::function<void()> _publicSendBarrierForTest;
     std::function<void()> _afterCommandIdentityCheckForTest;
     std::function<void()> _beforeCommandSubmitLockForTest;
+    std::function<void()> _beforeStemReplayForTest;
     std::function<std::chrono::steady_clock::time_point()> _attNowForTest;
 
     // Internal methods

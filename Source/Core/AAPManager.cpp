@@ -287,6 +287,9 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
     // with a fresh generation check, irrespective of an earlier session's success.
     {
         std::lock_guard lock{_stemConfigMutex};
+        if (_beforeStemReplayForTest) {
+            _beforeStemReplayForTest();
+        }
         if (!_stemConfigState.Replay(attempt.generation, [&](uint8_t value) {
                 return SendPacket(attempt, Packets::BuildStemConfigPacket(value), stopToken);
             }))
@@ -741,7 +744,10 @@ AAPCommandResult Manager::SubmitCommand(AAPCommand command, std::stop_token stop
         if (reportedMode != NoiseControlMode::Adaptive && !pendingAdaptive) {
             // Settings may change while disconnected/Off/unknown. Remember the desired filtering
             // strength without queueing a command that can only produce a false rejection.
-            return _commandBroker->RecordDesired(command);
+            auto result = _commandBroker->RecordDesired(command);
+            result.accepted = true;
+            result.failure.reset();
+            return result;
         }
         return _commandBroker->Submit(command, stopToken);
     }
@@ -943,7 +949,16 @@ void Manager::HandleCommandSettled(const AAPCommandOutcome &outcome)
         AAPAttempt attempt;
         {
             std::lock_guard lock{_mutex};
-            if (!_connected || outcome.generation != _attempt.generation || !isCurrentRequest()) {
+            const bool transportClosed =
+                outcome.settlement == AAPCommandSettlement::TransportClosed;
+            if (!_connected || outcome.generation != _attempt.generation) {
+                if (!transportClosed || outcome.generation != _attempt.generation ||
+                    !isCurrentRequest())
+                {
+                    return;
+                }
+            }
+            else if (!isCurrentRequest()) {
                 return;
             }
             if (_afterCommandIdentityCheckForTest) {

@@ -2215,7 +2215,6 @@ void AirPodsDomainTests::AapDisconnectRequiresFreshBleConfirmation()
     QCOMPARE(tracker.CurrentState(), EarState::OutOfEar);
     // Out-of-order BLE cannot count as post-disconnect confirmation.
     QCOMPARE(tracker.UpdateBle(makeState(true), 300ms), std::optional<EarState>{});
-    QCOMPARE(tracker.Reevaluate(1100ms), std::optional<EarState>{});
     QCOMPARE(tracker.UpdateBle(makeState(true), 800ms), std::optional<EarState>{});
     QCOMPARE(tracker.Reevaluate(1099ms), std::optional<EarState>{});
     QCOMPARE(tracker.Reevaluate(1100ms), std::optional<EarState>{EarState::InEar});

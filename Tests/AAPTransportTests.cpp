@@ -1454,16 +1454,28 @@ private slots:
         manager._attempt = Core::AAP::AAPAttempt{1, 9};
         manager._connected = true;
         manager._noiseControlMode = Core::AAP::NoiseControlMode::Adaptive;
+        manager._commandBroker->BeginSession(9);
+        std::promise<Core::AAP::AAPCommandOutcome> settled;
+        auto settledFuture = settled.get_future();
+        Core::AAP::Callbacks callbacks;
+        callbacks.onCommandSettled = [&](const Core::AAP::AAPCommandOutcome &outcome,
+                                         const Core::AAP::AAPAttempt &) {
+            settled.set_value(outcome);
+        };
+        manager.SetCallbacks(std::move(callbacks));
 
-        std::future<bool> result = std::async(
-            std::launch::async, [&manager] { return manager.SetAdaptiveNoiseLevel(70); });
+        auto result = std::async(std::launch::async, [&manager] {
+            return manager.SubmitCommand({Core::AAP::AAPCommandKind::SetAdaptiveNoiseLevel, 70});
+        });
+        QVERIFY(result.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QVERIFY(result.get().accepted);
         QVERIFY(oldTransport->WaitForSendWaiter(std::chrono::seconds{1}));
 
         // Retire generation 9 while its write is blocked. The attempt-bound cancellation must
         // release the old send before a generation-10 transport is installed.
         manager.Disconnect();
-        QVERIFY(result.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
-        QVERIFY(!result.get());
+        QVERIFY(settledFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QCOMPARE(settledFuture.get().settlement, Core::AAP::AAPCommandSettlement::TransportClosed);
         QVERIFY(oldTransport->SentRecords().empty());
         QVERIFY(!manager.GetAdaptiveNoiseLevel().has_value());
 
@@ -1472,14 +1484,22 @@ private slots:
             manager._attempt = Core::AAP::AAPAttempt{1, 10};
             manager._transport.store(newTransport);
             manager._connected = true;
+            manager._disconnecting = false;
+            manager._sessionStop = std::stop_source{};
+            manager._connectStop = std::stop_source{};
             manager._noiseControlMode = Core::AAP::NoiseControlMode::Adaptive;
         }
+        manager._commandBroker->BeginSession(10);
         QCOMPARE(newTransport->SendCalls(), size_t{0});
-        QVERIFY(manager.SetAdaptiveNoiseLevel(40));
+        QVERIFY(
+            manager.SubmitCommand({Core::AAP::AAPCommandKind::SetAdaptiveNoiseLevel, 40}).accepted);
+        QVERIFY(newTransport->WaitForRecordCount(1, std::chrono::seconds{1}));
         const auto records = newTransport->SentRecords();
         QCOMPARE(records.size(), size_t{1});
         QCOMPARE(records.front().at(7), uint8_t{40});
         QVERIFY(oldTransport->SentRecords().empty());
+        manager.ProcessPacket({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 40, 0x00, 0x00, 0x00});
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
         manager.Disconnect();
     }
 
@@ -1541,6 +1561,9 @@ private slots:
         QVERIFY(transport->WaitForReceiveWaiter(std::chrono::seconds{1}));
         manager._noiseControlMode = Core::AAP::NoiseControlMode::Adaptive;
         QVERIFY(manager.SetAdaptiveNoiseLevel(60));
+        QVERIFY(!manager.GetAdaptiveNoiseLevel().has_value());
+        QVERIFY(transport->WaitForRecordCount(6, std::chrono::seconds{1}));
+        manager.ProcessPacket({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 60, 0x00, 0x00, 0x00});
         QCOMPARE(manager.GetAdaptiveNoiseLevel(), std::optional<uint8_t>{60});
 
         transport->SetEof();
@@ -1724,7 +1747,7 @@ private slots:
         // Generation 2 must replay 0x39 even though generation 1 sent the same revision. The
         // first replay write fails; the bounded post-handshake recovery must retry on this
         // transport.
-        transport->SetSendFailures(1);
+        manager._beforeStemReplayForTest = [&] { transport->SetSendFailures(1); };
         QVERIFY(manager.Connect({0x1234, 2}));
         QCOMPARE(transport->SendCalls(), size_t{6});
         const auto records = transport->SentRecords();
@@ -1745,7 +1768,12 @@ private slots:
             return transport;
         };
         QVERIFY(manager.SetStemConfig(0x0A));
-        transport->SetSendFailures(2);
+        int replayCalls = 0;
+        manager._beforeStemReplayForTest = [&] {
+            if (++replayCalls == 1) {
+                transport->SetSendFailures(2);
+            }
+        };
         QVERIFY(manager.Connect({0x1234, 1}));
         // Handshake, two failed 0x39 attempts, features, notifications, ATT probe. No third
         // retry.
@@ -1765,6 +1793,7 @@ private slots:
     {
         Core::AAP::Manager manager;
         auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
         manager._transport.store(transport);
         manager._attempt = {0x1234, 7};
         manager._connected = true;
@@ -1853,6 +1882,8 @@ private slots:
         Core::AAP::Manager manager;
         auto original = std::make_shared<AAPTestSupport::FakeTransport>();
         auto replacement = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(original->Connect(1, {}));
+        QVERIFY(replacement->Connect(1, {}));
         original->SetBlockSend(true);
         manager._transport.store(original);
         manager._attempt = {0x1234, 7};
@@ -2162,7 +2193,7 @@ private slots:
         QVERIFY(manager.Connect(secondAttempt));
         QVERIFY(manager.IsConnected());
         QCOMPARE(connectedGenerations, 8);
-        QCOMPARE(rebound->SendCalls(), size_t{4});
+        QCOMPARE(rebound->SendCalls(), size_t{5});
 
         auto disconnectRebound = std::async(std::launch::async, [&] { manager.Disconnect(); });
         QVERIFY(disconnectRebound.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
