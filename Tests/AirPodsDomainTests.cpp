@@ -3279,23 +3279,26 @@ void AirPodsDomainTests::StemTranslationsAreFinished()
         const auto key =
             (isDescription ? QStringLiteral("QObject") : QStringLiteral("SettingsWindow")) +
             QLatin1Char{'\\'} + expected;
-        QVERIFY2(counts.value(key) == 1, qPrintable(QString{"%1: missing or duplicate %2/%3"})
-                                                   .arg(locale, key.section(QLatin1Char{'\\'}, 0, 0),
-                                                        expected)));
-        QVERIFY2(!unfinished.value(key, true),
-            qPrintable(QString{"%1: unfinished translation for %2"}).arg(locale, expected)));
+        QVERIFY2(
+            counts.value(key) == 1, qPrintable(QString{"%1: missing or duplicate %2/%3"}.arg(
+                                        locale, key.section(QLatin1Char{'\\'}, 0, 0), expected)));
+        QVERIFY2(
+            !unfinished.value(key, true),
+            qPrintable(QString{"%1: unfinished translation for %2"}.arg(locale, expected)));
         const auto translation = translations.value(key);
-        QVERIFY2(!translation.isEmpty(), qPrintable(QString{"%1: empty translation for %2"})
-                                                  .arg(locale, expected)));
+        QVERIFY2(
+            !translation.isEmpty(),
+            qPrintable(QString{"%1: empty translation for %2"}.arg(locale, expected)));
         // Spanish "Triple" and French "Double"/"Triple"/"Long" are correctly identical to the
         // source; every other entry must be a real translation rather than an untranslated
         // fallback.
-        QVERIFY2((locale == QStringLiteral("es_ES") && expected == QStringLiteral("Triple")) ||
-                     (locale == QStringLiteral("fr_FR") &&
-                      (expected == QStringLiteral("Double") || expected == QStringLiteral("Triple") ||
-                       expected == QStringLiteral("Long"))) ||
-                     translation != expected,
-            qPrintable(QString{"%1: untranslated fallback for %2"}).arg(locale, expected)));
+        QVERIFY2(
+            (locale == QStringLiteral("es_ES") && expected == QStringLiteral("Triple")) ||
+                (locale == QStringLiteral("fr_FR") &&
+                 (expected == QStringLiteral("Double") || expected == QStringLiteral("Triple") ||
+                  expected == QStringLiteral("Long"))) ||
+                translation != expected,
+            qPrintable(QString{"%1: untranslated fallback for %2"}.arg(locale, expected)));
     }
 }
 
