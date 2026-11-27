@@ -341,6 +341,7 @@ set(
     "Source/Core/AAPAtt.cpp"
     "Source/Core/AAPMessage.cpp"
     "Source/Core/AAPStem.cpp"
+    "Source/Core/AAPDeviceInfo.cpp"
     "Source/Core/ConnectionDiagnostics.cpp"
     "Source/Core/QuickConnect.cpp"
     "Source/Core/PlaybackMonitor.cpp"
@@ -376,6 +377,7 @@ set(
     "Source/Gui/Widget/FadeOverlay.cpp"
     "Source/Gui/Widget/DriverStatusCard.cpp"
     "Source/Gui/Widget/HeadTrackingCard.cpp"
+    "Source/Gui/Widget/DeviceInfoCard.cpp"
     "Source/Gui/Theme.cpp"
 )
 

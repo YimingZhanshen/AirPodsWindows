@@ -388,6 +388,11 @@ public:
     AAP::AttPathState GetAAPAttPathState() const;
     AAP::ConnectFailure GetLastAAPConnectFailure() const;
 
+    // Read-only device information cache (blueprint 2.1). AAP reader callbacks
+    // refresh it under the worker generation guard; GUI code pulls a copy on
+    // the main thread. Values are display-only and never logged or exported.
+    std::optional<AAP::AAPDeviceInfo> GetAAPDeviceInfo() const;
+
     // Head tracking
     bool StartHeadTracking();
     bool StopHeadTracking();
@@ -415,6 +420,10 @@ private:
     std::mutex _mutex;
     // Declared before the scanner and workers it feeds so its timer callbacks cannot outlive
     // these trackers. The destructor first drains workers, then member destruction converges.
+    // AAP reader callbacks and GUI pulls share this snapshot. A dedicated mutex
+    // avoids waiting on _mutex while DisconnectAAP joins the reader thread.
+    mutable std::mutex _deviceInfoMutex;
+    std::optional<AAP::AAPDeviceInfo> _aapDeviceInfo;
     Details::LidTracker _lidTracker;
     Details::EarDetectionTracker _earDetection;
     QTimer _earDebounceTimer;
@@ -536,6 +545,7 @@ private:
     void OnHeadTrackingData(AAP::HeadTrackingData data, AAP::AAPAttempt attempt);
     void OnStemPress(AAP::StemEvent event, AAP::AAPAttempt attempt);
     void OnAttProbeResult(AAP::AttPathState state, AAP::AAPAttempt attempt);
+    void OnAAPDeviceInfoChanged(AAP::AAPAttempt attempt);
     void OnAAPConnected(AAP::AAPAttempt attempt);
     void OnAAPDisconnected(AAP::AAPAttempt attempt);
     void SetupAAPCallbacks();
@@ -594,6 +604,11 @@ Q_SIGNALS:
     // host work on the GUI thread only after revalidating the address and generation, so no widget
     // or media API is touched from the worker and stale queued gestures cannot cross a reconnect.
     void StemActionRequestedSafely(int action, qulonglong address, qulonglong generation);
+    // Blueprint 2.1: raised from the AAP reader thread or explicit teardown after
+    // the cache is updated or cleared. Deliberately payload-free: the privacy-
+    // sensitive device information stays in the manager cache and GUI code
+    // pulls it via GetAAPDeviceInfo() on the main thread.
+    void DeviceInfoChangedSafely();
 };
 
 std::vector<Core::Bluetooth::Device> GetDevices();

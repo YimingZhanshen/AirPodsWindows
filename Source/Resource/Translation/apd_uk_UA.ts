@@ -55,6 +55,49 @@ Enjoy it all.</source>
     </message>
 </context>
 <context>
+    <name>Gui::DeviceInfoCard</name>
+    <message>
+        <source>Device information</source>
+        <translation>Відомості про пристрій</translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation>Назва</translation>
+    </message>
+    <message>
+        <source>Model</source>
+        <translation>Модель</translation>
+    </message>
+    <message>
+        <source>Manufacturer</source>
+        <translation>Виробник</translation>
+    </message>
+    <message>
+        <source>Serial number</source>
+        <translation>Серійний номер</translation>
+    </message>
+    <message>
+        <source>Firmware version</source>
+        <translation>Версія мікропрограми</translation>
+    </message>
+    <message>
+        <source>Firmware version 2</source>
+        <translation>Версія мікропрограми 2</translation>
+    </message>
+    <message>
+        <source>Hardware revision</source>
+        <translation>Ревізія апаратної частини</translation>
+    </message>
+    <message>
+        <source>Left earbud serial</source>
+        <translation>Серійний номер лівого навушника</translation>
+    </message>
+    <message>
+        <source>Right earbud serial</source>
+        <translation>Серійний номер правого навушника</translation>
+    </message>
+</context>
+<context>
     <name>Gui::DriverStatusCard</name>
     <message>
         <source>Driver (MagicAAP)</source>

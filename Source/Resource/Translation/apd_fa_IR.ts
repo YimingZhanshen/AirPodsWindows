@@ -55,6 +55,49 @@ Enjoy it all.</source>
     </message>
 </context>
 <context>
+    <name>Gui::DeviceInfoCard</name>
+    <message>
+        <source>Device information</source>
+        <translation>اطلاعات دستگاه</translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation>نام</translation>
+    </message>
+    <message>
+        <source>Model</source>
+        <translation>مدل</translation>
+    </message>
+    <message>
+        <source>Manufacturer</source>
+        <translation>تولیدکننده</translation>
+    </message>
+    <message>
+        <source>Serial number</source>
+        <translation>شماره سریال</translation>
+    </message>
+    <message>
+        <source>Firmware version</source>
+        <translation>نسخهٔ فریم‌웨어</translation>
+    </message>
+    <message>
+        <source>Firmware version 2</source>
+        <translation>نسخهٔ فریم‌웨어 2</translation>
+    </message>
+    <message>
+        <source>Hardware revision</source>
+        <translation>بازنگری سخت‌افزار</translation>
+    </message>
+    <message>
+        <source>Left earbud serial</source>
+        <translation>شماره سریال گوشی چپ</translation>
+    </message>
+    <message>
+        <source>Right earbud serial</source>
+        <translation>شماره سریال گوشی راست</translation>
+    </message>
+</context>
+<context>
     <name>Gui::DriverStatusCard</name>
     <message>
         <source>Driver (MagicAAP)</source>

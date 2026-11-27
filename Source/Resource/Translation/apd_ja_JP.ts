@@ -55,6 +55,49 @@ Enjoy it all.</source>
     </message>
 </context>
 <context>
+    <name>Gui::DeviceInfoCard</name>
+    <message>
+        <source>Device information</source>
+        <translation>デバイス情報</translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation>名前</translation>
+    </message>
+    <message>
+        <source>Model</source>
+        <translation>モデル</translation>
+    </message>
+    <message>
+        <source>Manufacturer</source>
+        <translation>メーカー</translation>
+    </message>
+    <message>
+        <source>Serial number</source>
+        <translation>シリアル番号</translation>
+    </message>
+    <message>
+        <source>Firmware version</source>
+        <translation>ファームウェアバージョン</translation>
+    </message>
+    <message>
+        <source>Firmware version 2</source>
+        <translation>ファームウェアバージョン 2</translation>
+    </message>
+    <message>
+        <source>Hardware revision</source>
+        <translation>ハードウェアリビジョン</translation>
+    </message>
+    <message>
+        <source>Left earbud serial</source>
+        <translation>左耳のシリアル番号</translation>
+    </message>
+    <message>
+        <source>Right earbud serial</source>
+        <translation>右耳のシリアル番号</translation>
+    </message>
+</context>
+<context>
     <name>Gui::DriverStatusCard</name>
     <message>
         <source>Driver (MagicAAP)</source>

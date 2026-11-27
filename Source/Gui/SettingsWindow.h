@@ -35,6 +35,7 @@
 // names Core::AirPods::Manager.
 #include "Widget/DriverStatusCard.h"
 #include "Widget/HeadTrackingCard.h"
+#include "Widget/DeviceInfoCard.h"
 
 #include "ui_SettingsWindow.h"
 
@@ -84,6 +85,10 @@ private:
     void SetupStemActionsCard();
     void RetranslateStemActions();
     void SetupHeadTrackingCard();
+
+    DeviceInfoCard *_deviceInfoCard{nullptr};
+    bool _infoCardSignalConnected{false};
+    void SetupDeviceInfoCard();
     void RestoreDefaults();
     void Update(const Fields &fields, bool trigger);
     void UpdateQuickConnectDevices(const Fields &fields);
@@ -157,10 +162,12 @@ private:
         }
         if (_headTrackingCard != nullptr) {
             _headTrackingCard->Refresh();
-        }
-        // QDialogButtonBox handles LanguageChange after its parent and resets standard-button
-        // labels to Qt's platform text. Apply our app translations once propagation ends.
-        QTimer::singleShot(0, this, [this] { UpdateStandardButtonTexts(); });
-    });
+            if (_deviceInfoCard != nullptr) {
+                _deviceInfoCard->Refresh();
+            }
+            // QDialogButtonBox handles LanguageChange after its parent and resets standard-button
+            // labels to Qt's platform text. Apply our app translations once propagation ends.
+            QTimer::singleShot(0, this, [this] { UpdateStandardButtonTexts(); });
+        });
 };
 } // namespace Gui

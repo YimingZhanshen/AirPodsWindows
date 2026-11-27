@@ -447,6 +447,7 @@ SettingsWindow::SettingsWindow(
     SetupDriverStatusCard();
     SetupStemActionsCard();
     SetupHeadTrackingCard();
+    SetupDeviceInfoCard();
 }
 
 void SettingsWindow::SetupStemActionsCard()
@@ -657,6 +658,17 @@ void SettingsWindow::SetupHeadTrackingCard()
     _headTrackingCard->setVisible(false);
 }
 
+// Inserts the device information card (blueprint 2.1) immediately after the
+// device card. It stays hidden until the injected manager provider supplies a
+// parsed 0x001D record, so unsupported devices show no empty shell.
+void SettingsWindow::SetupDeviceInfoCard()
+{
+    _deviceInfoCard = new DeviceInfoCard{_ui.general};
+    const auto deviceCardIndex = _ui.generalLayout->indexOf(_ui.cardDevice);
+    _ui.generalLayout->insertWidget(deviceCardIndex + 1, _deviceInfoCard);
+    _deviceInfoCard->setVisible(false);
+}
+
 // Called by the application layer once the AirPods manager exists; see the
 // header for why this cannot happen during construction.
 void SettingsWindow::SetAirPodsManagerProvider(
@@ -695,6 +707,27 @@ void SettingsWindow::SetAirPodsManagerProvider(
             &manager, &Core::AirPods::Manager::AapConnectionFailedSafely, _driverStatusCard,
             [this](int) { _driverStatusCard->Refresh(); });
         _driverCardSignalConnected = true;
+    }
+
+    if (_deviceInfoCard != nullptr) {
+        // The signal is payload-free by design: the card pulls the manager
+        // cache on the GUI thread (Qt queues emissions from the AAP reader),
+        // so no privacy-sensitive string ever crosses threads in a signal and
+        // worker code never touches widgets.
+        _deviceInfoCard->SetInfoProvider([this] {
+            if (!_getAirPodsManager) {
+                return std::optional<Core::AAP::AAPDeviceInfo>{};
+            }
+            return _getAirPodsManager().GetAAPDeviceInfo();
+        });
+
+        if (!_infoCardSignalConnected) {
+            auto &manager = _getAirPodsManager();
+            connect(
+                &manager, &Core::AirPods::Manager::DeviceInfoChangedSafely, _deviceInfoCard,
+                [this] { _deviceInfoCard->Refresh(); });
+            _infoCardSignalConnected = true;
+        }
     }
 }
 

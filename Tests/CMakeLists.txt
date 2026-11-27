@@ -169,6 +169,14 @@ foreach(scale_factor 1 1.25 1.5 2)
         LidPopupWiringScale${scale_suffix}
         PROPERTIES ENVIRONMENT "QT_SCALE_FACTOR=${scale_factor}"
     )
+    add_test(
+        NAME DeviceInfoCardRenderingScale${scale_suffix}
+        COMMAND UiRenderingTests DeviceInfoCardRendersProviderRows
+    )
+    set_tests_properties(
+        DeviceInfoCardRenderingScale${scale_suffix}
+        PROPERTIES ENVIRONMENT "QT_SCALE_FACTOR=${scale_factor}"
+    )
 endforeach()
 
 foreach(test_target AirPodsDomainTests QuickConnectTests AAPProtocolTests AAPConnectionStateMachineTests AAPTransportTests AnimationViewTests UiRenderingTests)

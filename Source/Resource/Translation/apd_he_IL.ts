@@ -55,6 +55,49 @@ Enjoy it all.</source>
     </message>
 </context>
 <context>
+    <name>Gui::DeviceInfoCard</name>
+    <message>
+        <source>Device information</source>
+        <translation>פרטי המכשיר</translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation>שם</translation>
+    </message>
+    <message>
+        <source>Model</source>
+        <translation>דגם</translation>
+    </message>
+    <message>
+        <source>Manufacturer</source>
+        <translation>יצרן</translation>
+    </message>
+    <message>
+        <source>Serial number</source>
+        <translation>מספר סידורי</translation>
+    </message>
+    <message>
+        <source>Firmware version</source>
+        <translation>גרסת הקושחה</translation>
+    </message>
+    <message>
+        <source>Firmware version 2</source>
+        <translation>גרסת הקושחה 2</translation>
+    </message>
+    <message>
+        <source>Hardware revision</source>
+        <translation>מהדורת החומרה</translation>
+    </message>
+    <message>
+        <source>Left earbud serial</source>
+        <translation>מספר סידורי של אוזנייה שמאלית</translation>
+    </message>
+    <message>
+        <source>Right earbud serial</source>
+        <translation>מספר סידורי של אוזנייה ימנית</translation>
+    </message>
+</context>
+<context>
     <name>Gui::DriverStatusCard</name>
     <message>
         <source>Driver (MagicAAP)</source>

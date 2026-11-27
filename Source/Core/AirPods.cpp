@@ -518,6 +518,12 @@ void Manager::SetupAAPCallbacks()
         [this](const AAP::AAPCommandOutcome &outcome, AAP::AAPAttempt attempt) {
             OnAAPCommandSettled(outcome, attempt);
         };
+    // Blueprint 2.1: AAPManager stores the parsed record and calls back with
+    // only the session identity. This worker pulls the current snapshot into
+    // the AirPods manager cache; the GUI signal below carries no payload.
+    callbacks.onDeviceInfoChanged = [this](AAP::AAPAttempt attempt) {
+        OnAAPDeviceInfoChanged(attempt);
+    };
 
     callbacks.onConnected = [this](AAP::AAPAttempt attempt) { OnAAPConnected(attempt); };
 
@@ -882,6 +888,19 @@ void Manager::ScheduleAAPConnection(uint64_t address)
 
 void Manager::DisconnectAAP()
 {
+    // Clear before AAP teardown: Disconnect may publish the queued connection-state
+    // signal while this method is still running, and that refresh must already see
+    // an empty cache rather than the previous device's serials.
+    bool clearedBeforeTeardown = false;
+    {
+        std::lock_guard lock{_deviceInfoMutex};
+        clearedBeforeTeardown = _aapDeviceInfo.has_value();
+        _aapDeviceInfo.reset();
+    }
+    if (clearedBeforeTeardown) {
+        emit DeviceInfoChangedSafely();
+    }
+
     {
         std::lock_guard lock{_aapWorkerMutex};
         _aapDesiredAddress.reset();
@@ -896,6 +915,18 @@ void Manager::DisconnectAAP()
     // to unwind; this is also the cancellation path used during shutdown.
     _aapMgr.CancelConnect();
     _aapMgr.Disconnect();
+
+    // The reader may push one last record while it is being joined. Clear again
+    // after teardown so no late callback can repopulate the GUI-facing snapshot.
+    bool repopulatedDuringTeardown = false;
+    {
+        std::lock_guard lock{_deviceInfoMutex};
+        repopulatedDuringTeardown = _aapDeviceInfo.has_value();
+        _aapDeviceInfo.reset();
+    }
+    if (repopulatedDuringTeardown) {
+        emit DeviceInfoChangedSafely();
+    }
 
     {
         std::lock_guard lock{_aapWorkerMutex};
@@ -1424,6 +1455,12 @@ AAP::ConnectFailure Manager::GetLastAAPConnectFailure() const
     return _aapMgr.GetLastConnectFailure();
 }
 
+std::optional<AAP::AAPDeviceInfo> Manager::GetAAPDeviceInfo() const
+{
+    std::lock_guard lock{_deviceInfoMutex};
+    return _aapDeviceInfo;
+}
+
 bool Manager::StartHeadTracking()
 {
     return SetHeadTrackingDesired(true);
@@ -1729,6 +1766,35 @@ void Manager::OnAttProbeResult(AAP::AttPathState state, AAP::AAPAttempt attempt)
     LOG(Info, "AAP ATT path state: {}", static_cast<int>(state));
 }
 
+// Runs on the AAP reader thread. Keep the generation check and cache pull under
+// the worker mutex so a rebind cannot swap sessions between them. The parsed
+// values never cross a Qt signal; widgets pull this snapshot on the GUI thread.
+void Manager::OnAAPDeviceInfoChanged(AAP::AAPAttempt attempt)
+{
+    std::lock_guard workerLock{_aapWorkerMutex};
+    const auto active = _aapMgr.GetLastAttempt();
+    const bool current =
+        !_aapShutdown &&
+        ((_aapConnectInProgress && _aapActiveAttempt.address == attempt.address &&
+          _aapActiveAttempt.generation == attempt.generation) ||
+         (_aapConnection.State() == AAP::AAPConnectionState::Connected && _aapMgr.IsConnected() &&
+          active.address == attempt.address && active.generation == attempt.generation));
+    if (!current) {
+        return;
+    }
+
+    auto info = _aapMgr.GetDeviceInfo();
+    if (!info.has_value()) {
+        return;
+    }
+    {
+        std::lock_guard lock{_deviceInfoMutex};
+        _aapDeviceInfo = std::move(info);
+    }
+    LOG(Info, "AAP device information received");
+    emit DeviceInfoChangedSafely();
+}
+
 void Manager::OnEarDetectionChanged(
     AAP::EarStatus primary, AAP::EarStatus secondary, AAP::AAPAttempt attempt,
     uint64_t resetGeneration)
@@ -2027,10 +2093,18 @@ void Manager::OnAAPDisconnected(AAP::AAPAttempt attempt)
 {
     std::optional<std::chrono::milliseconds> retryDelay;
     bool currentAttempt = false;
+    bool clearedDeviceInfo = false;
     {
         std::lock_guard lock{_aapWorkerMutex};
         currentAttempt = _aapConnection.IsCurrent(attempt);
         if (currentAttempt) {
+            // Natural EOF clears the snapshot before the queued device-info signal
+            // tells the card to hide. Stale generations cannot clear a new one.
+            {
+                std::lock_guard infoLock{_deviceInfoMutex};
+                clearedDeviceInfo = _aapDeviceInfo.has_value();
+                _aapDeviceInfo.reset();
+            }
             retryDelay = _aapConnection.Lost(attempt, AAPClock::now());
             if (retryDelay.has_value()) {
                 _aapRetryAt = AAPClock::now() + *retryDelay;
@@ -2040,6 +2114,9 @@ void Manager::OnAAPDisconnected(AAP::AAPAttempt attempt)
                 _aapRetryScheduled = false;
             }
         }
+    }
+    if (clearedDeviceInfo) {
+        emit DeviceInfoChangedSafely();
     }
     _aapWorkerCv.notify_all();
     _currentNoiseControlMode = -1;

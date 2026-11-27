@@ -102,9 +102,10 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         _sessionStop = std::stop_source{};
         _connectStop = std::stop_source{};
         callbacks = _callbacks;
-        // A new session starts with no battery data; the fusion falls back to BLE until
-        // the device sends its first 0x0004 notification on this generation.
+        // A new session starts with no battery or device metadata; stale values cannot be
+        // attributed to the device that starts on this generation.
         _batterySnapshot.reset();
+        _deviceInfo.reset();
 
         // A natural EOF intentionally leaves its reader joinable. Retire it before creating the
         // replacement so assignment can never destroy a live thread.
@@ -364,6 +365,9 @@ void Manager::Disconnect()
         _loudSoundReductionState.reset();
         _batterySnapshot.reset();
         _ppeCapLevel.reset();
+        // Privacy + correctness: device information (serials) belongs to this
+        // session only (blueprint 2.1).
+        _deviceInfo.reset();
         _attPathState.store(AttPathState::Unknown);
         _attProbeDeadlineMs.store(0);
     }
@@ -482,6 +486,12 @@ std::optional<uint8_t> Manager::GetPpeCapLevel() const
 {
     std::lock_guard<std::mutex> lock{_mutex};
     return _ppeCapLevel;
+}
+
+std::optional<AAPDeviceInfo> Manager::GetDeviceInfo() const
+{
+    std::lock_guard<std::mutex> lock{_mutex};
+    return _deviceInfo;
 }
 
 bool Manager::SetAdaptiveNoiseLevel(uint8_t level)
@@ -1207,6 +1217,31 @@ void Manager::ProcessPacket(
         return;
     }
 
+    // Device information notification (opcode 0x001D, blueprint 2.1): pushed by
+    // the accessory upon connection. Privacy rule: the raw record and the
+    // serials it carries must never reach the log, so only the record size and
+    // the parse outcome are reported. A failed parse keeps the previous cache.
+    // The callback carries only the attempt; consumers pull the cached value.
+    if (packet[0] == 0x04 && packet[1] == 0x00 && packet[2] == 0x04 && packet[3] == 0x00 &&
+        packet[4] == 0x1D && packet[5] == 0x00)
+    {
+        const auto info = ParseDeviceInfo(packet);
+        if (!info.has_value()) {
+            LOG(Warn, "AAP: Device information record rejected (malformed payload, {} bytes)",
+                packet.size());
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lock{_mutex};
+            _deviceInfo = info;
+        }
+        LOG(Info, "AAP: Device information updated ({} bytes)", packet.size());
+        if (callbacks.onDeviceInfoChanged) {
+            callbacks.onDeviceInfoChanged(attempt);
+        }
+        return;
+    }
+
     // Noise control notification
     if (IsNoiseControlNotification(packet)) {
         auto mode = ParseNoiseControlNotification(packet);
@@ -1446,6 +1481,9 @@ void Manager::ReaderLoop(
         if (!current || !_connected) {
             return;
         }
+        // Privacy + correctness: device information (serials) belongs to this
+        // session only (blueprint 2.1).
+        _deviceInfo.reset();
         _batterySnapshot.reset();
         active = _attempt;
         callback = _callbacks.onDisconnected;
@@ -1640,6 +1678,10 @@ bool Manager::SetPpeCapLevel(uint8_t)
 }
 
 std::optional<uint8_t> Manager::GetPpeCapLevel() const
+{
+    return std::nullopt;
+}
+std::optional<AAPDeviceInfo> Manager::GetDeviceInfo() const
 {
     return std::nullopt;
 }
