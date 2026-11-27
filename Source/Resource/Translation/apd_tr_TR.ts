@@ -198,6 +198,34 @@ Keyfini çıkarın.</translation>
         <source>not installed</source>
         <translation>yüklü değil</translation>
     </message>
+    <message>
+            <source>Next track</source>
+            <translation>Sonraki parça</translation>
+        </message>
+    <message>
+            <source>None</source>
+            <translation>Yok</translation>
+        </message>
+    <message>
+            <source>Play / Pause</source>
+            <translation>Oynat / Duraklat</translation>
+        </message>
+    <message>
+            <source>Previous track</source>
+            <translation>Önceki parça</translation>
+        </message>
+    <message>
+            <source>Toggle noise control</source>
+            <translation>Gürültü denetimini değiştir</translation>
+        </message>
+    <message>
+            <source>Volume down</source>
+            <translation>Sesi kıs</translation>
+        </message>
+    <message>
+            <source>Volume up</source>
+            <translation>Sesi aç</translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -293,6 +321,54 @@ Keyfini çıkarın.</translation>
         <source>AAP and BLE report different battery values.</source>
         <translation>AAP ve BLE farklı pil değerleri bildiriyor.</translation>
     </message>
+    <message>
+            <source>Bluetooth connection control is unavailable right now.</source>
+            <translation>Bluetooth bağlantı denetimi şu anda kullanılamıyor.</translation>
+        </message>
+    <message>
+            <source>Connect</source>
+            <translation>Bağlan</translation>
+        </message>
+    <message>
+            <source>Connecting timed out. Bring the device closer and try again.</source>
+            <translation>Bağlantı zaman aşımına uğradı. Cihazı yaklaştırıp tekrar deneyin.</translation>
+        </message>
+    <message>
+            <source>Connecting...</source>
+            <translation>Bağlanıyor...</translation>
+        </message>
+    <message>
+            <source>Device link</source>
+            <translation>Cihaz bağlantısı</translation>
+        </message>
+    <message>
+            <source>Disconnect</source>
+            <translation>Bağlantıyı kes</translation>
+        </message>
+    <message>
+            <source>Disconnecting timed out. The device may still be connected.</source>
+            <translation>Bağlantı kesme zaman aşımına uğradı. Cihaz hâlâ bağlı olabilir.</translation>
+        </message>
+    <message>
+            <source>Disconnecting...</source>
+            <translation>Bağlantı kesiliyor...</translation>
+        </message>
+    <message>
+            <source>The device does not expose Bluetooth audio services this app can control.</source>
+            <translation>Cihaz, bu uygulamanın denetleyebileceği Bluetooth ses hizmetlerini sunmuyor.</translation>
+        </message>
+    <message>
+            <source>The paired Bluetooth device was not found. Pair it again in Windows settings.</source>
+            <translation>Eşleştirilmiş Bluetooth cihazı bulunamadı. Windows ayarlarından yeniden eşleştirin.</translation>
+        </message>
+    <message>
+            <source>Windows could not read the device connection state. Try again.</source>
+            <translation>Windows cihazın bağlantı durumunu okuyamadı. Tekrar deneyin.</translation>
+        </message>
+    <message>
+            <source>Windows refused to change the device connection. Try again.</source>
+            <translation>Windows cihaz bağlantısını değiştirmeyi reddetti. Tekrar deneyin.</translation>
+        </message>
 </context>
 <context>
     <name>Gui::UpdateWindow</name>
@@ -555,6 +631,14 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
         <translation>Kulaklık algılama gecikmesi: düşük 600 ms, normal 300 ms, yüksek 150 ms. Daha yüksek hassasiyet daha hızlı tepki verir.</translation>
     </message>
+    <message>
+            <source>Last connection failed: no MagicAAP interface proves the selected earbuds&apos; address and device container. Update the MagicAAP driver, then reconnect.</source>
+            <translation>Son bağlantı başarısız oldu: seçilen kulaklığın adresini ve cihaz kapsayıcısını doğrulayan MagicAAP arayüzü yok. MagicAAP sürücüsünü güncelleyip yeniden bağlanın.</translation>
+        </message>
+    <message>
+            <source>Last connection failed: the exact MagicAAP interface for the selected earbuds could not be opened. Close apps using the earbuds and reconnect; another device will not be selected.</source>
+            <translation>Son bağlantı başarısız oldu: seçilen kulaklığın tam MagicAAP arayüzü açılamadı. Kulaklığı kullanan uygulamaları kapatıp yeniden bağlanın; başka bir cihaz seçilmeyecek.</translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -805,6 +889,26 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>High</source>
         <translation>Yüksek</translation>
     </message>
+    <message>
+            <source>Adaptive</source>
+            <translation>Uyarlanabilir</translation>
+        </message>
+    <message>
+            <source>Adaptive noise strength</source>
+            <translation>Uyarlanabilir gürültü filtreleme gücü</translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation>Gürültü engelleme</translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation>Kapalı</translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation>Şeffaflık</translation>
+        </message>
 </context>
 <context>
     <name>UpdateWindow</name>

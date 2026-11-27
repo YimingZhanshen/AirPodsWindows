@@ -198,6 +198,34 @@ Enjoy it all.</source>
         <source>not installed</source>
         <translation>не е инсталиран</translation>
     </message>
+    <message>
+            <source>Next track</source>
+            <translation>Следващ запис</translation>
+        </message>
+    <message>
+            <source>None</source>
+            <translation>Няма</translation>
+        </message>
+    <message>
+            <source>Play / Pause</source>
+            <translation>Възпроизвеждане / Пауза</translation>
+        </message>
+    <message>
+            <source>Previous track</source>
+            <translation>Предишен запис</translation>
+        </message>
+    <message>
+            <source>Toggle noise control</source>
+            <translation>Превключване на шумопотискането</translation>
+        </message>
+    <message>
+            <source>Volume down</source>
+            <translation>Намаляване на звука</translation>
+        </message>
+    <message>
+            <source>Volume up</source>
+            <translation>Увеличаване на звука</translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -293,6 +321,54 @@ Enjoy it all.</source>
         <source>AAP and BLE report different battery values.</source>
         <translation>AAP и BLE отчитат различни стойности на батерията.</translation>
     </message>
+    <message>
+            <source>Bluetooth connection control is unavailable right now.</source>
+            <translation>Контролът на Bluetooth връзката временно не е достъпен.</translation>
+        </message>
+    <message>
+            <source>Connect</source>
+            <translation>Свързване</translation>
+        </message>
+    <message>
+            <source>Connecting timed out. Bring the device closer and try again.</source>
+            <translation>Времето за свързване изтече. Преместете устройството по-близо и опитайте отново.</translation>
+        </message>
+    <message>
+            <source>Connecting...</source>
+            <translation>Свързване...</translation>
+        </message>
+    <message>
+            <source>Device link</source>
+            <translation>Връзка с устройството</translation>
+        </message>
+    <message>
+            <source>Disconnect</source>
+            <translation>Прекъсване</translation>
+        </message>
+    <message>
+            <source>Disconnecting timed out. The device may still be connected.</source>
+            <translation>Времето за прекъсване изтече. Устройството може все още да е свързано.</translation>
+        </message>
+    <message>
+            <source>Disconnecting...</source>
+            <translation>Прекъсване...</translation>
+        </message>
+    <message>
+            <source>The device does not expose Bluetooth audio services this app can control.</source>
+            <translation>Устройството не предоставя Bluetooth аудио услуги, които това приложение може да контролира.</translation>
+        </message>
+    <message>
+            <source>The paired Bluetooth device was not found. Pair it again in Windows settings.</source>
+            <translation>Сдвоеното Bluetooth устройство не е намерено. Сдвоете го отново в настройките на Windows.</translation>
+        </message>
+    <message>
+            <source>Windows could not read the device connection state. Try again.</source>
+            <translation>Windows не можа да прочете състоянието на връзката с устройството. Опитайте отново.</translation>
+        </message>
+    <message>
+            <source>Windows refused to change the device connection. Try again.</source>
+            <translation>Windows отказа да промени връзката с устройството. Опитайте отново.</translation>
+        </message>
 </context>
 <context>
     <name>Gui::UpdateWindow</name>
@@ -555,6 +631,14 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
         <translation>Забавяне при откриване в ухото: ниска 600 ms, нормална 300 ms, висока 150 ms. По-високата чувствителност реагира по-бързо.</translation>
     </message>
+    <message>
+            <source>Last connection failed: no MagicAAP interface proves the selected earbuds&apos; address and device container. Update the MagicAAP driver, then reconnect.</source>
+            <translation>Последното свързване не успя: нито един MagicAAP интерфейс не доказва адреса и контейнера на избраните слушалки. Актуализирайте драйвера MagicAAP и се свържете отново.</translation>
+        </message>
+    <message>
+            <source>Last connection failed: the exact MagicAAP interface for the selected earbuds could not be opened. Close apps using the earbuds and reconnect; another device will not be selected.</source>
+            <translation>Последното свързване не успя: точният MagicAAP интерфейс за избраните слушалки не можа да бъде отворен. Затворете приложенията, които използват слушалките, и се свържете отново; друго устройство няма да бъде избрано.</translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -805,6 +889,26 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>High</source>
         <translation>Висока</translation>
     </message>
+    <message>
+            <source>Adaptive</source>
+            <translation>Адаптивен</translation>
+        </message>
+    <message>
+            <source>Adaptive noise strength</source>
+            <translation>Сила на адаптивното шумопотискането</translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation>Шумопотискане</translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation>Изключено</translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation>Прозрачност</translation>
+        </message>
 </context>
 <context>
     <name>UpdateWindow</name>

@@ -198,6 +198,34 @@ Enjoy it all.</source>
         <source>not installed</source>
         <translation>לא מותקן</translation>
     </message>
+    <message>
+            <source>Next track</source>
+            <translation>הרצעה הבאה</translation>
+        </message>
+    <message>
+            <source>None</source>
+            <translation>ללא</translation>
+        </message>
+    <message>
+            <source>Play / Pause</source>
+            <translation>השמעה / השהיה</translation>
+        </message>
+    <message>
+            <source>Previous track</source>
+            <translation>הרצעה הקודמת</translation>
+        </message>
+    <message>
+            <source>Toggle noise control</source>
+            <translation>מעבר בין מצבי שליטה ברעש</translation>
+        </message>
+    <message>
+            <source>Volume down</source>
+            <translation>הנמכת עוצמת הקול</translation>
+        </message>
+    <message>
+            <source>Volume up</source>
+            <translation>הגברת עוצמת הקול</translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -293,6 +321,54 @@ Enjoy it all.</source>
         <source>AAP and BLE report different battery values.</source>
         <translation>AAP ו-BLE מדווחים על ערכי סוללה שונים.</translation>
     </message>
+    <message>
+            <source>Bluetooth connection control is unavailable right now.</source>
+            <translation>שליטת חיבור Bluetooth אינה זמינה כרגע.</translation>
+        </message>
+    <message>
+            <source>Connect</source>
+            <translation>התחברות</translation>
+        </message>
+    <message>
+            <source>Connecting timed out. Bring the device closer and try again.</source>
+            <translation>פג זמן התחברות. הקרב את המכשיר ונסה שוב.</translation>
+        </message>
+    <message>
+            <source>Connecting...</source>
+            <translation>מתחבר...</translation>
+        </message>
+    <message>
+            <source>Device link</source>
+            <translation>חיבור המכשיר</translation>
+        </message>
+    <message>
+            <source>Disconnect</source>
+            <translation>ניתוק</translation>
+        </message>
+    <message>
+            <source>Disconnecting timed out. The device may still be connected.</source>
+            <translation>פג זמן הניתוק. ייתכן שהמכשיר עדיין מחובר.</translation>
+        </message>
+    <message>
+            <source>Disconnecting...</source>
+            <translation>מתנתק...</translation>
+        </message>
+    <message>
+            <source>The device does not expose Bluetooth audio services this app can control.</source>
+            <translation>המכשיר אינו מספק שירותי שמע Bluetooth שאפליקציה זו יכולה לשלוט בהם.</translation>
+        </message>
+    <message>
+            <source>The paired Bluetooth device was not found. Pair it again in Windows settings.</source>
+            <translation>מכשיר הבלוטות המצומד לא נמצא. בצע צימוד נוסף בהגדרות Windows.</translation>
+        </message>
+    <message>
+            <source>Windows could not read the device connection state. Try again.</source>
+            <translation>Windows לא הצליח לקרוא את מצב החיבור של המכשיר. נסה שוב.</translation>
+        </message>
+    <message>
+            <source>Windows refused to change the device connection. Try again.</source>
+            <translation>Windows סרב לשנות את חיבור המכשיר. נסה שוב.</translation>
+        </message>
 </context>
 <context>
     <name>Gui::UpdateWindow</name>
@@ -555,6 +631,14 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
         <translation>השהיית זיהוי באוזן: נמוכה 600 מילישיניות, רגילה 300 מילישיניות, גבוהה 150 מילישיניות. רגישות גבוהה יותר מגיבה מהר יותר.</translation>
     </message>
+    <message>
+            <source>Last connection failed: no MagicAAP interface proves the selected earbuds&apos; address and device container. Update the MagicAAP driver, then reconnect.</source>
+            <translation>החיבור האחרון נכשל: אין ממשק MagicAAP שמאמת את הכתובת ואת מיכל המכשיר של האוזניות שנבחרו. עדכן את מנהל ההתקן MagicAAP ונסה להתחבר שוב.</translation>
+        </message>
+    <message>
+            <source>Last connection failed: the exact MagicAAP interface for the selected earbuds could not be opened. Close apps using the earbuds and reconnect; another device will not be selected.</source>
+            <translation>החיבור האחרון נכשל: לא ניתן היה לפתוח את ממשק MagicAAP המדויק של האוזניות שנבחרו. סגר יישומים שמשתמשים באוזניות ונסה להתחבר שוב; מכשיר אחר לא ייבחר.</translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -805,6 +889,26 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>High</source>
         <translation>גבוהה</translation>
     </message>
+    <message>
+            <source>Adaptive</source>
+            <translation>מותאם</translation>
+        </message>
+    <message>
+            <source>Adaptive noise strength</source>
+            <translation>עוצמת סינון הרעש המתאם</translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation>צמצום רעשים</translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation>כבוי</translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation>שקיפות</translation>
+        </message>
 </context>
 <context>
     <name>UpdateWindow</name>

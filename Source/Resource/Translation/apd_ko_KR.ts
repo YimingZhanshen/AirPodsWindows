@@ -198,6 +198,34 @@ Enjoy it all.</source>
         <source>not installed</source>
         <translation>설치되지 않음</translation>
     </message>
+    <message>
+            <source>Next track</source>
+            <translation>다음 트랙</translation>
+        </message>
+    <message>
+            <source>None</source>
+            <translation>없음</translation>
+        </message>
+    <message>
+            <source>Play / Pause</source>
+            <translation>재생 / 일시 정지</translation>
+        </message>
+    <message>
+            <source>Previous track</source>
+            <translation>이전 트랙</translation>
+        </message>
+    <message>
+            <source>Toggle noise control</source>
+            <translation>노이즈 제어 전환</translation>
+        </message>
+    <message>
+            <source>Volume down</source>
+            <translation>음량 낮추기</translation>
+        </message>
+    <message>
+            <source>Volume up</source>
+            <translation>음량 높이기</translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -293,6 +321,54 @@ Enjoy it all.</source>
         <source>AAP and BLE report different battery values.</source>
         <translation>AAP과 BLE가 다른 배터리 값을 보고합니다.</translation>
     </message>
+    <message>
+            <source>Bluetooth connection control is unavailable right now.</source>
+            <translation>Bluetooth 연결 제어를 현재 사용할 수 없습니다.</translation>
+        </message>
+    <message>
+            <source>Connect</source>
+            <translation>연결</translation>
+        </message>
+    <message>
+            <source>Connecting timed out. Bring the device closer and try again.</source>
+            <translation>연결 시간이 초과되었습니다. 기기를 더 가까이 이동한 후 다시 시도하세요.</translation>
+        </message>
+    <message>
+            <source>Connecting...</source>
+            <translation>연결 중...</translation>
+        </message>
+    <message>
+            <source>Device link</source>
+            <translation>기기 연결</translation>
+        </message>
+    <message>
+            <source>Disconnect</source>
+            <translation>연결 해제</translation>
+        </message>
+    <message>
+            <source>Disconnecting timed out. The device may still be connected.</source>
+            <translation>연결 해제 시간이 초과되었습니다. 기기가 아직 연결되어 있을 수 있습니다.</translation>
+        </message>
+    <message>
+            <source>Disconnecting...</source>
+            <translation>연결 해제 중...</translation>
+        </message>
+    <message>
+            <source>The device does not expose Bluetooth audio services this app can control.</source>
+            <translation>이 기기는 이 앱이 제어할 수 있는 Bluetooth 오디오 서비스를 제공하지 않습니다.</translation>
+        </message>
+    <message>
+            <source>The paired Bluetooth device was not found. Pair it again in Windows settings.</source>
+            <translation>페어링된 Bluetooth 기기를 찾을 수 없습니다. Windows 설정에서 다시 페어링하세요.</translation>
+        </message>
+    <message>
+            <source>Windows could not read the device connection state. Try again.</source>
+            <translation>Windows가 기기 연결 상태를 읽지 못했습니다. 다시 시도하세요.</translation>
+        </message>
+    <message>
+            <source>Windows refused to change the device connection. Try again.</source>
+            <translation>Windows가 기기 연결을 변경하지 못했습니다. 다시 시도하세요.</translation>
+        </message>
 </context>
 <context>
     <name>Gui::UpdateWindow</name>
@@ -555,6 +631,14 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
         <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
         <translation>귀 감지 디바운스: 낮음 600ms, 보통 300ms, 높음 150ms. 민감도가 높을수록 더 빨리 반응합니다.</translation>
     </message>
+    <message>
+            <source>Last connection failed: no MagicAAP interface proves the selected earbuds&apos; address and device container. Update the MagicAAP driver, then reconnect.</source>
+            <translation>마지막 연결에 실패했습니다. 선택한 이어폰의 주소와 기기 컨테이너를 증명하는 MagicAAP 인터페이스가 없습니다. MagicAAP 드라이버를 업데이트한 후 다시 연결하세요.</translation>
+        </message>
+    <message>
+            <source>Last connection failed: the exact MagicAAP interface for the selected earbuds could not be opened. Close apps using the earbuds and reconnect; another device will not be selected.</source>
+            <translation>마지막 연결에 실패했습니다. 선택한 이어폰의 정확한 MagicAAP 인터페이스를 열지 못했습니다. 이어폰을 사용하는 앱을 닫고 다시 연결하세요. 다른 기기는 선택되지 않습니다.</translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -805,6 +889,26 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
         <source>High</source>
         <translation>높음</translation>
     </message>
+    <message>
+            <source>Adaptive</source>
+            <translation>적응형</translation>
+        </message>
+    <message>
+            <source>Adaptive noise strength</source>
+            <translation>적응형 노이즈 필터 강도</translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation>노이즈 캔슬링</translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation>꺼짐</translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation>주변음 모드</translation>
+        </message>
 </context>
 <context>
     <name>UpdateWindow</name>

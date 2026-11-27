@@ -198,6 +198,34 @@ Aproveite.</translation>
         <source>not installed</source>
         <translation>não instalado</translation>
     </message>
+    <message>
+            <source>Next track</source>
+            <translation>Próxima faixa</translation>
+        </message>
+    <message>
+            <source>None</source>
+            <translation>Nenhuma</translation>
+        </message>
+    <message>
+            <source>Play / Pause</source>
+            <translation>Reproduzir / Pausar</translation>
+        </message>
+    <message>
+            <source>Previous track</source>
+            <translation>Faixa anterior</translation>
+        </message>
+    <message>
+            <source>Toggle noise control</source>
+            <translation>Alternar controle de ruído</translation>
+        </message>
+    <message>
+            <source>Volume down</source>
+            <translation>Diminuir volume</translation>
+        </message>
+    <message>
+            <source>Volume up</source>
+            <translation>Aumentar volume</translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -293,6 +321,54 @@ Aproveite.</translation>
         <source>AAP and BLE report different battery values.</source>
         <translation>AAP e BLE relatam valores de bateria diferentes.</translation>
     </message>
+    <message>
+            <source>Bluetooth connection control is unavailable right now.</source>
+            <translation>O controle da conexão Bluetooth está indisponível no momento.</translation>
+        </message>
+    <message>
+            <source>Connect</source>
+            <translation>Conectar</translation>
+        </message>
+    <message>
+            <source>Connecting timed out. Bring the device closer and try again.</source>
+            <translation>A conexão expirou. Aproxime o dispositivo e tente novamente.</translation>
+        </message>
+    <message>
+            <source>Connecting...</source>
+            <translation>Conectando...</translation>
+        </message>
+    <message>
+            <source>Device link</source>
+            <translation>Conexão do dispositivo</translation>
+        </message>
+    <message>
+            <source>Disconnect</source>
+            <translation>Desconectar</translation>
+        </message>
+    <message>
+            <source>Disconnecting timed out. The device may still be connected.</source>
+            <translation>A desconexão expirou. O dispositivo ainda pode estar conectado.</translation>
+        </message>
+    <message>
+            <source>Disconnecting...</source>
+            <translation>Desconectando...</translation>
+        </message>
+    <message>
+            <source>The device does not expose Bluetooth audio services this app can control.</source>
+            <translation>O dispositivo não expõe serviços de áudio Bluetooth que este aplicativo possa controlar.</translation>
+        </message>
+    <message>
+            <source>The paired Bluetooth device was not found. Pair it again in Windows settings.</source>
+            <translation>O dispositivo Bluetooth emparelhado não foi encontrado. Emparelhe-o novamente nas configurações do Windows.</translation>
+        </message>
+    <message>
+            <source>Windows could not read the device connection state. Try again.</source>
+            <translation>O Windows não pôde ler o estado da conexão do dispositivo. Tente novamente.</translation>
+        </message>
+    <message>
+            <source>Windows refused to change the device connection. Try again.</source>
+            <translation>O Windows se recusou a alterar a conexão do dispositivo. Tente novamente.</translation>
+        </message>
 </context>
 <context>
     <name>Gui::UpdateWindow</name>
@@ -555,6 +631,14 @@ Você precisa emparelhar seus AirPods nas Configurações de Bluetooth do Window
         <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
         <translation>Debounce da detecção no ouvido: baixa 600 ms, normal 300 ms, alta 150 ms. A sensibilidade maior reage mais cedo.</translation>
     </message>
+    <message>
+            <source>Last connection failed: no MagicAAP interface proves the selected earbuds&apos; address and device container. Update the MagicAAP driver, then reconnect.</source>
+            <translation>Falha na última conexão: nenhuma interface MagicAAP comprova o endereço e o contêiner dos fones selecionados. Atualize o driver MagicAAP e conecte novamente.</translation>
+        </message>
+    <message>
+            <source>Last connection failed: the exact MagicAAP interface for the selected earbuds could not be opened. Close apps using the earbuds and reconnect; another device will not be selected.</source>
+            <translation>Falha na última conexão: não foi possível abrir a interface MagicAAP exata dos fones selecionados. Feche os aplicativos que usam os fones e conecte novamente; outro dispositivo não será selecionado.</translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -805,6 +889,26 @@ Você precisa emparelhar seus AirPods nas Configurações de Bluetooth do Window
         <source>High</source>
         <translation>Alta</translation>
     </message>
+    <message>
+            <source>Adaptive</source>
+            <translation>Adaptável</translation>
+        </message>
+    <message>
+            <source>Adaptive noise strength</source>
+            <translation>Intensidade do filtro adaptativo</translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation>Cancelamento de ruído</translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation>Desativado</translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation>Transparência</translation>
+        </message>
 </context>
 <context>
     <name>UpdateWindow</name>

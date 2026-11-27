@@ -164,19 +164,19 @@ Enjoy it all.</source>
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished">關閉</translation>
+        <translation>關閉</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished">降噪</translation>
+        <translation>降噪</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished">通透</translation>
+        <translation>通透</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished">自適應</translation>
+        <translation>自適應</translation>
     </message>
     <message>
         <source>Export diagnostics</source>
@@ -198,6 +198,34 @@ Enjoy it all.</source>
         <source>not installed</source>
         <translation>未安裝</translation>
     </message>
+    <message>
+            <source>Next track</source>
+            <translation>下一首</translation>
+        </message>
+    <message>
+            <source>None</source>
+            <translation>無</translation>
+        </message>
+    <message>
+            <source>Play / Pause</source>
+            <translation>播放 / 暫停</translation>
+        </message>
+    <message>
+            <source>Previous track</source>
+            <translation>上一首</translation>
+        </message>
+    <message>
+            <source>Toggle noise control</source>
+            <translation>切換噪音控制</translation>
+        </message>
+    <message>
+            <source>Volume down</source>
+            <translation>降低音量</translation>
+        </message>
+    <message>
+            <source>Volume up</source>
+            <translation>提高音量</translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -293,6 +321,54 @@ Enjoy it all.</source>
         <source>AAP and BLE report different battery values.</source>
         <translation>AAP 與 BLE 報告的電量不一致。</translation>
     </message>
+    <message>
+            <source>Bluetooth connection control is unavailable right now.</source>
+            <translation>目前無法使用藍牙連線控制。</translation>
+        </message>
+    <message>
+            <source>Connect</source>
+            <translation>連線</translation>
+        </message>
+    <message>
+            <source>Connecting timed out. Bring the device closer and try again.</source>
+            <translation>連線逾時。請將裝置靠近後重試。</translation>
+        </message>
+    <message>
+            <source>Connecting...</source>
+            <translation>正在連線...</translation>
+        </message>
+    <message>
+            <source>Device link</source>
+            <translation>裝置連線</translation>
+        </message>
+    <message>
+            <source>Disconnect</source>
+            <translation>中斷連線</translation>
+        </message>
+    <message>
+            <source>Disconnecting timed out. The device may still be connected.</source>
+            <translation>中斷連線逾時。裝置可能仍處於連線狀態。</translation>
+        </message>
+    <message>
+            <source>Disconnecting...</source>
+            <translation>正在中斷連線...</translation>
+        </message>
+    <message>
+            <source>The device does not expose Bluetooth audio services this app can control.</source>
+            <translation>此裝置未提供本應用可以控制的藍牙音訊服務。</translation>
+        </message>
+    <message>
+            <source>The paired Bluetooth device was not found. Pair it again in Windows settings.</source>
+            <translation>找不到已配對的藍牙裝置。請在 Windows 設定中重新配對。</translation>
+        </message>
+    <message>
+            <source>Windows could not read the device connection state. Try again.</source>
+            <translation>Windows 無法讀取裝置連線狀態。請重試。</translation>
+        </message>
+    <message>
+            <source>Windows refused to change the device connection. Try again.</source>
+            <translation>Windows 拒絕變更裝置連線。請重試。</translation>
+        </message>
 </context>
 <context>
     <name>Gui::UpdateWindow</name>
@@ -555,6 +631,14 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
         <translation>入耳偵測防抖：低 600 毫秒、標準 300 毫秒、高 150 毫秒。靈敏度越高，反應越快。</translation>
     </message>
+    <message>
+            <source>Last connection failed: no MagicAAP interface proves the selected earbuds&apos; address and device container. Update the MagicAAP driver, then reconnect.</source>
+            <translation>上次連線失敗：沒有任何 MagicAAP 介面能證明所選耳機的位址和裝置容器。請更新 MagicAAP 驅動程式後重新連線。</translation>
+        </message>
+    <message>
+            <source>Last connection failed: the exact MagicAAP interface for the selected earbuds could not be opened. Close apps using the earbuds and reconnect; another device will not be selected.</source>
+            <translation>上次連線失敗：無法開啟所選耳機對應的確切 MagicAAP 介面。請關閉使用耳機的應用程式後重新連線；不會選擇其他裝置。</translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -805,6 +889,26 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>High</source>
         <translation>高</translation>
     </message>
+    <message>
+            <source>Adaptive</source>
+            <translation>自適應</translation>
+        </message>
+    <message>
+            <source>Adaptive noise strength</source>
+            <translation>自適應降噪強度</translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation>降噪</translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation>關閉</translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation>通透</translation>
+        </message>
 </context>
 <context>
     <name>UpdateWindow</name>

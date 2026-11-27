@@ -1196,6 +1196,20 @@ private slots:
         manager._commandBroker->EndSession();
     }
 
+    void AttProbeDeadlineBoundaryIsExact()
+    {
+        Core::AAP::Manager manager;
+        AAPTestSupport::ManualClock clock;
+        manager._attNowForTest = [&clock] { return clock.Now(); };
+        manager._attPathState.store(Core::AAP::AttPathState::Pending);
+        manager._attProbeDeadlineMs.store(500);
+        QCOMPARE(manager.GetAttPathState(), Core::AAP::AttPathState::Pending);
+        clock.Advance(499ms);
+        QCOMPARE(manager.GetAttPathState(), Core::AAP::AttPathState::Pending);
+        clock.Advance(1ms);
+        QCOMPARE(manager.GetAttPathState(), Core::AAP::AttPathState::Unconfirmed);
+    }
+
     void LateAttResponseFromRetiredSessionIsDropped()
     {
         Core::AAP::Manager manager;

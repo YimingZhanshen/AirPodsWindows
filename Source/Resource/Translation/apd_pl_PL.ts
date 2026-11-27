@@ -198,6 +198,34 @@ Miłego słuchania!</translation>
         <source>not installed</source>
         <translation>nie zainstalowany</translation>
     </message>
+    <message>
+            <source>Next track</source>
+            <translation>Następny utwór</translation>
+        </message>
+    <message>
+            <source>None</source>
+            <translation>Brak</translation>
+        </message>
+    <message>
+            <source>Play / Pause</source>
+            <translation>Odtwarzanie / Wstrzymanie</translation>
+        </message>
+    <message>
+            <source>Previous track</source>
+            <translation>Poprzedni utwór</translation>
+        </message>
+    <message>
+            <source>Toggle noise control</source>
+            <translation>Przełącz kontrolę hałasu</translation>
+        </message>
+    <message>
+            <source>Volume down</source>
+            <translation>Zmniejsz głośność</translation>
+        </message>
+    <message>
+            <source>Volume up</source>
+            <translation>Zwiększ głośność</translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -293,6 +321,54 @@ Miłego słuchania!</translation>
         <source>AAP and BLE report different battery values.</source>
         <translation>AAP i BLE zgłaszają różne poziomy baterii.</translation>
     </message>
+    <message>
+            <source>Bluetooth connection control is unavailable right now.</source>
+            <translation>Sterowanie połączeniem Bluetooth jest obecnie niedostępne.</translation>
+        </message>
+    <message>
+            <source>Connect</source>
+            <translation>Połącz</translation>
+        </message>
+    <message>
+            <source>Connecting timed out. Bring the device closer and try again.</source>
+            <translation>Upłynął czas połączenia. Przybliż urządzenie i spróbuj ponownie.</translation>
+        </message>
+    <message>
+            <source>Connecting...</source>
+            <translation>Łączenie...</translation>
+        </message>
+    <message>
+            <source>Device link</source>
+            <translation>Połączenie urządzenia</translation>
+        </message>
+    <message>
+            <source>Disconnect</source>
+            <translation>Rozłącz</translation>
+        </message>
+    <message>
+            <source>Disconnecting timed out. The device may still be connected.</source>
+            <translation>Upłynął czas rozłączania. Urządzenie może być nadal połączone.</translation>
+        </message>
+    <message>
+            <source>Disconnecting...</source>
+            <translation>Rozłączanie...</translation>
+        </message>
+    <message>
+            <source>The device does not expose Bluetooth audio services this app can control.</source>
+            <translation>Urządzenie nie udostępnia usług audio Bluetooth, którymi może sterować ta aplikacja.</translation>
+        </message>
+    <message>
+            <source>The paired Bluetooth device was not found. Pair it again in Windows settings.</source>
+            <translation>Nie znaleziono sparowanego urządzenia Bluetooth. Sparuj je ponownie w ustawieniach systemu Windows.</translation>
+        </message>
+    <message>
+            <source>Windows could not read the device connection state. Try again.</source>
+            <translation>Windows nie mógł odczytać stanu połączenia urządzenia. Spróbuj ponownie.</translation>
+        </message>
+    <message>
+            <source>Windows refused to change the device connection. Try again.</source>
+            <translation>Windows odmówił zmiany połączenia urządzenia. Spróbuj ponownie.</translation>
+        </message>
 </context>
 <context>
     <name>Gui::UpdateWindow</name>
@@ -555,6 +631,14 @@ Najpierw sparuj słuchawki AirPods w ustawieniach Bluetooth systemu Windows.</tr
         <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
         <translation>Wyhamowanie wykrywania w uchu: niska 600 ms, normalna 300 ms, wysoka 150 ms. Wyższa czułość reaguje szybciej.</translation>
     </message>
+    <message>
+            <source>Last connection failed: no MagicAAP interface proves the selected earbuds&apos; address and device container. Update the MagicAAP driver, then reconnect.</source>
+            <translation>Ostatnie połączenie nie powiodło się: żaden interfejs MagicAAP nie potwierdza adresu i kontenera wybranych słuchawek. Zaktualizuj sterownik MagicAAP i połącz się ponownie.</translation>
+        </message>
+    <message>
+            <source>Last connection failed: the exact MagicAAP interface for the selected earbuds could not be opened. Close apps using the earbuds and reconnect; another device will not be selected.</source>
+            <translation>Ostatnie połączenie nie powiodło się: nie można było otworzyć dokładnego interfejsu MagicAAP wybranych słuchawek. Zamknij aplikacje używające słuchawek i połącz się ponownie; inne urządzenie nie zostanie wybrane.</translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -805,6 +889,26 @@ Najpierw sparuj słuchawki AirPods w ustawieniach Bluetooth systemu Windows.</tr
         <source>High</source>
         <translation>Wysoka</translation>
     </message>
+    <message>
+            <source>Adaptive</source>
+            <translation>Adaptacyjny</translation>
+        </message>
+    <message>
+            <source>Adaptive noise strength</source>
+            <translation>Siła filtrowania adaptacyjnego szumu</translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation>Redukcja szumów</translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation>Wyłączone</translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation>Przezroczystość</translation>
+        </message>
 </context>
 <context>
     <name>UpdateWindow</name>

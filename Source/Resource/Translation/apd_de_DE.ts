@@ -198,6 +198,34 @@ Genieße es.</translation>
         <source>not installed</source>
         <translation>nicht installiert</translation>
     </message>
+    <message>
+            <source>Next track</source>
+            <translation>Nächster Titel</translation>
+        </message>
+    <message>
+            <source>None</source>
+            <translation>Keine</translation>
+        </message>
+    <message>
+            <source>Play / Pause</source>
+            <translation>Wiedergabe / Pause</translation>
+        </message>
+    <message>
+            <source>Previous track</source>
+            <translation>Vorheriger Titel</translation>
+        </message>
+    <message>
+            <source>Toggle noise control</source>
+            <translation>Geräuschunterdrückung umschalten</translation>
+        </message>
+    <message>
+            <source>Volume down</source>
+            <translation>Lautstärke verringern</translation>
+        </message>
+    <message>
+            <source>Volume up</source>
+            <translation>Lautstärke erhöhen</translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -293,6 +321,54 @@ Genieße es.</translation>
         <source>AAP and BLE report different battery values.</source>
         <translation>AAP und BLE melden unterschiedliche Akkustände.</translation>
     </message>
+    <message>
+            <source>Bluetooth connection control is unavailable right now.</source>
+            <translation>Die Steuerung der Bluetooth-Verbindung ist derzeit nicht verfügbar.</translation>
+        </message>
+    <message>
+            <source>Connect</source>
+            <translation>Verbinden</translation>
+        </message>
+    <message>
+            <source>Connecting timed out. Bring the device closer and try again.</source>
+            <translation>Zeitüberschreitung beim Verbinden. Bringen Sie das Gerät näher heran und versuchen Sie es erneut.</translation>
+        </message>
+    <message>
+            <source>Connecting...</source>
+            <translation>Verbindung wird hergestellt...</translation>
+        </message>
+    <message>
+            <source>Device link</source>
+            <translation>Geräteverbindung</translation>
+        </message>
+    <message>
+            <source>Disconnect</source>
+            <translation>Trennen</translation>
+        </message>
+    <message>
+            <source>Disconnecting timed out. The device may still be connected.</source>
+            <translation>Zeitüberschreitung beim Trennen. Das Gerät ist möglicherweise noch verbunden.</translation>
+        </message>
+    <message>
+            <source>Disconnecting...</source>
+            <translation>Verbindung wird getrennt...</translation>
+        </message>
+    <message>
+            <source>The device does not expose Bluetooth audio services this app can control.</source>
+            <translation>Das Gerät stellt keine Bluetooth-Audiodienste bereit, die diese App steuern kann.</translation>
+        </message>
+    <message>
+            <source>The paired Bluetooth device was not found. Pair it again in Windows settings.</source>
+            <translation>Das gekoppelte Bluetooth-Gerät wurde nicht gefunden. Koppeln Sie es in den Windows-Einstellungen erneut.</translation>
+        </message>
+    <message>
+            <source>Windows could not read the device connection state. Try again.</source>
+            <translation>Windows konnte den Verbindungsstatus des Geräts nicht lesen. Versuchen Sie es erneut.</translation>
+        </message>
+    <message>
+            <source>Windows refused to change the device connection. Try again.</source>
+            <translation>Windows hat die Geräteverbindung nicht geändert. Versuchen Sie es erneut.</translation>
+        </message>
 </context>
 <context>
     <name>Gui::UpdateWindow</name>
@@ -555,6 +631,14 @@ Kopple deine AirPods zuerst in den Windows Bluetooth-Einstellungen.</translation
         <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
         <translation>Entprellung der Ohrerkennung: Niedrig 600 ms, Normal 300 ms, Hoch 150 ms. Höhere Empfindlichkeit reagiert schneller.</translation>
     </message>
+    <message>
+            <source>Last connection failed: no MagicAAP interface proves the selected earbuds&apos; address and device container. Update the MagicAAP driver, then reconnect.</source>
+            <translation>Letzte Verbindung fehlgeschlagen: Keine MagicAAP-Schnittstelle bestätigt Adresse und Gerätecontainer der ausgewählten Ohrhörer. Aktualisieren Sie den MagicAAP-Treiber und verbinden Sie erneut.</translation>
+        </message>
+    <message>
+            <source>Last connection failed: the exact MagicAAP interface for the selected earbuds could not be opened. Close apps using the earbuds and reconnect; another device will not be selected.</source>
+            <translation>Letzte Verbindung fehlgeschlagen: Die genaue MagicAAP-Schnittstelle für die ausgewählten Ohrhörer konnte nicht geöffnet werden. Schließen Sie Apps, die die Ohrhörer verwenden, und verbinden Sie erneut; ein anderes Gerät wird nicht ausgewählt.</translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -805,6 +889,26 @@ Kopple deine AirPods zuerst in den Windows Bluetooth-Einstellungen.</translation
         <source>High</source>
         <translation>Hoch</translation>
     </message>
+    <message>
+            <source>Adaptive</source>
+            <translation>Adaptiv</translation>
+        </message>
+    <message>
+            <source>Adaptive noise strength</source>
+            <translation>Stärke der adaptiven Rauschfilterung</translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation>Geräuschunterdrückung</translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation>Aus</translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation>Transparenz</translation>
+        </message>
 </context>
 <context>
     <name>UpdateWindow</name>

@@ -198,6 +198,34 @@ Selamat menikmati.</translation>
         <source>not installed</source>
         <translation>tidak terpasang</translation>
     </message>
+    <message>
+            <source>Next track</source>
+            <translation>Trek berikutnya</translation>
+        </message>
+    <message>
+            <source>None</source>
+            <translation>Tidak ada</translation>
+        </message>
+    <message>
+            <source>Play / Pause</source>
+            <translation>Putar / Jeda</translation>
+        </message>
+    <message>
+            <source>Previous track</source>
+            <translation>Trek sebelumnya</translation>
+        </message>
+    <message>
+            <source>Toggle noise control</source>
+            <translation>Alihkan kontrol noise</translation>
+        </message>
+    <message>
+            <source>Volume down</source>
+            <translation>Turunkan volume</translation>
+        </message>
+    <message>
+            <source>Volume up</source>
+            <translation>Naikkan volume</translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -293,6 +321,54 @@ Selamat menikmati.</translation>
         <source>AAP and BLE report different battery values.</source>
         <translation>AAP dan BLE melaporkan nilai baterai yang berbeda.</translation>
     </message>
+    <message>
+            <source>Bluetooth connection control is unavailable right now.</source>
+            <translation>Kontrol koneksi Bluetooth sedang tidak tersedia.</translation>
+        </message>
+    <message>
+            <source>Connect</source>
+            <translation>Hubungkan</translation>
+        </message>
+    <message>
+            <source>Connecting timed out. Bring the device closer and try again.</source>
+            <translation>Waktu koneksi habis. Dekatkan perangkat lalu coba lagi.</translation>
+        </message>
+    <message>
+            <source>Connecting...</source>
+            <translation>Menghubungkan...</translation>
+        </message>
+    <message>
+            <source>Device link</source>
+            <translation>Koneksi perangkat</translation>
+        </message>
+    <message>
+            <source>Disconnect</source>
+            <translation>Putuskan</translation>
+        </message>
+    <message>
+            <source>Disconnecting timed out. The device may still be connected.</source>
+            <translation>Waktu pemutusan koneksi habis. Perangkat mungkin masih terhubung.</translation>
+        </message>
+    <message>
+            <source>Disconnecting...</source>
+            <translation>Memutuskan koneksi...</translation>
+        </message>
+    <message>
+            <source>The device does not expose Bluetooth audio services this app can control.</source>
+            <translation>Perangkat tidak menyediakan layanan audio Bluetooth yang dapat dikontrol aplikasi ini.</translation>
+        </message>
+    <message>
+            <source>The paired Bluetooth device was not found. Pair it again in Windows settings.</source>
+            <translation>Perangkat Bluetooth yang dipasangkan tidak ditemukan. Pasangkan kembali di pengaturan Windows.</translation>
+        </message>
+    <message>
+            <source>Windows could not read the device connection state. Try again.</source>
+            <translation>Windows tidak dapat membaca status koneksi perangkat. Coba lagi.</translation>
+        </message>
+    <message>
+            <source>Windows refused to change the device connection. Try again.</source>
+            <translation>Windows menolak mengubah koneksi perangkat. Coba lagi.</translation>
+        </message>
 </context>
 <context>
     <name>Gui::UpdateWindow</name>
@@ -555,6 +631,14 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
         <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
         <translation>Penundaan deteksi telinga: rendah 600 ms, normal 300 ms, tinggi 150 ms. Kepekaan lebih tinggi bereaksi lebih cepat.</translation>
     </message>
+    <message>
+            <source>Last connection failed: no MagicAAP interface proves the selected earbuds&apos; address and device container. Update the MagicAAP driver, then reconnect.</source>
+            <translation>Koneksi terakhir gagal: tidak ada antarmuka MagicAAP yang membuktikan alamat dan kontainer perangkat dari earphone yang dipilih. Perbarui driver MagicAAP, lalu hubungkan kembali.</translation>
+        </message>
+    <message>
+            <source>Last connection failed: the exact MagicAAP interface for the selected earbuds could not be opened. Close apps using the earbuds and reconnect; another device will not be selected.</source>
+            <translation>Koneksi terakhir gagal: antarmuka MagicAAP yang tepat untuk earphone yang dipilih tidak dapat dibuka. Tutup aplikasi yang menggunakan earphone dan hubungkan kembali; perangkat lain tidak akan dipilih.</translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -805,6 +889,26 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
         <source>High</source>
         <translation>Tinggi</translation>
     </message>
+    <message>
+            <source>Adaptive</source>
+            <translation>Adaptif</translation>
+        </message>
+    <message>
+            <source>Adaptive noise strength</source>
+            <translation>Kekuatan filter noise adaptif</translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation>Pembatalan noise</translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation>Mati</translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation>Transparansi</translation>
+        </message>
 </context>
 <context>
     <name>UpdateWindow</name>

@@ -198,6 +198,34 @@ Enjoy it all.</source>
         <source>not installed</source>
         <translation>نصب نشده</translation>
     </message>
+    <message>
+            <source>Next track</source>
+            <translation>آهنگ بعدی</translation>
+        </message>
+    <message>
+            <source>None</source>
+            <translation>هیچ‌کدام</translation>
+        </message>
+    <message>
+            <source>Play / Pause</source>
+            <translation>پخش / توقف</translation>
+        </message>
+    <message>
+            <source>Previous track</source>
+            <translation>آهنگ قبلی</translation>
+        </message>
+    <message>
+            <source>Toggle noise control</source>
+            <translation>تغییر وضعیت کنترل نویز</translation>
+        </message>
+    <message>
+            <source>Volume down</source>
+            <translation>کاهش صدا</translation>
+        </message>
+    <message>
+            <source>Volume up</source>
+            <translation>افزایش صدا</translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -293,6 +321,54 @@ Enjoy it all.</source>
         <source>AAP and BLE report different battery values.</source>
         <translation>AAP و BLE مقادیر باتری متفاوتی گزارش می‌کنند.</translation>
     </message>
+    <message>
+            <source>Bluetooth connection control is unavailable right now.</source>
+            <translation>کنترل اتصال بلوتوث در حال حاضر در دسترس نیست.</translation>
+        </message>
+    <message>
+            <source>Connect</source>
+            <translation>اتصال</translation>
+        </message>
+    <message>
+            <source>Connecting timed out. Bring the device closer and try again.</source>
+            <translation>زمان اتصال به پایان رسید. دستگاه را نزدیک‌تر بیاورید و دوباره تلاش کنید.</translation>
+        </message>
+    <message>
+            <source>Connecting...</source>
+            <translation>در حال اتصال...</translation>
+        </message>
+    <message>
+            <source>Device link</source>
+            <translation>اتصال دستگاه</translation>
+        </message>
+    <message>
+            <source>Disconnect</source>
+            <translation>قطع اتصال</translation>
+        </message>
+    <message>
+            <source>Disconnecting timed out. The device may still be connected.</source>
+            <translation>زمان قطع اتصال به پایان رسید. ممکن است دستگاه هنوز متصل باشد.</translation>
+        </message>
+    <message>
+            <source>Disconnecting...</source>
+            <translation>در حال قطع اتصال...</translation>
+        </message>
+    <message>
+            <source>The device does not expose Bluetooth audio services this app can control.</source>
+            <translation>دستگاه خدمات صدای بلوتوثی را که این برنامه بتواند کنترل کند در اختیار نمی‌گذارد.</translation>
+        </message>
+    <message>
+            <source>The paired Bluetooth device was not found. Pair it again in Windows settings.</source>
+            <translation>دستگاه بلوتوث جفت‌شده پیدا نشد. آن را دوباره در تنظیمات ویندوز جفت کنید.</translation>
+        </message>
+    <message>
+            <source>Windows could not read the device connection state. Try again.</source>
+            <translation>ویندوز نتوانست وضعیت اتصال دستگاه را بخواند. دوباره تلاش کنید.</translation>
+        </message>
+    <message>
+            <source>Windows refused to change the device connection. Try again.</source>
+            <translation>ویندوز اتصال دستگاه را تغییر نداد. دوباره تلاش کنید.</translation>
+        </message>
 </context>
 <context>
     <name>Gui::UpdateWindow</name>
@@ -555,6 +631,14 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
         <translation>تأخیر تشخیص داخل گوش: کم ۶۰۰ میلی‌ثانیه، معمولی ۳۰۰ میلی‌ثانیه، زیاد ۱۵۰ میلی‌ثانیه. حساسیت بالاتر سریع‌تر واکنش نشان می‌دهد.</translation>
     </message>
+    <message>
+            <source>Last connection failed: no MagicAAP interface proves the selected earbuds&apos; address and device container. Update the MagicAAP driver, then reconnect.</source>
+            <translation>آخرین اتصال ناموفق بود: هیچ رابط MagicAAPی آدرس و ظرف دستگاه ایربادهای انتخاب‌شده را اثبات نمی‌کند. درایور MagicAAP را به‌روزرسانی کنید و دوباره متصل شوید.</translation>
+        </message>
+    <message>
+            <source>Last connection failed: the exact MagicAAP interface for the selected earbuds could not be opened. Close apps using the earbuds and reconnect; another device will not be selected.</source>
+            <translation>آخرین اتصال ناموفق بود: رابط MagicAAP دقیق برای ایربادهای انتخاب‌شده باز نشد. برنامه‌هایی که از ایربادها استفاده می‌کنند را ببندید و دوباره متصل شوید؛ دستگاه دیگری انتخاب نمی‌شود.</translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -805,6 +889,26 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>High</source>
         <translation>زیاد</translation>
     </message>
+    <message>
+            <source>Adaptive</source>
+            <translation>تطبیقی</translation>
+        </message>
+    <message>
+            <source>Adaptive noise strength</source>
+            <translation>قدرت فیلتر صدا تطبیقی</translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation>حذف نویز</translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation>خاموش</translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation>شفافیت</translation>
+        </message>
 </context>
 <context>
     <name>UpdateWindow</name>

@@ -335,6 +335,7 @@ private:
     std::function<void()> _publicSendBarrierForTest;
     std::function<void()> _afterCommandIdentityCheckForTest;
     std::function<void()> _beforeCommandSubmitLockForTest;
+    std::function<std::chrono::steady_clock::time_point()> _attNowForTest;
 
     // Internal methods
     bool SendPacket(const std::vector<uint8_t> &packet);
@@ -373,6 +374,7 @@ private:
     void StartAttProbe(const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken);
     bool AcquireAttRead(uint64_t generation, uint64_t requestId, std::stop_token stopToken);
     void ReleaseAttRead();
+    std::chrono::steady_clock::time_point AttNow() const;
     void ProcessAttFrame(
         const std::vector<uint8_t> &packet, AAPAttempt attempt, const Callbacks &callbacks);
 };

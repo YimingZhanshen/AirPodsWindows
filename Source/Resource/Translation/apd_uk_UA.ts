@@ -198,6 +198,34 @@ Enjoy it all.</source>
         <source>not installed</source>
         <translation>не встановлено</translation>
     </message>
+    <message>
+            <source>Next track</source>
+            <translation>Наступний трек</translation>
+        </message>
+    <message>
+            <source>None</source>
+            <translation>Немає</translation>
+        </message>
+    <message>
+            <source>Play / Pause</source>
+            <translation>Відтворення / Пауза</translation>
+        </message>
+    <message>
+            <source>Previous track</source>
+            <translation>Попередній трек</translation>
+        </message>
+    <message>
+            <source>Toggle noise control</source>
+            <translation>Перемкнути керування шумом</translation>
+        </message>
+    <message>
+            <source>Volume down</source>
+            <translation>Зменшити гучність</translation>
+        </message>
+    <message>
+            <source>Volume up</source>
+            <translation>Збільшити гучність</translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -293,6 +321,54 @@ Enjoy it all.</source>
         <source>AAP and BLE report different battery values.</source>
         <translation>AAP і BLE повідомляють різні значення заряду.</translation>
     </message>
+    <message>
+            <source>Bluetooth connection control is unavailable right now.</source>
+            <translation>Керування підключенням Bluetooth зараз недоступне.</translation>
+        </message>
+    <message>
+            <source>Connect</source>
+            <translation>Підключити</translation>
+        </message>
+    <message>
+            <source>Connecting timed out. Bring the device closer and try again.</source>
+            <translation>Час підключення минув. Наблизьте пристрій і спробуйте ще раз.</translation>
+        </message>
+    <message>
+            <source>Connecting...</source>
+            <translation>Підключення...</translation>
+        </message>
+    <message>
+            <source>Device link</source>
+            <translation>Підключення пристрою</translation>
+        </message>
+    <message>
+            <source>Disconnect</source>
+            <translation>Відключити</translation>
+        </message>
+    <message>
+            <source>Disconnecting timed out. The device may still be connected.</source>
+            <translation>Час відключення минув. Пристрій може все ще бути підключеним.</translation>
+        </message>
+    <message>
+            <source>Disconnecting...</source>
+            <translation>Відключення...</translation>
+        </message>
+    <message>
+            <source>The device does not expose Bluetooth audio services this app can control.</source>
+            <translation>Пристрій не надає послуг аудіо Bluetooth, якими може керувати ця програма.</translation>
+        </message>
+    <message>
+            <source>The paired Bluetooth device was not found. Pair it again in Windows settings.</source>
+            <translation>Не знайдено спарений пристрій Bluetooth. Знову виконайте спарювання в налаштуваннях Windows.</translation>
+        </message>
+    <message>
+            <source>Windows could not read the device connection state. Try again.</source>
+            <translation>Windows не вдалося прочитати стан підключення пристрою. Спробуйте ще раз.</translation>
+        </message>
+    <message>
+            <source>Windows refused to change the device connection. Try again.</source>
+            <translation>Windows відмовив змінювати підключення пристрою. Спробуйте ще раз.</translation>
+        </message>
 </context>
 <context>
     <name>Gui::UpdateWindow</name>
@@ -555,6 +631,14 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
         <translation>Затримка виявлення у вусі: низька 600 мс, звичайна 300 мс, висока 150 мс. Вища чутливість реагує швидше.</translation>
     </message>
+    <message>
+            <source>Last connection failed: no MagicAAP interface proves the selected earbuds&apos; address and device container. Update the MagicAAP driver, then reconnect.</source>
+            <translation>Останнє підключення не вдалося: жоден інтерфейс MagicAAP не підтверджує адресу та контейнер пристрою вибраних навушників. Оновіть драйвер MagicAAP і підключіться знову.</translation>
+        </message>
+    <message>
+            <source>Last connection failed: the exact MagicAAP interface for the selected earbuds could not be opened. Close apps using the earbuds and reconnect; another device will not be selected.</source>
+            <translation>Останнє підключення не вдалося: не вдалося відкрити точний інтерфейс MagicAAP для вибраних навушників. Закрийте програми, які використовують навушники, і підключіться знову; інший пристрій не буде вибрано.</translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -805,6 +889,26 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>High</source>
         <translation>Висока</translation>
     </message>
+    <message>
+            <source>Adaptive</source>
+            <translation>Адаптивний</translation>
+        </message>
+    <message>
+            <source>Adaptive noise strength</source>
+            <translation>Сила адаптивного фільтрування шуму</translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation>Шумозаглушення</translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation>Вимкнено</translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation>Прозорість</translation>
+        </message>
 </context>
 <context>
     <name>UpdateWindow</name>

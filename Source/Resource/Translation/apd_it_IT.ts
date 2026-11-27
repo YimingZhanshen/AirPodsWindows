@@ -199,6 +199,34 @@ Divertiti.</translation>
         <source>not installed</source>
         <translation>non installato</translation>
     </message>
+    <message>
+            <source>Next track</source>
+            <translation>Traccia successiva</translation>
+        </message>
+    <message>
+            <source>None</source>
+            <translation>Nessuna</translation>
+        </message>
+    <message>
+            <source>Play / Pause</source>
+            <translation>Riproduci / Pausa</translation>
+        </message>
+    <message>
+            <source>Previous track</source>
+            <translation>Traccia precedente</translation>
+        </message>
+    <message>
+            <source>Toggle noise control</source>
+            <translation>Attiva/disattiva controllo rumore</translation>
+        </message>
+    <message>
+            <source>Volume down</source>
+            <translation>Abbassa volume</translation>
+        </message>
+    <message>
+            <source>Volume up</source>
+            <translation>Alza volume</translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -294,6 +322,54 @@ Divertiti.</translation>
         <source>AAP and BLE report different battery values.</source>
         <translation>AAP e BLE segnalano valori di batteria diversi.</translation>
     </message>
+    <message>
+            <source>Bluetooth connection control is unavailable right now.</source>
+            <translation>Il controllo della connessione Bluetooth non è al momento disponibile.</translation>
+        </message>
+    <message>
+            <source>Connect</source>
+            <translation>Connetti</translation>
+        </message>
+    <message>
+            <source>Connecting timed out. Bring the device closer and try again.</source>
+            <translation>Tempo di connessione scaduto. Avvicina il dispositivo e riprova.</translation>
+        </message>
+    <message>
+            <source>Connecting...</source>
+            <translation>Connessione in corso...</translation>
+        </message>
+    <message>
+            <source>Device link</source>
+            <translation>Connessione dispositivo</translation>
+        </message>
+    <message>
+            <source>Disconnect</source>
+            <translation>Disconnetti</translation>
+        </message>
+    <message>
+            <source>Disconnecting timed out. The device may still be connected.</source>
+            <translation>Tempo di disconnessione scaduto. Il dispositivo potrebbe essere ancora connesso.</translation>
+        </message>
+    <message>
+            <source>Disconnecting...</source>
+            <translation>Disconnessione in corso...</translation>
+        </message>
+    <message>
+            <source>The device does not expose Bluetooth audio services this app can control.</source>
+            <translation>Il dispositivo non espone servizi audio Bluetooth che questa app può controllare.</translation>
+        </message>
+    <message>
+            <source>The paired Bluetooth device was not found. Pair it again in Windows settings.</source>
+            <translation>Il dispositivo Bluetooth associato non è stato trovato. Associarlo di nuovo nelle impostazioni di Windows.</translation>
+        </message>
+    <message>
+            <source>Windows could not read the device connection state. Try again.</source>
+            <translation>Windows non ha potuto leggere lo stato della connessione del dispositivo. Riprova.</translation>
+        </message>
+    <message>
+            <source>Windows refused to change the device connection. Try again.</source>
+            <translation>Windows ha rifiutato di modificare la connessione del dispositivo. Riprova.</translation>
+        </message>
 </context>
 <context>
     <name>Gui::UpdateWindow</name>
@@ -556,6 +632,14 @@ Devi prima abbinare le tue AirPods nelle impostazioni Bluetooth di Windows.</tra
         <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
         <translation>Debounce del rilevamento nell'orecchio: bassa 600 ms, normale 300 ms, alta 150 ms. Una sensibilità maggiore reagisce prima.</translation>
     </message>
+    <message>
+            <source>Last connection failed: no MagicAAP interface proves the selected earbuds&apos; address and device container. Update the MagicAAP driver, then reconnect.</source>
+            <translation>Ultima connessione non riuscita: nessuna interfaccia MagicAAP dimostra l’indirizzo e il contenitore del dispositivo degli auricolari selezionati. Aggiorna il driver MagicAAP e riconnettiti.</translation>
+        </message>
+    <message>
+            <source>Last connection failed: the exact MagicAAP interface for the selected earbuds could not be opened. Close apps using the earbuds and reconnect; another device will not be selected.</source>
+            <translation>Ultima connessione non riuscita: non è stato possibile aprire l’interfaccia MagicAAP esatta degli auricolari selezionati. Chiudi le app che usano gli auricolari e riconnettiti; non verrà selezionato un altro dispositivo.</translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -806,6 +890,26 @@ Devi prima abbinare le tue AirPods nelle impostazioni Bluetooth di Windows.</tra
         <source>High</source>
         <translation>Alta</translation>
     </message>
+    <message>
+            <source>Adaptive</source>
+            <translation>Adattabile</translation>
+        </message>
+    <message>
+            <source>Adaptive noise strength</source>
+            <translation>Intensità del filtro adattivo</translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation>Cancellazione del rumore</translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation>Disattivato</translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation>Trasparenza</translation>
+        </message>
 </context>
 <context>
     <name>UpdateWindow</name>

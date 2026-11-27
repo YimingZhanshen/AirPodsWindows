@@ -198,6 +198,34 @@ Enjoy it all.</source>
         <source>not installed</source>
         <translation>未安装</translation>
     </message>
+    <message>
+            <source>Next track</source>
+            <translation>下一首</translation>
+        </message>
+    <message>
+            <source>None</source>
+            <translation>无</translation>
+        </message>
+    <message>
+            <source>Play / Pause</source>
+            <translation>播放 / 暂停</translation>
+        </message>
+    <message>
+            <source>Previous track</source>
+            <translation>上一首</translation>
+        </message>
+    <message>
+            <source>Toggle noise control</source>
+            <translation>切换噪声控制</translation>
+        </message>
+    <message>
+            <source>Volume down</source>
+            <translation>降低音量</translation>
+        </message>
+    <message>
+            <source>Volume up</source>
+            <translation>提高音量</translation>
+        </message>
 </context>
 <context>
     <name>Gui::TrayIcon</name>
@@ -293,6 +321,54 @@ Enjoy it all.</source>
         <source>AAP and BLE report different battery values.</source>
         <translation>AAP 与 BLE 报告的电量不一致。</translation>
     </message>
+    <message>
+            <source>Bluetooth connection control is unavailable right now.</source>
+            <translation>目前无法使用蓝牙连接控制。</translation>
+        </message>
+    <message>
+            <source>Connect</source>
+            <translation>连接</translation>
+        </message>
+    <message>
+            <source>Connecting timed out. Bring the device closer and try again.</source>
+            <translation>连接超时。请将设备靠近后重试。</translation>
+        </message>
+    <message>
+            <source>Connecting...</source>
+            <translation>正在连接...</translation>
+        </message>
+    <message>
+            <source>Device link</source>
+            <translation>设备连接</translation>
+        </message>
+    <message>
+            <source>Disconnect</source>
+            <translation>断开连接</translation>
+        </message>
+    <message>
+            <source>Disconnecting timed out. The device may still be connected.</source>
+            <translation>断开连接超时。设备可能仍处于连接状态。</translation>
+        </message>
+    <message>
+            <source>Disconnecting...</source>
+            <translation>正在断开连接...</translation>
+        </message>
+    <message>
+            <source>The device does not expose Bluetooth audio services this app can control.</source>
+            <translation>此设备未提供本应用可以控制的蓝牙音频服务。</translation>
+        </message>
+    <message>
+            <source>The paired Bluetooth device was not found. Pair it again in Windows settings.</source>
+            <translation>未找到已配对的蓝牙设备。请在 Windows 设置中重新配对。</translation>
+        </message>
+    <message>
+            <source>Windows could not read the device connection state. Try again.</source>
+            <translation>Windows 无法读取设备连接状态。请重试。</translation>
+        </message>
+    <message>
+            <source>Windows refused to change the device connection. Try again.</source>
+            <translation>Windows 拒绝更改设备连接。请重试。</translation>
+        </message>
 </context>
 <context>
     <name>Gui::UpdateWindow</name>
@@ -555,6 +631,14 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
         <translation>入耳检测防抖：低 600 毫秒、标准 300 毫秒、高 150 毫秒。灵敏度越高，反应越快。</translation>
     </message>
+    <message>
+            <source>Last connection failed: no MagicAAP interface proves the selected earbuds&apos; address and device container. Update the MagicAAP driver, then reconnect.</source>
+            <translation>上次连接失败：没有任何 MagicAAP 接口能证明所选耳机的地址和设备容器。请更新 MagicAAP 驱动后重新连接。</translation>
+        </message>
+    <message>
+            <source>Last connection failed: the exact MagicAAP interface for the selected earbuds could not be opened. Close apps using the earbuds and reconnect; another device will not be selected.</source>
+            <translation>上次连接失败：无法打开所选耳机对应的确切 MagicAAP 接口。请关闭使用耳机的应用后重新连接；不会选择其他设备。</translation>
+        </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -805,6 +889,26 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>High</source>
         <translation>高</translation>
     </message>
+    <message>
+            <source>Adaptive</source>
+            <translation>自适应</translation>
+        </message>
+    <message>
+            <source>Adaptive noise strength</source>
+            <translation>自适应降噪强度</translation>
+        </message>
+    <message>
+            <source>Noise Cancellation</source>
+            <translation>降噪</translation>
+        </message>
+    <message>
+            <source>Off</source>
+            <translation>关闭</translation>
+        </message>
+    <message>
+            <source>Transparency</source>
+            <translation>通透</translation>
+        </message>
 </context>
 <context>
     <name>UpdateWindow</name>

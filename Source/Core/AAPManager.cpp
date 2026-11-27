@@ -1096,9 +1096,9 @@ AttPathState Manager::GetAttPathState() const
     auto state = _attPathState.load();
     if (state == AttPathState::Pending) {
         // Lazily resolve the probe outcome once its 500ms window has passed.
-        auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                         std::chrono::steady_clock::now().time_since_epoch())
-                         .count();
+        auto nowMs =
+            std::chrono::duration_cast<std::chrono::milliseconds>(AttNow().time_since_epoch())
+                .count();
         if (nowMs >= _attProbeDeadlineMs.load()) {
             _attPathState.store(AttPathState::Unconfirmed);
             if (_attReadOwner && _attReadOwner->probe) {
@@ -1120,10 +1120,10 @@ bool Manager::AcquireAttRead(uint64_t generation, uint64_t requestId, std::stop_
         if (_attReadOwner->generation != generation || _disconnecting) {
             return false;
         }
-        const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                               std::chrono::steady_clock::now().time_since_epoch())
-                               .count();
-        if (_attReadOwner->probe || std::chrono::steady_clock::now() >= _attReadOwner->expiresAt) {
+        const auto nowMs =
+            std::chrono::duration_cast<std::chrono::milliseconds>(AttNow().time_since_epoch())
+                .count();
+        if (_attReadOwner->probe || AttNow() >= _attReadOwner->expiresAt) {
             if (_attReadOwner->probe && nowMs < _attProbeDeadlineMs.load()) {
                 _attReadCondition.wait_for(lock, std::chrono::milliseconds{10});
                 continue;
@@ -1145,8 +1145,7 @@ bool Manager::AcquireAttRead(uint64_t generation, uint64_t requestId, std::stop_
     if (stopToken.stop_requested() || _disconnecting || _attReadOwner) {
         return false;
     }
-    _attReadOwner = AttReadOwner{
-        generation, requestId, false, std::chrono::steady_clock::now() + std::chrono::seconds{2}};
+    _attReadOwner = AttReadOwner{generation, requestId, false, AttNow() + std::chrono::seconds{2}};
     return true;
 }
 
@@ -1157,6 +1156,11 @@ void Manager::ReleaseAttRead()
     _attReadCondition.notify_all();
 }
 
+std::chrono::steady_clock::time_point Manager::AttNow() const
+{
+    return _attNowForTest ? _attNowForTest() : std::chrono::steady_clock::now();
+}
+
 void Manager::StartAttProbe(
     const std::shared_ptr<AAPTransport> &transport, std::stop_token stopToken)
 {
@@ -1164,9 +1168,8 @@ void Manager::StartAttProbe(
     // (even an error response) proves the firmware accepts ATT on this pipe;
     // no answer within the window marks the path unconfirmed. Never retried.
     auto packet = Att::BuildReadRequest(Att::kLoudSoundReductionHandle);
-    const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           std::chrono::steady_clock::now().time_since_epoch())
-                           .count();
+    const auto nowMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(AttNow().time_since_epoch()).count();
     _attProbeDeadlineMs.store(nowMs + 500);
     {
         std::lock_guard lock{_attReadMutex};
