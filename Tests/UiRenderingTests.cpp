@@ -2679,7 +2679,8 @@ private Q_SLOTS:
         Core::QuickConnect::Controller quickConnect{backend};
         Gui::SettingsWindow window{[] { return 0; }, quickConnect};
         Core::AirPods::Manager manager;
-        window.SetAirPodsManagerProvider([&manager] { return manager; });
+        window.SetAirPodsManagerProvider(
+            [&manager]() -> Core::AirPods::Manager & { return manager; });
 
         auto *infoCard = window.findChild<Gui::DeviceInfoCard *>();
         QVERIFY(infoCard != nullptr);
