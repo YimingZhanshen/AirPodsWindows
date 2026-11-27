@@ -41,6 +41,7 @@
 #include "../Helper.h"
 
 class AirPodsDomainTests;
+class UiRenderingTests;
 
 namespace Core::AirPods {
 
