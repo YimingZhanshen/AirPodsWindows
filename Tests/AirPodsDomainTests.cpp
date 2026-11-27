@@ -325,6 +325,7 @@ private Q_SLOTS:
     void StemSettingsXmlExposesAllLabels();
     void StemTranslationsAreFinished_data();
     void StemTranslationsAreFinished();
+    void AdaptiveNoiseTranslationsAreCompleteInAllCatalogs();
     void HebrewUpdateWindowTranslationsAreFinished_data();
     void HebrewUpdateWindowTranslationsAreFinished();
     void MapsMainWindowAnimationResources();
@@ -1768,7 +1769,8 @@ void AirPodsDomainTests::PersistsAdaptiveNoiseLevelDefaultAndReloads()
     Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
 }
 
-// D3: pure clamp/gating policy (the same table the standalone MSVC harness replays).
+// D3: the adaptive-strength description must exist in every shipped catalog, so the settings
+// page never falls back to an untranslated source string for the strength control.
 void AirPodsDomainTests::AdaptiveNoiseTranslationsAreCompleteInAllCatalogs()
 {
     using Context = QString;
