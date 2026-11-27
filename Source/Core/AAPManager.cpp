@@ -287,9 +287,6 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
     // with a fresh generation check, irrespective of an earlier session's success.
     {
         std::lock_guard lock{_stemConfigMutex};
-        if (_beforeStemReplayForTest) {
-            _beforeStemReplayForTest();
-        }
         if (!_stemConfigState.Replay(attempt.generation, [&](uint8_t value) {
                 return SendPacket(attempt, Packets::BuildStemConfigPacket(value), stopToken);
             }))
@@ -1880,6 +1877,9 @@ bool Manager::InitializeConnection(
     // mask remains pending for one bounded recovery after the gate opens and for the next session.
     {
         std::lock_guard stemConfigLock{_stemConfigMutex};
+        if (_beforeStemReplayForTest) {
+            _beforeStemReplayForTest();
+        }
         const auto mask = _stemConfigState.Mask();
         if (!_stemConfigState.Replay(attempt.generation, [&](uint8_t value) {
                 return SendPacket(transport, Packets::BuildStemConfigPacket(value), stopToken);
