@@ -1526,7 +1526,9 @@ private slots:
 
         // Settings still record desired state while Off, but do not queue a write or manufacture
         // a rejection. The later Adaptive notification/submission owns the wire command.
-        QVERIFY(manager.SubmitCommand(command).accepted);
+        const auto deferred = manager.SubmitCommand(command);
+        QVERIFY(!deferred.accepted);
+        QVERIFY(!deferred.failure.has_value());
         QCOMPARE(manager.DesiredCommand(command.kind), std::optional<uint32_t>{65});
         QCOMPARE(manager._commandBroker->QueuedCount(), size_t{0});
         QCOMPARE(transport->SendCalls(), size_t{0});
@@ -1749,13 +1751,13 @@ private slots:
         // transport.
         manager._beforeStemReplayForTest = [&] { transport->SetSendFailures(1); };
         QVERIFY(manager.Connect({0x1234, 2}));
-        QCOMPARE(transport->SendCalls(), size_t{6});
+        QCOMPARE(transport->SendCalls(), size_t{11});
         const auto records = transport->SentRecords();
-        QCOMPARE(records.size(), size_t{5});
-        QCOMPARE(records.at(0), Core::AAP::Packets::Handshake);
-        QCOMPARE(records.at(4).at(4), uint8_t{0x09});
-        QCOMPARE(records.at(4).at(5), uint8_t{0x39});
-        QCOMPARE(records.at(4).at(7), uint8_t{0x05});
+        QCOMPARE(records.size(), size_t{10});
+        QCOMPARE(records.at(5), Core::AAP::Packets::Handshake);
+        QCOMPARE(records.at(9).at(4), uint8_t{0x09});
+        QCOMPARE(records.at(9).at(5), uint8_t{0x39});
+        QCOMPARE(records.at(9).at(7), uint8_t{0x05});
         manager.Disconnect();
     }
 
@@ -1782,10 +1784,10 @@ private slots:
         manager.Disconnect();
 
         QVERIFY(manager.Connect({0x1234, 2}));
-        QCOMPARE(transport->SendCalls(), size_t{5});
+        QCOMPARE(transport->SendCalls(), size_t{11});
         const auto records = transport->SentRecords();
-        QCOMPARE(records.at(1).at(5), uint8_t{0x39});
-        QCOMPARE(records.at(1).at(7), uint8_t{0x0A});
+        QCOMPARE(records.at(5).at(5), uint8_t{0x39});
+        QCOMPARE(records.at(5).at(7), uint8_t{0x0A});
         manager.Disconnect();
     }
 

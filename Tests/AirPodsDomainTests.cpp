@@ -2218,6 +2218,10 @@ void AirPodsDomainTests::AapDisconnectRequiresFreshBleConfirmation()
     QCOMPARE(tracker.UpdateBle(makeState(true), 800ms), std::optional<EarState>{});
     QCOMPARE(tracker.Reevaluate(1099ms), std::optional<EarState>{});
     QCOMPARE(tracker.Reevaluate(1100ms), std::optional<EarState>{EarState::InEar});
+    QCOMPARE(tracker.Reevaluate(1200ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(false), 1150ms), std::optional<EarState>{});
+    QCOMPARE(tracker.Reevaluate(1500ms), std::optional<EarState>{});
+    QCOMPARE(tracker.CurrentState(), EarState::InEar);
 }
 
 void AirPodsDomainTests::EarDetectionResetsAcrossStateLoss()

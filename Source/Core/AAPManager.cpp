@@ -742,8 +742,9 @@ AAPCommandResult Manager::SubmitCommand(AAPCommand command, std::stop_token stop
             // Settings may change while disconnected/Off/unknown. Remember the desired filtering
             // strength without queueing a command that can only produce a false rejection.
             auto result = _commandBroker->RecordDesired(command);
-            result.accepted = true;
-            result.failure.reset();
+            if (result.failure == AAPCommandFailure::TransportClosed) {
+                return {false, false, std::nullopt, result.requestId};
+            }
             return result;
         }
         return _commandBroker->Submit(command, stopToken);
@@ -1826,8 +1827,19 @@ void Manager::ReaderLoop(
         _disconnecting = true;
         _connected = false;
         _usingMagicAAP = false;
+        _headTrackingActive = false;
         _transport.store(std::shared_ptr<AAPTransport>{});
         ReleaseAttRead();
+        _noiseControlMode.reset();
+        _conversationalAwarenessState.reset();
+        _personalizedVolumeState.reset();
+        _automaticEarDetectionState.reset();
+        _loudSoundReductionState.reset();
+        _batterySnapshot.reset();
+        _ppeCapLevel.reset();
+        _adaptiveNoiseLevel.reset();
+        _attPathState.store(AttPathState::Unknown);
+        _attProbeDeadlineMs.store(0);
     }
     if (callback) {
         callback(active);
