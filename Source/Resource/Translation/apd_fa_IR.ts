@@ -508,6 +508,10 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.</source>
         <translation>داده‌های سنسور ردیابی سر هدفون‌ها را جریان می‌دهد و در صفحه تنظیمات نمایش می‌دهد. هنگام اتصال، کمی باتری و ترافیک بلوتوث بیشتری مصرف می‌کند.</translation>
     </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>تأخیر تشخیص داخل گوش: کم ۶۰۰ میلی‌ثانیه، معمولی ۳۰۰ میلی‌ثانیه، زیاد ۱۵۰ میلی‌ثانیه. حساسیت بالاتر سریع‌تر واکنش نشان می‌دهد.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -741,6 +745,22 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
 <message>
         <source>Stream head tracking data</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ear detection sensitivity</source>
+        <translation>حساسیت تشخیص داخل گوش</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>کم</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>معمولی</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>زیاد</translation>
     </message>
 </context>
 <context>

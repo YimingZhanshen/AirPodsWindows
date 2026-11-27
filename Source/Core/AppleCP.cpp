@@ -153,6 +153,12 @@ bool AirPods::IsCaseCharging() const
     return battery.caseCharging;
 }
 
+bool AirPods::IsPrimaryLeft() const
+{
+    // Continuity status bit 5: the physical left pod is primary (and is broadcasting).
+    return broadcastFrom == 1;
+}
+
 bool AirPods::IsLeftInEar() const
 {
     // If it's charging, the "ear" will be set in one of the multiple devices, idk why..

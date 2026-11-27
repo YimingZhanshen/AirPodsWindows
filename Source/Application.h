@@ -115,6 +115,7 @@ private:
     void OnAutoRunChanged(bool enable) override;
     void OnLowAudioLatencyChanged(bool enable) override;
     void OnAutomaticEarDetectionChanged(bool enable) override;
+    void OnEarDetectSensitivityChanged(Core::EarDetectSensitivity sensitivity) override;
     void OnConversationalAwarenessChanged(bool enable) override;
     void OnConversationalAwarenessVolumePercentChanged(uint8_t percent) override;
     void OnPersonalizedVolumeChanged(bool enable) override;

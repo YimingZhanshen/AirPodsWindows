@@ -508,6 +508,10 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
         <source>Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.</source>
         <translation>이어폰의 머리 추적 센서 데이터를 스트리밍하고 설정 페이지에 표시합니다. 연결 중에는 배터리와 Bluetooth 트래픽을 조금 더 사용합니다.</translation>
     </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>귀 감지 디바운스: 낮음 600ms, 보통 300ms, 높음 150ms. 민감도가 높을수록 더 빨리 반응합니다.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -741,6 +745,22 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
 <message>
         <source>Stream head tracking data</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ear detection sensitivity</source>
+        <translation>귀 감지 민감도</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>낮음</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>보통</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>높음</translation>
     </message>
 </context>
 <context>

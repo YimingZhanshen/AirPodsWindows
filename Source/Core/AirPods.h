@@ -33,6 +33,7 @@
 #include <vector>
 
 #include <QObject>
+#include <QTimer>
 
 #include "Bluetooth.h"
 #include "AppleCP.h"
@@ -41,6 +42,7 @@
 #include "BatteryFusion.h"
 #include "AdaptiveNoiseLevel.h"
 #include "HeadTrackingIntent.h"
+#include "EarDetectionDebounce.h"
 #include "../Helper.h"
 
 class AirPodsDomainTests;
@@ -93,6 +95,9 @@ struct PodsState {
 struct State {
     Model model{Model::Unknown};
     AppleCP::Color color{AppleCP::Color::White};
+    // BLE status bit 5 identifies the physical primary pod. AAP's first status is the
+    // primary role, which can move between ears and is not inherently left or right.
+    std::optional<Side> primarySide;
     PodsState pods;
     CaseState caseBox;
     QString displayName;
@@ -181,6 +186,9 @@ public:
     struct UpdateEvent {
         std::optional<State> oldState;
         State newState;
+        // Identifies the StateManager incarnation that produced this report. Queued consumers
+        // reject it after any full state loss, even before Manager's discard callback runs.
+        uint64_t generation{1};
     };
 
     struct Intervals {
@@ -195,9 +203,11 @@ public:
     std::optional<State> GetCurrentState() const;
 
     std::optional<UpdateEvent> OnAdvReceived(Advertisement adv);
-    void Disconnect();
+    bool Disconnect();
 
     void OnRssiMinChanged(int16_t rssiMin);
+    uint64_t Generation() const;
+    bool IsCurrentGeneration(uint64_t generation) const;
 
 private:
     using Clock = std::chrono::steady_clock;
@@ -212,6 +222,7 @@ private:
     // Addresses outlive expired advertisements so weak packets from a known side remain usable.
     Helper::Sides<std::optional<Advertisement::AddressType>> _knownAddress;
     std::optional<State> _cachedState;
+    uint64_t _generation{1};
     int16_t _rssiMin{std::numeric_limits<int16_t>::max()};
 
     bool IsPossibleDesiredAdv(const Advertisement &adv) const;
@@ -253,15 +264,57 @@ private:
     std::optional<Timestamp> _lastPopupAt;
 };
 
-// Keeps an ear-detection baseline even when StateManager drops and recreates its cached state.
+// Fuses AAP role readings with physical BLE ears, then publishes stable aggregate transitions.
+// Without a primary identity AAP is fused only at aggregate level, never assigned to an ear.
+// The first stable result after construction/reset is a baseline and never triggers media control.
 class EarDetectionTracker
 {
 public:
-    std::optional<bool> Update(const State &state);
+    using Clock = std::chrono::steady_clock;
+    using Timestamp = std::chrono::milliseconds;
+
+    struct FusionContext {
+        uint64_t epoch{1};
+        std::optional<AAP::AAPAttempt> session;
+        std::optional<Side> primarySide;
+    };
+
+    std::optional<EarState> UpdateBle(
+        const State &state, Timestamp now, std::optional<uint64_t> expectedEpoch = std::nullopt);
+    std::optional<EarState> UpdateAap(EarState left, EarState right, Timestamp now);
+    std::optional<EarState> UpdateAap(
+        EarState primary, EarState secondary, std::optional<Side> primarySide,
+        AAP::AAPAttempt session, std::optional<uint64_t> expectedEpoch, Timestamp now);
+    std::optional<EarState> Reevaluate(Timestamp now);
+    // Deadline callbacks publish only for the exact source context they were armed for.
+    std::optional<EarState> Reevaluate(
+        Timestamp now, uint64_t expectedEpoch,
+        const std::optional<AAP::AAPAttempt> &expectedSession);
+    FusionContext Snapshot() const;
+    std::optional<Clock::time_point> Deadline() const;
+    uint64_t Epoch() const;
+    // Session/epoch keyed so a late disconnect cannot clear a replacement session's overlay.
+    bool ResetAap(AAP::AAPAttempt session, uint64_t expectedEpoch);
+    void ResetAap();
     void Reset();
+    void SetSensitivity(EarDetectSensitivity sensitivity);
+    EarState CurrentState() const;
 
 private:
-    std::optional<bool> _lastBothInEar;
+    std::optional<EarState> UpdateCandidate(Timestamp now);
+    void InvalidateAapReadings();
+
+    mutable std::mutex _mutex;
+    EarDetectionDebounce _debounce;
+    Helper::Sides<std::optional<EarState>> _ble;
+    std::optional<Timestamp> _bleAt;
+    bool _bleConfirmed{false};
+    std::optional<EarState> _aapPrimary;
+    std::optional<EarState> _aapSecondary;
+    std::optional<Side> _aapPrimarySide;
+    std::optional<AAP::AAPAttempt> _aapSession;
+    std::optional<EarState> _publishedState;
+    uint64_t _epoch{1};
 };
 
 // Bridges the blueprint 2.5 head-tracking intent to C7's command broker. There is no direct AAP
@@ -292,6 +345,7 @@ public:
 
     void OnRssiMinChanged(int16_t rssiMin);
     void OnAutomaticEarDetectionChanged(bool enable);
+    void OnEarDetectSensitivityChanged(EarDetectSensitivity sensitivity);
     void OnBoundDeviceAddressChanged(uint64_t address);
     void OnConversationalAwarenessChanged(bool enable);
     void OnConversationalAwarenessVolumePercentChanged(uint8_t percent);
@@ -363,6 +417,14 @@ private:
     // these trackers. The destructor first drains workers, then member destruction converges.
     Details::LidTracker _lidTracker;
     Details::EarDetectionTracker _earDetection;
+    QTimer _earDebounceTimer;
+    // BLE/AAP callback wrappers sample this as their first action. Full resets advance it under
+    // `_mutex`, so a callback captured before reset cannot adopt the reset's newer tracker epoch.
+    std::atomic<uint64_t> _earResetGeneration{1};
+    uint64_t _earDeadlineResetGeneration{1};
+    uint64_t _earDeadlineStateGeneration{1};
+    uint64_t _earDeadlineEpoch{1};
+    std::optional<AAP::AAPAttempt> _earDeadlineSession;
     Details::StateManager _stateMgr;
     std::optional<Bluetooth::Device> _boundDevice;
     std::optional<Model> _modelOverride;
@@ -371,6 +433,7 @@ private:
     bool _deviceConnected{false};
     std::atomic<bool> _scannerWanted{false};
     std::atomic<bool> _automaticEarDetection{false};
+    EarDetectSensitivity _earDetectSensitivity{EarDetectSensitivity::Normal};
     std::atomic<bool> _conversationalAwarenessEnabled{false};
     std::atomic<uint8_t> _conversationalAwarenessVolumePercent{40};
     std::atomic<bool> _personalizedVolumeEnabled{false};
@@ -440,10 +503,16 @@ private:
 
     void CompleteBoundDeviceLookup(uint64_t address, std::optional<Bluetooth::Device> device);
     void OnBoundDeviceConnectionStateChanged(Bluetooth::DeviceState state);
-    void OnStateChanged(Details::StateManager::UpdateEvent updateEvent);
+    void OnStateChanged(Details::StateManager::UpdateEvent updateEvent, uint64_t resetGeneration);
     void OnLidOpened(bool opened);
-    void OnBothInEar(bool isBothInEar);
-    bool OnAdvertisementReceived(const Bluetooth::AdvertisementWatcher::ReceivedData &data);
+    void OnEarStateChanged(EarState state);
+    void ScheduleEarDeadline();
+    void ReevaluateEarDetection();
+    void ResetEarDetection();
+    // Caller holds `_mutex`; only owner-thread timer rearm is queued after invalidation.
+    void ResetEarDetectionLocked();
+    bool OnAdvertisementReceived(
+        const Bluetooth::AdvertisementWatcher::ReceivedData &data, uint64_t resetGeneration);
     void OnAdvWatcherStateChanged(
         Bluetooth::AdvertisementWatcher::State state, const std::optional<std::string> &optError);
 
@@ -461,7 +530,8 @@ private:
     void OnAAPCommandSettled(const AAP::AAPCommandOutcome &outcome, AAP::AAPAttempt attempt);
     void OnSpeakingLevelChanged(AAP::SpeakingLevel level, AAP::AAPAttempt attempt);
     void OnEarDetectionChanged(
-        AAP::EarStatus primary, AAP::EarStatus secondary, AAP::AAPAttempt attempt);
+        AAP::EarStatus primary, AAP::EarStatus secondary, AAP::AAPAttempt attempt,
+        uint64_t resetGeneration);
     void OnAAPBatteryChanged(const AAP::AAPBatterySnapshot &snapshot, AAP::AAPAttempt attempt);
     void OnHeadTrackingData(AAP::HeadTrackingData data, AAP::AAPAttempt attempt);
     void OnStemPress(AAP::StemEvent event, AAP::AAPAttempt attempt);

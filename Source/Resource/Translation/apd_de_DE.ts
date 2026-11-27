@@ -508,6 +508,10 @@ Kopple deine AirPods zuerst in den Windows Bluetooth-Einstellungen.</translation
         <source>Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.</source>
         <translation>Streamt die Kopfverfolgungs-Sensordaten der Ohrhörer und zeigt sie auf der Einstellungsseite an. Verbraucht bei Verbindung etwas mehr Akku und Bluetooth-Datenverkehr.</translation>
     </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>Entprellung der Ohrerkennung: Niedrig 600 ms, Normal 300 ms, Hoch 150 ms. Höhere Empfindlichkeit reagiert schneller.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -741,6 +745,22 @@ Kopple deine AirPods zuerst in den Windows Bluetooth-Einstellungen.</translation
 <message>
         <source>Stream head tracking data</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ear detection sensitivity</source>
+        <translation>Empfindlichkeit der Ohrerkennung</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>Niedrig</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Normal</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>Hoch</translation>
     </message>
 </context>
 <context>

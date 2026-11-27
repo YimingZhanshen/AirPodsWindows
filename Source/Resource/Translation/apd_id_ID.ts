@@ -508,6 +508,10 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
         <source>Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.</source>
         <translation>Mengalirkan data sensor pelacakan kepala dari earbud dan menampilkannya di halaman pengaturan. Menggunakan sedikit lebih banyak baterai dan lalu lintas Bluetooth saat terhubung.</translation>
     </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>Penundaan deteksi telinga: rendah 600 ms, normal 300 ms, tinggi 150 ms. Kepekaan lebih tinggi bereaksi lebih cepat.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -741,6 +745,22 @@ Anda perlu memasangkan AirPods di Pengaturan Bluetooth Windows terlebih dahulu.<
 <message>
         <source>Stream head tracking data</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ear detection sensitivity</source>
+        <translation>Kepekaan deteksi telinga</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>Rendah</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Normal</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>Tinggi</translation>
     </message>
 </context>
 <context>

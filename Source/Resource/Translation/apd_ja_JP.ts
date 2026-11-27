@@ -508,6 +508,10 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.</source>
         <translation>イヤホンの頭部トラッキングセンサーデータをストリーミングし、設定ページに表示します。接続中はバッテリーとBluetooth通信を少し多く消費します。</translation>
     </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>イヤホン検出のデバウンス：低 600 ms、標準 300 ms、高 150 ms。感度が高いほど早く反応します。</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -741,6 +745,22 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
 <message>
         <source>Stream head tracking data</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ear detection sensitivity</source>
+        <translation>イヤホン検出の感度</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>低</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>標準</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>高</translation>
     </message>
 </context>
 <context>

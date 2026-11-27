@@ -442,6 +442,11 @@ void ApdApplication::OnAutomaticEarDetectionChanged(bool enable)
     _airPodsManager->OnAutomaticEarDetectionChanged(enable);
 }
 
+void ApdApplication::OnEarDetectSensitivityChanged(Core::EarDetectSensitivity sensitivity)
+{
+    _airPodsManager->OnEarDetectSensitivityChanged(sensitivity);
+}
+
 void ApdApplication::OnConversationalAwarenessChanged(bool enable)
 {
     _airPodsManager->OnConversationalAwarenessChanged(enable);

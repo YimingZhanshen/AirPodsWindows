@@ -508,6 +508,10 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
         <source>Streams the earbuds' head-tracking sensor data and shows it on the settings page. Uses a little more battery and Bluetooth traffic while connected.</source>
         <translation>מזרים את נתוני חיישן מעקב הראש של האוזניות ומציג אותם בעמוד ההגדרות. צורך מעט יותר סוללה ותעבורת Bluetooth בזמן שהמכשיר מחובר.</translation>
     </message>
+    <message>
+        <source>Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.</source>
+        <translation>השהיית זיהוי באוזן: נמוכה 600 מילישיניות, רגילה 300 מילישיניות, גבוהה 150 מילישיניות. רגישות גבוהה יותר מגיבה מהר יותר.</translation>
+    </message>
 </context>
 <context>
     <name>SelectWindow</name>
@@ -741,6 +745,22 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
 <message>
         <source>Stream head tracking data</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ear detection sensitivity</source>
+        <translation>רגישות זיהוי באוזן</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>נמוכה</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>רגילה</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>גבוהה</translation>
     </message>
 </context>
 <context>

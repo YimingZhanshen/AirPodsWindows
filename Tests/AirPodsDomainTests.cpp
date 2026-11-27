@@ -29,6 +29,7 @@
 #include "Source/Core/AdaptiveNoiseLevel.h"
 #include "Source/Core/AAP.h"
 #include "Source/Core/HeadTrackingIntent.h"
+#include "Source/Core/EarDetectionDebounce.h"
 #include "Source/Core/Settings.h"
 #include "Source/Core/SettingsRepository.h"
 #include "Source/Core/Update.h"
@@ -38,6 +39,9 @@
 
 namespace {
 
+using Core::EarDetectionDebounce;
+using Core::EarDetectSensitivity;
+using Core::EarState;
 using Core::AirPods::Model;
 using Core::AirPods::Side;
 using Core::AirPods::Details::Advertisement;
@@ -65,6 +69,10 @@ public:
     void OnAutomaticEarDetectionChanged(bool enable) override
     {
         automaticEarDetection = enable;
+    }
+    void OnEarDetectSensitivityChanged(EarDetectSensitivity sensitivity) override
+    {
+        earDetectSensitivity = sensitivity;
     }
     void OnConversationalAwarenessChanged(bool enable) override
     {
@@ -126,6 +134,7 @@ public:
     }
 
     bool automaticEarDetection{false};
+    EarDetectSensitivity earDetectSensitivity{EarDetectSensitivity::Normal};
     bool conversationalAwareness{false};
     uint8_t conversationalAwarenessVolumePercent{};
     bool personalizedVolume{false};
@@ -350,6 +359,21 @@ private Q_SLOTS:
     void HeadTrackingIntentReplaysStartAndStop();
     void HeadTrackingSettingPersistsWithoutAbiBump();
     void ConcurrentHeadTrackingTogglesKeepMirrorConsistent();
+    void DebouncesRapidRemovalAndInsertion();
+    void DebounceCompletesAtDeadlineWithoutAnotherPacket();
+    void SingleEarAlternationUsesFusedResult();
+    void EarDetectionFiltersJitter();
+    void FusesAapOverBleAndFallsBackOnReset();
+    void AapRolesUseAggregateFallbackWithoutPrimaryIdentity();
+    void QueuedAapReportIsRejectedAfterResetEpoch();
+    void AapDisconnectCleanupIsSessionAndEpochKeyed();
+    void DueTimerRejectsStaleEpochAndSession();
+    void ResetGenerationRejectsReportCapturedBeforeReset();
+    void QueuedAapReportRetainsCapturedPrimaryRole();
+    void StateManagerGenerationInvalidatesQueuedUpdates();
+    void AapDisconnectRequiresFreshBleConfirmation();
+    void EarDetectionResetsAcrossStateLoss();
+    void EarDetectionSensitivityTimings();
     void PackagesCompatibleLowLatencySilence();
     void LoadsSettingsThroughRepository();
     void MigratesLegacySettingsRepository();
@@ -387,6 +411,7 @@ private Q_SLOTS:
     void AdaptiveNoiseTranslationsAreCompleteInAllCatalogs();
     void HeadTrackingTranslationsAreComplete_data();
     void HeadTrackingTranslationsAreComplete();
+    void EarDetectionSensitivityTranslationsAreComplete();
     void HebrewUpdateWindowTranslationsAreFinished_data();
     void HebrewUpdateWindowTranslationsAreFinished();
     void MapsMainWindowAnimationResources();
@@ -623,19 +648,22 @@ void AirPodsDomainTests::ManagerUsesResolvedModelForStateAndFiltering()
 
     Core::AirPods::State state;
     state.model = Model::AirPods_5;
-    manager.OnStateChanged({std::nullopt, state});
+    manager.OnStateChanged(
+        {std::nullopt, state, manager._stateMgr.Generation()}, manager._earResetGeneration.load());
     QCOMPARE(updates, 1);
     QCOMPARE(emitted.model, Model::AirPods_5_WCC);
     QCOMPARE(emitted.displayName, QString{"AirPods 5 (Wireless Charging Case)"});
 
     manager._deviceConnected = true;
     QVERIFY(manager.OnAdvertisementReceived(
-        MakeAdvertisementData(0x1234, -45, Side::Left, 8, 7, 5, 0x2030)));
+        MakeAdvertisementData(0x1234, -45, Side::Left, 8, 7, 5, 0x2030),
+        manager._earResetGeneration.load()));
     QCOMPARE(updates, 2);
     QCOMPARE(emitted.model, Model::AirPods_5_WCC);
 
     QVERIFY(!manager.OnAdvertisementReceived(
-        MakeAdvertisementData(0x5678, -45, Side::Left, 8, 7, 5, 0x2027)));
+        MakeAdvertisementData(0x5678, -45, Side::Left, 8, 7, 5, 0x2027),
+        manager._earResetGeneration.load()));
     QCOMPARE(updates, 2);
 }
 
@@ -993,6 +1021,7 @@ void AirPodsDomainTests::ParsesAdvertisementState()
 
     QCOMPARE(state.model, Model::AirPods_Pro_2);
     QCOMPARE(state.side, Side::Left);
+    QCOMPARE(state.primarySide, std::optional<Side>{Side::Left});
     QCOMPARE(state.pods.left.battery.Value(), 80U);
     QCOMPARE(state.pods.right.battery.Value(), 70U);
     QCOMPARE(state.caseBox.battery.Value(), 50U);
@@ -1182,6 +1211,7 @@ void AirPodsDomainTests::MergesAdvertisementsFromBothSides()
         Advertisement{MakeAdvertisementData(0x2222, -46, Side::Right, 9, 7, 5)});
     QVERIFY(update.has_value());
     QVERIFY(update->oldState.has_value());
+    QCOMPARE(update->newState.primarySide, std::optional<Side>{Side::Right});
     QCOMPARE(update->newState.pods.left.battery.Value(), 90U);
     QCOMPARE(update->newState.pods.right.battery.Value(), 70U);
     QCOMPARE(update->newState.caseBox.battery.Value(), 50U);
@@ -1400,8 +1430,9 @@ void AirPodsDomainTests::SerializesBleAndAapStatePublication()
         },
         Qt::QueuedConnection);
 
-    Core::AirPods::Details::StateManager::UpdateEvent update{std::nullopt, ble};
-    manager.OnStateChanged(std::move(update));
+    Core::AirPods::Details::StateManager::UpdateEvent update{
+        std::nullopt, ble, manager._stateMgr.Generation()};
+    manager.OnStateChanged(std::move(update), manager._earResetGeneration.load());
     QCoreApplication::processEvents();
     QCoreApplication::processEvents();
 
@@ -1712,22 +1743,458 @@ void AirPodsDomainTests::LidPopupCooldownBlocksRapidRepeats()
     QCOMPARE(tracker.Update(Lid::Closed, Lid::Opened, start + 124s), std::optional<bool>{true});
 }
 
-void AirPodsDomainTests::EarDetectionTrackerSurvivesStateLoss()
+void AirPodsDomainTests::DebouncesRapidRemovalAndInsertion()
 {
+    EarDetectionDebounce debounce;
+    QCOMPARE(debounce.Update(EarState::InEar, 0ms), EarState::Unknown);
+    QCOMPARE(debounce.Update(EarState::InEar, 299ms), EarState::Unknown);
+    QCOMPARE(debounce.Update(EarState::InEar, 300ms), EarState::InEar);
+
+    QCOMPARE(debounce.Update(EarState::OutOfEar, 310ms), EarState::InEar);
+    QCOMPARE(debounce.Update(EarState::InEar, 410ms), EarState::InEar);
+    QCOMPARE(debounce.Update(EarState::OutOfEar, 510ms), EarState::InEar);
+    QCOMPARE(debounce.Update(EarState::OutOfEar, 809ms), EarState::InEar);
+    QCOMPARE(debounce.Update(EarState::OutOfEar, 810ms), EarState::OutOfEar);
+
+    QCOMPARE(debounce.Update(EarState::InEar, 900ms), EarState::OutOfEar);
+    QCOMPARE(debounce.Update(EarState::InEar, 1199ms), EarState::OutOfEar);
+    QCOMPARE(debounce.Update(EarState::InEar, 1200ms), EarState::InEar);
+}
+
+void AirPodsDomainTests::DebounceCompletesAtDeadlineWithoutAnotherPacket()
+{
+    EarDetectionDebounce debounce;
+    QCOMPARE(debounce.Update(EarState::InEar, 0ms), EarState::Unknown);
+    QCOMPARE(debounce.Advance(300ms), EarState::InEar);
+    QCOMPARE(debounce.PendingCandidate(), std::optional<EarState>{});
+    QCOMPARE(debounce.Update(EarState::OutOfEar, 400ms), EarState::InEar);
+    QCOMPARE(debounce.PendingCandidate(), std::optional<EarState>{EarState::OutOfEar});
+    QCOMPARE(debounce.Deadline(400ms), std::optional<std::chrono::milliseconds>{300ms});
+    QCOMPARE(debounce.Advance(699ms), EarState::InEar);
+    QCOMPARE(debounce.Advance(700ms), EarState::OutOfEar);
+
+    // Unknown and stable-state packets stay neutral; neither completes a pending rival.
+    QCOMPARE(debounce.Update(EarState::InEar, 710ms), EarState::OutOfEar);
+    QCOMPARE(debounce.Update(EarState::Unknown, 900ms), EarState::OutOfEar);
+    QCOMPARE(debounce.Update(EarState::OutOfEar, 1000ms), EarState::OutOfEar);
+    QVERIFY(!debounce.PendingCandidate().has_value());
+
+    // A single tracker event also completes with only deadline reevaluation.
     const auto makeState = [](bool leftInEar, bool rightInEar) {
         Core::AirPods::State state;
+        state.pods.left.battery = Core::AirPods::Battery{80};
+        state.pods.right.battery = Core::AirPods::Battery{70};
         state.pods.left.isInEar = leftInEar;
         state.pods.right.isInEar = rightInEar;
         return state;
     };
     EarDetectionTracker tracker;
-    QCOMPARE(tracker.Update(makeState(true, true)), std::optional<bool>{});
-    QCOMPARE(tracker.Update(makeState(true, false)), std::optional<bool>{false});
-    QCOMPARE(tracker.Update(makeState(true, false)), std::optional<bool>{});
-    QCOMPARE(tracker.Update(makeState(false, false)), std::optional<bool>{});
-    QCOMPARE(tracker.Update(makeState(true, true)), std::optional<bool>{true});
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 0ms), std::optional<EarState>{});
+    QCOMPARE(tracker.Reevaluate(300ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(false, false), 400ms), std::optional<EarState>{});
+    QVERIFY(tracker.Deadline().has_value());
+    QCOMPARE(tracker.Reevaluate(699ms), std::optional<EarState>{});
+    QCOMPARE(tracker.Reevaluate(700ms), std::optional<EarState>{EarState::OutOfEar});
+    QVERIFY(!tracker.Deadline().has_value());
+}
+
+void AirPodsDomainTests::SingleEarAlternationUsesFusedResult()
+{
+    const auto makeState = [](bool leftInEar, bool rightInEar) {
+        Core::AirPods::State state;
+        state.pods.left.battery = Core::AirPods::Battery{80};
+        state.pods.right.battery = Core::AirPods::Battery{70};
+        state.pods.left.isInEar = leftInEar;
+        state.pods.right.isInEar = rightInEar;
+        return state;
+    };
+    EarDetectionTracker tracker;
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 0ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 300ms), std::optional<EarState>{});
+    QCOMPARE(tracker.CurrentState(), EarState::InEar);
+
+    QCOMPARE(tracker.UpdateBle(makeState(false, true), 400ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(true, false), 500ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(false, true), 600ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(true, false), 700ms), std::optional<EarState>{});
+    QCOMPARE(tracker.CurrentState(), EarState::InEar);
+
+    QCOMPARE(tracker.UpdateBle(makeState(false, false), 800ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(false, false), 1099ms), std::optional<EarState>{});
+    QCOMPARE(
+        tracker.UpdateBle(makeState(false, false), 1100ms),
+        std::optional<EarState>{EarState::OutOfEar});
+}
+
+void AirPodsDomainTests::EarDetectionFiltersJitter()
+{
+    EarDetectionDebounce debounce{EarDetectSensitivity::High};
+    QCOMPARE(debounce.Update(EarState::InEar, 0ms), EarState::Unknown);
+    QCOMPARE(debounce.Update(EarState::InEar, 150ms), EarState::InEar);
+    for (int i = 0; i < 10; ++i) {
+        const auto now = std::chrono::milliseconds{200 + i * 100};
+        const auto candidate = i % 2 == 0 ? EarState::OutOfEar : EarState::InEar;
+        QCOMPARE(debounce.Update(candidate, now), EarState::InEar);
+    }
+    QCOMPARE(debounce.Update(EarState::Unknown, 1200ms), EarState::InEar);
+    QCOMPARE(debounce.Update(EarState::InEar, 1300ms), EarState::InEar);
+}
+
+void AirPodsDomainTests::FusesAapOverBleAndFallsBackOnReset()
+{
+    const auto makeState = [](bool leftInEar, bool rightInEar) {
+        Core::AirPods::State state;
+        state.pods.left.battery = Core::AirPods::Battery{80};
+        state.pods.right.battery = Core::AirPods::Battery{70};
+        state.pods.left.isInEar = leftInEar;
+        state.pods.right.isInEar = rightInEar;
+        return state;
+    };
+    EarDetectionTracker tracker;
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 0ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 300ms), std::optional<EarState>{});
+
+    // A current AAP report wins over a conflicting stale BLE report, but still debounces.
+    QCOMPARE(
+        tracker.UpdateAap(EarState::OutOfEar, EarState::OutOfEar, 400ms),
+        std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 500ms), std::optional<EarState>{});
+    QCOMPARE(
+        tracker.UpdateAap(EarState::OutOfEar, EarState::OutOfEar, 699ms),
+        std::optional<EarState>{});
+    QCOMPARE(
+        tracker.UpdateAap(EarState::OutOfEar, EarState::OutOfEar, 700ms),
+        std::optional<EarState>{EarState::OutOfEar});
+
+    tracker.ResetAap();
+    // The cached BLE value alone is stale and cannot reverse the AAP transition.
+    QCOMPARE(tracker.Reevaluate(800ms), std::optional<EarState>{});
+    QCOMPARE(tracker.CurrentState(), EarState::OutOfEar);
+    // Only a newly timestamped BLE report starts the source-switch debounce.
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 800ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 1099ms), std::optional<EarState>{});
+    QCOMPARE(
+        tracker.UpdateBle(makeState(true, true), 1100ms), std::optional<EarState>{EarState::InEar});
+
+    // An unknown AAP side falls back to BLE instead of forcing a false transition.
+    QCOMPARE(
+        tracker.UpdateAap(EarState::Unknown, EarState::InEar, 1200ms), std::optional<EarState>{});
+    QCOMPARE(tracker.CurrentState(), EarState::InEar);
+}
+
+void AirPodsDomainTests::AapRolesUseAggregateFallbackWithoutPrimaryIdentity()
+{
+    const auto makeState = [](bool leftInEar, bool rightInEar,
+                              std::optional<Side> primarySide = std::nullopt) {
+        Core::AirPods::State state;
+        state.primarySide = primarySide;
+        state.pods.left.battery = Core::AirPods::Battery{80};
+        state.pods.right.battery = Core::AirPods::Battery{70};
+        state.pods.left.isInEar = leftInEar;
+        state.pods.right.isInEar = rightInEar;
+        return state;
+    };
+    const Core::AAP::AAPAttempt session{0x1234, 7};
+
+    // Unknown identity: one known out-of-ear role cannot prove that the worn BLE pod is out.
+    EarDetectionTracker aggregate;
+    QCOMPARE(aggregate.UpdateBle(makeState(true, false), 0ms), std::optional<EarState>{});
+    QCOMPARE(aggregate.Reevaluate(300ms), std::optional<EarState>{});
+    const auto aggregateEpoch = aggregate.Epoch();
+    QCOMPARE(
+        aggregate.UpdateAap(
+            EarState::Unknown, EarState::OutOfEar, std::nullopt, session, aggregateEpoch, 400ms),
+        std::optional<EarState>{});
+    QCOMPARE(aggregate.Reevaluate(700ms), std::optional<EarState>{});
+    QCOMPARE(aggregate.CurrentState(), EarState::InEar);
+
+    // A known right primary maps the unknown role to right and the out role to left.
+    EarDetectionTracker mapped;
+    QCOMPARE(mapped.UpdateBle(makeState(true, false, Side::Right), 0ms), std::optional<EarState>{});
+    QCOMPARE(mapped.Reevaluate(300ms), std::optional<EarState>{});
+    const auto mappedEpoch = mapped.Epoch();
+    QCOMPARE(
+        mapped.UpdateAap(
+            EarState::Unknown, EarState::OutOfEar, Side::Right, session, mappedEpoch, 400ms),
+        std::optional<EarState>{});
+    QCOMPARE(mapped.Reevaluate(700ms), std::optional<EarState>{EarState::OutOfEar});
+
+    // Conflicting BLE cannot override a complete current AAP aggregate; partial AAP falls back
+    // above.
+    EarDetectionTracker conflict;
+    QCOMPARE(conflict.UpdateBle(makeState(true, false), 0ms), std::optional<EarState>{});
+    QCOMPARE(conflict.Reevaluate(300ms), std::optional<EarState>{});
+    const auto conflictEpoch = conflict.Epoch();
+    QCOMPARE(
+        conflict.UpdateAap(
+            EarState::OutOfEar, EarState::OutOfEar, std::nullopt, session, conflictEpoch, 400ms),
+        std::optional<EarState>{});
+    QCOMPARE(conflict.Reevaluate(700ms), std::optional<EarState>{EarState::OutOfEar});
+}
+
+void AirPodsDomainTests::QueuedAapReportIsRejectedAfterResetEpoch()
+{
+    Core::AirPods::State state;
+    state.pods.left.battery = Core::AirPods::Battery{80};
+    state.pods.right.battery = Core::AirPods::Battery{70};
+    state.pods.left.isInEar = state.pods.right.isInEar = true;
+    EarDetectionTracker tracker;
+    QCOMPARE(tracker.UpdateBle(state, 0ms), std::optional<EarState>{});
+    QCOMPARE(tracker.Reevaluate(300ms), std::optional<EarState>{});
+    const auto staleEpoch = tracker.Epoch();
+    QCOMPARE(
+        tracker.UpdateAap(
+            EarState::OutOfEar, EarState::OutOfEar, Side::Left, {0x1234, 1}, staleEpoch, 400ms),
+        std::optional<EarState>{});
     tracker.Reset();
-    QCOMPARE(tracker.Update(makeState(true, true)), std::optional<bool>{});
+    QVERIFY(tracker.Epoch() > staleEpoch);
+    QCOMPARE(
+        tracker.UpdateAap(
+            EarState::OutOfEar, EarState::OutOfEar, Side::Left, {0x1234, 1}, staleEpoch, 500ms),
+        std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(state, 500ms, staleEpoch), std::optional<EarState>{});
+    QCOMPARE(tracker.CurrentState(), EarState::Unknown);
+    QVERIFY(!tracker.Deadline().has_value());
+
+    state.pods.left.isInEar = state.pods.right.isInEar = false;
+    QCOMPARE(tracker.UpdateBle(state, 500ms), std::optional<EarState>{});
+    QCOMPARE(tracker.Reevaluate(800ms), std::optional<EarState>{});
+    QCOMPARE(tracker.CurrentState(), EarState::OutOfEar);
+}
+
+void AirPodsDomainTests::AapDisconnectCleanupIsSessionAndEpochKeyed()
+{
+    Core::AirPods::State state;
+    state.pods.left.battery = Core::AirPods::Battery{80};
+    state.pods.right.battery = Core::AirPods::Battery{70};
+    state.pods.left.isInEar = state.pods.right.isInEar = true;
+    EarDetectionTracker tracker;
+    QCOMPARE(tracker.UpdateBle(state, 0ms), std::optional<EarState>{});
+    QCOMPARE(tracker.Reevaluate(300ms), std::optional<EarState>{});
+    const auto epoch = tracker.Epoch();
+    const Core::AAP::AAPAttempt oldSession{0x1234, 1};
+    const Core::AAP::AAPAttempt newSession{0x1234, 2};
+    QCOMPARE(
+        tracker.UpdateAap(
+            EarState::OutOfEar, EarState::OutOfEar, Side::Left, oldSession, epoch, 400ms),
+        std::optional<EarState>{});
+    QCOMPARE(
+        tracker.UpdateAap(
+            EarState::OutOfEar, EarState::OutOfEar, Side::Left, newSession, epoch, 450ms),
+        std::optional<EarState>{});
+
+    // The old disconnect arrives after reconnect: it must not clear the replacement overlay.
+    QVERIFY(!tracker.ResetAap(oldSession, epoch));
+    QCOMPARE(tracker.Reevaluate(700ms), std::optional<EarState>{EarState::OutOfEar});
+    const auto newEpoch = tracker.Epoch();
+    QVERIFY(tracker.ResetAap(newSession, newEpoch));
+    QVERIFY(!tracker.ResetAap(newSession, newEpoch));
+    QVERIFY(tracker.Epoch() > newEpoch);
+}
+
+void AirPodsDomainTests::DueTimerRejectsStaleEpochAndSession()
+{
+    Core::AirPods::State state;
+    state.pods.left.battery = Core::AirPods::Battery{80};
+    state.pods.right.battery = Core::AirPods::Battery{70};
+    state.pods.left.isInEar = state.pods.right.isInEar = true;
+    EarDetectionTracker tracker;
+    QCOMPARE(tracker.UpdateBle(state, 0ms), std::optional<EarState>{});
+    QCOMPARE(tracker.Reevaluate(300ms), std::optional<EarState>{});
+
+    const auto epoch = tracker.Epoch();
+    const Core::AAP::AAPAttempt oldSession{0x1234, 1};
+    QCOMPARE(
+        tracker.UpdateAap(
+            EarState::OutOfEar, EarState::OutOfEar, Side::Left, oldSession, epoch, 400ms),
+        std::optional<EarState>{});
+    const auto staleTimer = tracker.Snapshot();
+    QVERIFY(tracker.ResetAap(oldSession, epoch));
+    QCOMPARE(
+        tracker.Reevaluate(700ms, staleTimer.epoch, staleTimer.session), std::optional<EarState>{});
+    QCOMPARE(tracker.CurrentState(), EarState::InEar);
+
+    // A replacement session restarts the candidate. A timer armed for the prior session must
+    // not complete the replacement candidate at the prior session's deadline.
+    QCOMPARE(tracker.UpdateBle(state, 800ms), std::optional<EarState>{});
+    const auto newEpoch = tracker.Epoch();
+    const Core::AAP::AAPAttempt replacement{0x1234, 2};
+    QCOMPARE(
+        tracker.UpdateAap(
+            EarState::OutOfEar, EarState::OutOfEar, Side::Left, replacement, newEpoch, 900ms),
+        std::optional<EarState>{});
+    const auto replacementTimer = tracker.Snapshot();
+    const Core::AAP::AAPAttempt newest{0x1234, 3};
+    QCOMPARE(
+        tracker.UpdateAap(EarState::InCase, EarState::InCase, Side::Left, newest, newEpoch, 1000ms),
+        std::optional<EarState>{});
+    QCOMPARE(
+        tracker.Reevaluate(1200ms, replacementTimer.epoch, replacementTimer.session),
+        std::optional<EarState>{});
+    const auto newestTimer = tracker.Snapshot();
+    QCOMPARE(
+        tracker.Reevaluate(1299ms, newestTimer.epoch, newestTimer.session),
+        std::optional<EarState>{});
+    QCOMPARE(
+        tracker.Reevaluate(1300ms, newestTimer.epoch, newestTimer.session),
+        std::optional<EarState>{EarState::InCase});
+}
+
+void AirPodsDomainTests::ResetGenerationRejectsReportCapturedBeforeReset()
+{
+    using Manager = Core::AirPods::Manager;
+    Manager manager;
+    manager._stateMgr.OnRssiMinChanged(-80);
+    QVERIFY(manager._stateMgr
+                .OnAdvReceived(Advertisement{MakeAdvertisementData(0x1234, -60, Side::Left)})
+                .has_value());
+
+    const Core::AAP::AAPAttempt session{0x1234, 7};
+    {
+        std::lock_guard lock{manager._aapWorkerMutex};
+        manager._aapConnectInProgress = true;
+        manager._aapActiveAttempt = session;
+    }
+
+    // Model the transport callback's entry point: it captures the reset generation before the
+    // handler captures the tracker epoch. Reset lands in that gap.
+    const auto callbackGeneration = manager._earResetGeneration.load();
+    manager.ResetEarDetection();
+    manager.OnEarDetectionChanged(
+        Core::AAP::EarStatus::OutOfEar, Core::AAP::EarStatus::OutOfEar, session,
+        callbackGeneration);
+    QCoreApplication::processEvents();
+
+    QVERIFY(!manager._earDetection.Snapshot().session.has_value());
+    QCOMPARE(manager._earDetection.CurrentState(), EarState::Unknown);
+}
+
+void AirPodsDomainTests::QueuedAapReportRetainsCapturedPrimaryRole()
+{
+    using Manager = Core::AirPods::Manager;
+    Manager manager;
+    manager._stateMgr.OnRssiMinChanged(-80);
+    QVERIFY(manager._stateMgr
+                .OnAdvReceived(Advertisement{MakeAdvertisementData(0x1111, -60, Side::Left)})
+                .has_value());
+    QCOMPARE(manager._stateMgr.GetCurrentState()->primarySide, std::optional<Side>{Side::Left});
+
+    const Core::AAP::AAPAttempt session{0x1234, 7};
+    {
+        std::lock_guard lock{manager._aapWorkerMutex};
+        manager._aapConnectInProgress = true;
+        manager._aapActiveAttempt = session;
+    }
+    manager.OnEarDetectionChanged(
+        Core::AAP::EarStatus::Unknown, Core::AAP::EarStatus::InCase, session,
+        manager._earResetGeneration.load());
+
+    // The BLE primary role changes before the queued AAP report runs. The report must retain
+    // the identity captured with its input rather than remapping a partial Unknown role.
+    QVERIFY(manager._stateMgr
+                .OnAdvReceived(Advertisement{MakeAdvertisementData(0x2222, -50, Side::Right)})
+                .has_value());
+    QCOMPARE(manager._stateMgr.GetCurrentState()->primarySide, std::optional<Side>{Side::Right});
+    QCoreApplication::processEvents();
+
+    const auto snapshot = manager._earDetection.Snapshot();
+    QVERIFY(snapshot.session.has_value());
+    QCOMPARE(snapshot.primarySide, std::optional<Side>{Side::Left});
+}
+
+void AirPodsDomainTests::StateManagerGenerationInvalidatesQueuedUpdates()
+{
+    StateManager manager;
+    manager.OnRssiMinChanged(-80);
+    const auto before =
+        manager.OnAdvReceived(Advertisement{MakeAdvertisementData(0x1111, -60, Side::Left)});
+    QVERIFY(before.has_value());
+    const auto staleGeneration = before->generation;
+
+    manager.Disconnect();
+    QVERIFY(!manager.IsCurrentGeneration(staleGeneration));
+    const auto after =
+        manager.OnAdvReceived(Advertisement{MakeAdvertisementData(0x2222, -50, Side::Right)});
+    QVERIFY(after.has_value());
+    QVERIFY(after->generation > staleGeneration);
+    QVERIFY(manager.IsCurrentGeneration(after->generation));
+    QVERIFY(!manager.IsCurrentGeneration(staleGeneration));
+}
+
+void AirPodsDomainTests::AapDisconnectRequiresFreshBleConfirmation()
+{
+    const auto makeState = [](bool inEar) {
+        Core::AirPods::State state;
+        state.pods.left.battery = Core::AirPods::Battery{80};
+        state.pods.right.battery = Core::AirPods::Battery{70};
+        state.pods.left.isInEar = state.pods.right.isInEar = inEar;
+        return state;
+    };
+    EarDetectionTracker tracker;
+    QCOMPARE(tracker.UpdateBle(makeState(true), 0ms), std::optional<EarState>{});
+    QCOMPARE(tracker.Reevaluate(300ms), std::optional<EarState>{});
+    const auto epoch = tracker.Epoch();
+    const Core::AAP::AAPAttempt session{0x1234, 1};
+    QCOMPARE(
+        tracker.UpdateAap(
+            EarState::OutOfEar, EarState::OutOfEar, Side::Left, session, epoch, 400ms),
+        std::optional<EarState>{});
+    QCOMPARE(tracker.Reevaluate(700ms), std::optional<EarState>{EarState::OutOfEar});
+    QVERIFY(tracker.ResetAap(session, epoch));
+
+    QCOMPARE(tracker.Reevaluate(800ms), std::optional<EarState>{});
+    QCOMPARE(tracker.CurrentState(), EarState::OutOfEar);
+    // Out-of-order BLE cannot count as post-disconnect confirmation.
+    QCOMPARE(tracker.UpdateBle(makeState(true), 300ms), std::optional<EarState>{});
+    QCOMPARE(tracker.Reevaluate(1100ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(true), 800ms), std::optional<EarState>{});
+    QCOMPARE(tracker.Reevaluate(1099ms), std::optional<EarState>{});
+    QCOMPARE(tracker.Reevaluate(1100ms), std::optional<EarState>{EarState::InEar});
+}
+
+void AirPodsDomainTests::EarDetectionResetsAcrossStateLoss()
+{
+    const auto makeState = [](bool leftInEar, bool rightInEar) {
+        Core::AirPods::State state;
+        state.pods.left.battery = Core::AirPods::Battery{80};
+        state.pods.right.battery = Core::AirPods::Battery{70};
+        state.pods.left.isInEar = leftInEar;
+        state.pods.right.isInEar = rightInEar;
+        return state;
+    };
+    EarDetectionTracker tracker;
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 0ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 300ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(false, false), 400ms), std::optional<EarState>{});
+
+    // A rebuilt StateManager must discard the old pending candidate and establish a new baseline.
+    tracker.Reset();
+    QCOMPARE(tracker.CurrentState(), EarState::Unknown);
+    QCOMPARE(tracker.UpdateBle(makeState(false, false), 500ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(false, false), 799ms), std::optional<EarState>{});
+    QCOMPARE(tracker.UpdateBle(makeState(false, false), 800ms), std::optional<EarState>{});
+    QCOMPARE(tracker.CurrentState(), EarState::OutOfEar);
+    QCOMPARE(tracker.UpdateBle(makeState(true, true), 900ms), std::optional<EarState>{});
+    QCOMPARE(
+        tracker.UpdateBle(makeState(true, true), 1200ms), std::optional<EarState>{EarState::InEar});
+}
+
+void AirPodsDomainTests::EarDetectionSensitivityTimings()
+{
+    const std::array<std::pair<EarDetectSensitivity, std::chrono::milliseconds>, 3> cases{{
+        {EarDetectSensitivity::Low, 600ms},
+        {EarDetectSensitivity::Normal, 300ms},
+        {EarDetectSensitivity::High, 150ms},
+    }};
+    for (const auto &[sensitivity, delay] : cases) {
+        EarDetectionDebounce debounce{sensitivity};
+        QCOMPARE(EarDetectionDebounce::DebounceTime(sensitivity), delay);
+        QCOMPARE(debounce.Update(EarState::InEar, 0ms), EarState::Unknown);
+        QCOMPARE(debounce.Update(EarState::InEar, delay), EarState::InEar);
+        QCOMPARE(debounce.Update(EarState::OutOfEar, delay), EarState::InEar);
+        QCOMPARE(debounce.Update(EarState::OutOfEar, delay * 2 - 1ms), EarState::InEar);
+        QCOMPARE(debounce.Update(EarState::OutOfEar, delay * 2), EarState::OutOfEar);
+    }
 }
 
 void AirPodsDomainTests::LoadsSettingsThroughRepository()
@@ -1741,6 +2208,7 @@ void AirPodsDomainTests::LoadsSettingsThroughRepository()
     QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
     QVERIFY(Core::Settings::GetCurrent().auto_run);
     QCOMPARE(Core::Settings::GetCurrent().appearance_mode, Core::Settings::AppearanceMode::Dark);
+    QCOMPARE(Core::Settings::GetCurrent().ear_detect_sensitivity, EarDetectSensitivity::Normal);
 
     RecordingSettingsObserver observer;
     Core::Settings::SetApplyObserver(&observer);
@@ -1858,6 +2326,7 @@ void AirPodsDomainTests::PreservesForkSettingsAndAddsPlaybackAutoConnect()
     auto repository = std::make_unique<Core::Settings::MemoryRepository>();
     repository->Write("abi_version", Core::Settings::kFieldsAbiVersion);
     repository->Write("automatic_ear_detection", false);
+    repository->Write("ear_detect_sensitivity", QString{"High"});
     repository->Write("conversational_awareness", true);
     repository->Write("conversational_awareness_volume_percent", uint8_t{55});
     repository->Write("personalized_volume", true);
@@ -1876,6 +2345,7 @@ void AirPodsDomainTests::PreservesForkSettingsAndAddsPlaybackAutoConnect()
     Core::Settings::SetApplyObserver(&observer);
     Core::Settings::Apply();
     QVERIFY(!observer.automaticEarDetection);
+    QCOMPARE(observer.earDetectSensitivity, EarDetectSensitivity::High);
     QVERIFY(observer.conversationalAwareness);
     QCOMPARE(observer.conversationalAwarenessVolumePercent, uint8_t{55});
     QVERIFY(observer.personalizedVolume);
@@ -1903,6 +2373,7 @@ void AirPodsDomainTests::PreservesForkSettingsAndAddsPlaybackAutoConnect()
           "auto_run",
           "low_audio_latency",
           "automatic_ear_detection",
+          "ear_detect_sensitivity",
           "conversational_awareness",
           "conversational_awareness_volume_percent",
           "personalized_volume",
@@ -2876,6 +3347,60 @@ void AirPodsDomainTests::HeadTrackingTranslationsAreComplete()
     QVERIFY2(!xml.hasError(), qPrintable(xml.errorString()));
     for (const auto &expected : expectedSources) {
         QCOMPARE(matches[expected], 1);
+    }
+}
+
+void AirPodsDomainTests::EarDetectionSensitivityTranslationsAreComplete()
+{
+    const QDir translationDir{QString{APD_SOURCE_DIR} + "/Source/Resource/Translation"};
+    const auto catalogs = translationDir.entryList({"apd_*.ts"}, QDir::Files);
+    QVERIFY(!catalogs.isEmpty());
+    const std::vector<std::pair<QString, QString>> expected{
+        {"SettingsWindow", "Ear detection sensitivity"},
+        {"SettingsWindow", "Low"},
+        {"SettingsWindow", "Normal"},
+        {"SettingsWindow", "High"},
+        {"QObject",
+         "Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity "
+         "reacts sooner."},
+    };
+    for (const auto &catalog : catalogs) {
+        QFile file{translationDir.filePath(catalog)};
+        QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
+        QXmlStreamReader xml{&file};
+        QString context;
+        QString source;
+        std::map<QString, int> matches;
+        while (!xml.atEnd()) {
+            xml.readNext();
+            if (!xml.isStartElement()) {
+                continue;
+            }
+            if (xml.name() == QStringLiteral("name")) {
+                context = xml.readElementText();
+            }
+            else if (xml.name() == QStringLiteral("source")) {
+                source = xml.readElementText();
+            }
+            else if (xml.name() == QStringLiteral("translation")) {
+                const auto type = xml.attributes().value(QStringLiteral("type")).toString();
+                const auto translation = xml.readElementText().trimmed();
+                for (const auto &[expectedContext, expectedSource] : expected) {
+                    if (context == expectedContext && source == expectedSource) {
+                        ++matches[expectedSource];
+                        QVERIFY2(
+                            type != QStringLiteral("unfinished"),
+                            qPrintable(catalog + "/" + expectedSource));
+                        QVERIFY2(
+                            !translation.isEmpty(), qPrintable(catalog + "/" + expectedSource));
+                    }
+                }
+            }
+        }
+        QVERIFY2(!xml.hasError(), qPrintable(catalog + ": " + xml.errorString()));
+        for (const auto &[_, expectedSource] : expected) {
+            QCOMPARE(matches[expectedSource], 1);
+        }
     }
 }
 

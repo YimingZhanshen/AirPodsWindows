@@ -45,6 +45,7 @@ Advertisement::Advertisement(const Bluetooth::AdvertisementWatcher::ReceivedData
     _state.model = _protocol.GetModel();
     _state.color = _protocol.GetColor();
     _state.side = _protocol.GetBroadcastedSide();
+    _state.primarySide = _protocol.IsPrimaryLeft() ? Side::Left : Side::Right;
 
     _state.pods.left.battery = _protocol.GetLeftBattery();
     _state.pods.left.isCharging = _protocol.IsLeftCharging();

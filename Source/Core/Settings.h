@@ -28,6 +28,7 @@
 #include "../Helper.h"
 #include "AAPStem.h"
 #include "AdaptiveNoiseLevel.h"
+#include "EarDetectionDebounce.h"
 
 namespace Core::Settings {
 
@@ -51,6 +52,7 @@ public:
     virtual void OnAutoRunChanged(bool enable) = 0;
     virtual void OnLowAudioLatencyChanged(bool enable) = 0;
     virtual void OnAutomaticEarDetectionChanged(bool enable) = 0;
+    virtual void OnEarDetectSensitivityChanged(EarDetectSensitivity sensitivity) = 0;
     virtual void OnConversationalAwarenessChanged(bool enable) = 0;
     virtual void OnConversationalAwarenessVolumePercentChanged(uint8_t percent) = 0;
     virtual void OnPersonalizedVolumeChanged(bool enable) = 0;
@@ -176,13 +178,16 @@ void SetRepository(std::unique_ptr<Repository> repository);
     callback(Core::AAP::StemAction, stem_right_long, {Core::AAP::DefaultStemActions()[7]}, \
         Impl::OnApply(&OnApply_stem_actions),                                                     \
         Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Action for a long press of the right stem.")})
-// clang-format on
+    callback(EarDetectSensitivity, ear_detect_sensitivity, {EarDetectSensitivity::Normal},           \
+        Impl::OnApply(&OnApply_ear_detect_sensitivity),                                           \
+        Impl::Desc{QT_TRANSLATE_NOOP("QObject", "Ear detection debounce: Low 600 ms, Normal 300 ms, High 150 ms. Higher sensitivity reacts sooner.")})
+    // clang-format on
 
-// `head_tracking` predates D5 and remains the single persisted switch. D5 deliberately reuses
-// it instead of appending a duplicate key: the field name, type and position are unchanged, so
-// `kFieldsAbiVersion` stays 1 and stores written before D5 keep working untouched.
+    // `head_tracking` predates D5 and remains the single persisted switch. D5 deliberately reuses
+    // it instead of appending a duplicate key: the field name, type and position are unchanged, so
+    // `kFieldsAbiVersion` stays 1 and stores written before D5 keep working untouched.
 
-struct Fields {
+    struct Fields {
 #define DECLARE_FIELD(type, name, dft, ...) type name dft;
     SETTINGS_FIELDS(DECLARE_FIELD)
 #undef DECLARE_FIELD
@@ -338,6 +343,7 @@ void OnApply_appearance_mode(const Fields &newFields);
 void OnApply_auto_run(const Fields &newFields);
 void OnApply_low_audio_latency(const Fields &newFields);
 void OnApply_automatic_ear_detection(const Fields &newFields);
+void OnApply_ear_detect_sensitivity(const Fields &newFields);
 void OnApply_conversational_awareness(const Fields &newFields);
 void OnApply_conversational_awareness_volume_percent(const Fields &newFields);
 void OnApply_personalized_volume(const Fields &newFields);

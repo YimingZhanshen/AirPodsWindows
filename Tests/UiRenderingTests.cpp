@@ -556,6 +556,55 @@ private Q_SLOTS:
         Core::Settings::Save(Core::Settings::GetDefault());
     }
 
+    void EarDetectionSensitivitySelectorPersistsChoices()
+    {
+        const auto original = Core::Settings::GetCurrent();
+        auto repository = std::make_unique<Core::Settings::MemoryRepository>();
+        auto *memory = repository.get();
+        Core::Settings::SetRepository(std::move(repository));
+        auto fields = original;
+        fields.automatic_ear_detection = true;
+        fields.ear_detect_sensitivity = Core::EarDetectSensitivity::Normal;
+        Core::Settings::Save(fields);
+
+        Core::QuickConnect::Controller quickConnect{
+            std::make_shared<Core::QuickConnect::NullBackend>()};
+        Gui::SettingsWindow settings{[] { return 0; }, quickConnect};
+        auto *selector = settings.findChild<QComboBox *>("cbEarDetectSensitivity");
+        QVERIFY(selector != nullptr);
+        QCOMPARE(selector->count(), 3);
+        QCOMPARE(selector->currentIndex(), static_cast<int>(Core::EarDetectSensitivity::Normal));
+        QVERIFY(selector->isEnabled());
+        QVERIFY(!selector->accessibleName().isEmpty());
+        auto *description = settings.findChild<QLabel *>("lbDescEarDetectSensitivity");
+        QVERIFY(description != nullptr);
+        QVERIFY(!description->text().isEmpty());
+
+        selector->setCurrentIndex(static_cast<int>(Core::EarDetectSensitivity::High));
+        QCOMPARE(
+            Core::Settings::GetCurrent().ear_detect_sensitivity, Core::EarDetectSensitivity::High);
+        Core::Settings::Save(Core::Settings::GetCurrent());
+        QCOMPARE(memory->Read("ear_detect_sensitivity").toString(), QStringLiteral("High"));
+        QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+        QCOMPARE(
+            Core::Settings::GetCurrent().ear_detect_sensitivity, Core::EarDetectSensitivity::High);
+
+        selector->setCurrentIndex(static_cast<int>(Core::EarDetectSensitivity::Low));
+        Core::Settings::Save(Core::Settings::GetCurrent());
+        QCOMPARE(memory->Read("ear_detect_sensitivity").toString(), QStringLiteral("Low"));
+        QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
+        QCOMPARE(
+            Core::Settings::GetCurrent().ear_detect_sensitivity, Core::EarDetectSensitivity::Low);
+
+        auto *automatic = settings.findChild<QCheckBox *>("cbAutoEarDetection");
+        QVERIFY(automatic != nullptr);
+        automatic->setChecked(false);
+        QVERIFY(!selector->isEnabled());
+        automatic->setChecked(true);
+        QVERIFY(selector->isEnabled());
+        Core::Settings::Save(original);
+    }
+
     void AudioAutoConnectIsOptionalAndIndependent()
     {
         Core::QuickConnect::Controller quickConnect{
@@ -2350,6 +2399,11 @@ private Q_SLOTS:
             buttonBox->button(QDialogButtonBox::Close)->text(),
             QString::fromUtf8("\xE9\x97\x9C\xE9\x96\x89"));
         QVERIFY(appearanceTextFits());
+        auto *sensitivity = window.findChild<QComboBox *>("cbEarDetectSensitivity");
+        QVERIFY(sensitivity != nullptr);
+        QCOMPARE(sensitivity->itemText(0), QString::fromUtf8("\xE4\xBD\x8E"));
+        QCOMPARE(sensitivity->itemText(1), QString::fromUtf8("\xE6\xA8\x99\xE6\xBA\x96"));
+        QCOMPARE(sensitivity->itemText(2), QString::fromUtf8("\xE9\xAB\x98"));
 
         const auto outputDir = QStringLiteral(APD_BINARY_DIR "/UiValidation");
         QDir{}.mkpath(outputDir);
