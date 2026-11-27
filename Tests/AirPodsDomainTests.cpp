@@ -2303,7 +2303,8 @@ void AirPodsDomainTests::PersistsAndPropagatesStemActions()
     Core::Settings::SetRepository(std::move(repository));
     QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
     QVERIFY(
-        Core::AAP::StemActionsOf(Core::Settings::GetCurrent()) == Core::AAP::DefaultStemActions());
+        Core::Settings::StemActionsOf(Core::Settings::GetCurrent()) ==
+        Core::AAP::DefaultStemActions());
     RecordingSettingsObserver observer;
     Core::Settings::SetApplyObserver(&observer);
     Core::AAP::StemActionTable custom{};
@@ -2326,7 +2327,7 @@ void AirPodsDomainTests::PersistsAndPropagatesStemActions()
     Core::Settings::SetApplyObserver(nullptr);
 
     QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
-    QVERIFY(Core::AAP::StemActionsOf(Core::Settings::GetCurrent()) == custom);
+    QVERIFY(Core::Settings::StemActionsOf(Core::Settings::GetCurrent()) == custom);
     Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
 }
 
