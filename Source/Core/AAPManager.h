@@ -344,6 +344,8 @@ private:
         std::optional<NoiseControlMode> requiredMode = std::nullopt,
         bool allowPendingAdaptive = false);
     bool IsCurrentAttempt(AAPAttempt attempt) const;
+    // Requires _mutex; used by the reader path, which already holds it.
+    bool IsCurrentAttemptLocked(AAPAttempt attempt) const;
     // Command broker seams (blueprint 2.7): the broker owns serialization and the desired
     // state, this layer supplies the wire encoding and the protocol evidence.
     bool SendCommand(const AAPCommand &command, uint64_t generation, std::stop_token stopToken);

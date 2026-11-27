@@ -554,6 +554,11 @@ std::optional<AAPBatterySnapshot> Manager::GetBatterySnapshot() const
 bool Manager::IsCurrentAttempt(AAPAttempt attempt) const
 {
     std::lock_guard lock{_mutex};
+    return IsCurrentAttemptLocked(attempt);
+}
+
+bool Manager::IsCurrentAttemptLocked(AAPAttempt attempt) const
+{
     return attempt.generation != 0 && _connected && _attempt.address == attempt.address &&
            _attempt.generation == attempt.generation;
 }
@@ -1152,9 +1157,6 @@ void Manager::ProcessAttFrame(
     // A retired session's late answer must not touch the current session's probe state:
     // drop it before the reservation, the cache or the diagnostic log can be written on
     // behalf of an attempt that is no longer current.
-    if (!IsCurrentAttempt(attempt)) {
-        return;
-    }
     if (!IsCurrentAttempt(attempt)) {
         return;
     }
@@ -2001,6 +2003,10 @@ bool Manager::AcquireAttRead(uint64_t, uint64_t, std::stop_token)
 }
 void Manager::ReleaseAttRead() {}
 bool Manager::IsCurrentAttempt(AAPAttempt) const
+{
+    return false;
+}
+bool Manager::IsCurrentAttemptLocked(AAPAttempt) const
 {
     return false;
 }

@@ -28,6 +28,8 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <future>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -39,6 +41,7 @@
 #include <vector>
 
 #include "Source/Core/AAPCommandBroker.h"
+#include "Source/Core/AAPConnectionStateMachine.h"
 #include "Source/Core/AAPTransport.h"
 
 // Deterministic, hardware-free test support for the AAP transport and worker seams.
@@ -60,38 +63,21 @@
 
 namespace AAPTestSupport {
 
-// Deterministic broker clock. The broker's AdvanceTimeForTesting seam advances it and wakes the
-// echo wait; tests never sleep waiting for the production two-second deadline.
-class ManualClock
-{
-public:
-    using TimePoint = std::chrono::steady_clock::time_point;
+// Single budget for every rendezvous. Generous enough that a loaded CI runner cannot
+// trip it while a worker is merely slow, small enough that a genuine deadlock fails
+// the test well before the 60 s CTest timeout.
+inline constexpr std::chrono::milliseconds kRendezvousTimeout{10000};
 
-    ManualClock()
-    {
-        _now = TimePoint{};
-    }
+// A Worker may be destroyed while its body is deadlocked, so its Join cannot be the only
+// guard. This process-level backstop exits before CTest's 60 s ceiling. The watchdog is a
+// joined jthread on the normal path; nothing is detached and ordinary test cleanup is intact.
+inline constexpr std::chrono::milliseconds kWorkerFailFastTimeout{30000};
+inline constexpr int kWorkerFailFastExitCode{121};
 
-    TimePoint Now() const
-    {
-        std::lock_guard lock{_mutex};
-        return _now;
-    }
-
-    void Advance(std::chrono::milliseconds delta)
-    {
-        std::lock_guard lock{_mutex};
-        _now += delta;
-    }
-
-private:
-    mutable std::mutex _mutex;
-    TimePoint _now;
-};
-
-// Records are injected whole. The send limit models a failed atomic write, not a
-// byte stream: callers must never retry the unwritten suffix as another record.
-class FakeTransport final : public Core::AAP::AAPTransport
+// A promise-backed blocking stub. Wait and Signal both have bounded deadlines; the RAII
+// guard signals on every exit, including a QVERIFY early return. No predicate polling is
+// involved, so an unsatisfied gate never depends on a wall-clock sleep to make progress.
+class PromiseGate
 {
 public:
     struct State {
@@ -243,20 +229,24 @@ public:
 
     TimePoint Now() const
     {
+        std::lock_guard lock{_mutex};
         return _now;
     }
     void Advance(Duration by)
     {
+        std::lock_guard lock{_mutex};
         _now += by;
     }
     // Advances and returns the new time, for the common `now = tick(1s)` idiom.
     TimePoint Tick(Duration by)
     {
-        Advance(by);
+        std::lock_guard lock{_mutex};
+        _now += by;
         return _now;
     }
 
 private:
+    mutable std::mutex _mutex;
     TimePoint _now{Duration{0}};
 };
 
@@ -357,6 +347,8 @@ public:
     {
         auto state = _state; // keep the state alive if the test destroys us mid-wait
         std::unique_lock lock{state->mutex};
+        // A fresh Connect starts a new session after Close; a Close during this call still wins.
+        state->closed = false;
         ++state->connectWaiters;
         state->condition.notify_all();
         state->condition.wait(
@@ -365,39 +357,44 @@ public:
         if (stop.stop_requested() || state->closed || !state->connectResult) {
             return false;
         }
-        _closed = false;
-        _eof = false;
-        _records.clear();
-        _sendHook = {};
-        _connected = true;
+        ++state->connectCalls;
+        state->lastConnectAddress = address;
+        state->connected = true;
+        state->eof = false;
+        state->records.clear();
         return true;
     }
 
     bool Send(std::span<const uint8_t> data, std::stop_token stop) override
     {
-        std::unique_lock<std::mutex> lock{_mutex};
-        ++_sendAttempts;
-        ++_sendWaiters;
-        _sendCondition.notify_all();
-        _sendCondition.wait(lock, stop, [this] { return !_blockSend || _closed; });
-        --_sendWaiters;
-        if (stop.stop_requested() || _closed || !_connected || _sendError) {
-            return false;
-        }
+        auto state = _state;
+        {
+            std::unique_lock lock{state->mutex};
+            ++state->sendAttempts;
+            ++state->sendWaiters;
+            state->condition.notify_all();
+            state->condition.wait(
+                lock, stop, [state] { return !state->blockSend || state->closed; });
+            --state->sendWaiters;
+            if (stop.stop_requested() || state->closed || !state->connected || state->sendError) {
+                return false;
+            }
 
-        ++_sendCalls;
-        _lastSend.assign(data.begin(), data.end());
-        if (_sendFailures > 0) {
-            --_sendFailures;
-            return false;
+            ++state->sendCalls;
+            state->lastSend.assign(data.begin(), data.end());
+            if (state->sendFailures > 0) {
+                --state->sendFailures;
+                return false;
+            }
+            const size_t written = state->sendLimit.has_value()
+                                       ? std::min(data.size(), *state->sendLimit)
+                                       : data.size();
+            if (written != data.size()) {
+                return false;
+            }
+            state->sentRecords.push_back(std::vector<uint8_t>(data.begin(), data.end()));
+            state->condition.notify_all();
         }
-        const size_t written =
-            state->sendLimit.has_value() ? std::min(data.size(), *state->sendLimit) : data.size();
-        if (written != data.size()) {
-            return false;
-        }
-        _sentRecords.push_back(std::vector<uint8_t>(data.begin(), data.end()));
-        _sendCondition.notify_all();
         return true;
     }
 
@@ -498,8 +495,8 @@ public:
 
     void SetSendFailures(size_t failures)
     {
-        std::lock_guard<std::mutex> lock{_mutex};
-        _sendFailures = failures;
+        std::lock_guard lock{_state->mutex};
+        _state->sendFailures = failures;
     }
 
     void SetBlockSend(bool block)
@@ -535,54 +532,35 @@ public:
         _state->kind = kind;
     }
 
-    // Executes after the send result is known but before Send returns, without holding the
-    // transport mutex. Tests use this to model a response that overtakes the sender.
-    void SetSendHook(std::function<void()> hook)
-    {
-        std::lock_guard<std::mutex> lock{_mutex};
-        _sendHook = std::move(hook);
-    }
-
-    size_t ConnectCalls() const
-    {
-        std::lock_guard lock{_state->mutex};
-        return _state->connectCalls;
-    }
-
     size_t SendCalls() const
     {
         std::lock_guard lock{_state->mutex};
         return _state->sendCalls;
     }
 
-    bool WaitForRecordCount(size_t count, std::chrono::milliseconds timeout)
+    bool WaitForRecordCount(size_t count, std::chrono::milliseconds timeout = kRendezvousTimeout)
     {
-        std::unique_lock lock{_mutex};
-        return _sendCondition.wait_for(
-            lock, timeout, [this, count] { return _sentRecords.size() >= count; });
+        auto state = _state;
+        std::unique_lock lock{state->mutex};
+        return state->condition.wait_for(
+            lock, timeout, [state, count] { return state->sentRecords.size() >= count; });
     }
 
-    bool WaitForSendAttempts(size_t count, std::chrono::milliseconds timeout)
+    bool WaitForSendAttempts(size_t count, std::chrono::milliseconds timeout = kRendezvousTimeout)
     {
-        std::unique_lock lock{_mutex};
-        return _sendCondition.wait_for(
-            lock, timeout, [this, count] { return _sendAttempts >= count; });
-
-        size_t SendAttempts() const
-        {
-            std::lock_guard<std::mutex> lock{_mutex};
-            return _sendAttempts;
-        }
-
-        bool WaitForSendCount(size_t count, std::chrono::milliseconds timeout)
-        {
-            std::unique_lock lock{_mutex};
-            return _sendCondition.wait_for(
-                lock, timeout, [this, count] { return _sendCalls >= count; });
-        }
+        auto state = _state;
+        std::unique_lock lock{state->mutex};
+        return state->condition.wait_for(
+            lock, timeout, [state, count] { return state->sendAttempts >= count; });
     }
 
-    std::vector<std::vector<uint8_t>> SentRecords() const
+    size_t SendAttempts() const
+    {
+        std::lock_guard lock{_state->mutex};
+        return _state->sendAttempts;
+    }
+
+    size_t ConnectCalls() const
     {
         std::lock_guard lock{_state->mutex};
         return _state->connectCalls;
@@ -604,14 +582,6 @@ public:
     {
         std::lock_guard lock{_state->mutex};
         return _state->sentRecords;
-    }
-
-    // Every record the production path managed to put on the wire, in order. Used to
-    // prove a session never emits a second ATT read while one is still outstanding.
-    std::vector<std::vector<uint8_t>> SentRecords() const
-    {
-        std::lock_guard<std::mutex> lock{_mutex};
-        return _sentRecords;
     }
 
     size_t RecordCount() const
@@ -651,6 +621,8 @@ private:
         std::vector<uint8_t> lastSend;
         std::optional<size_t> sendLimit;
         size_t sendCalls{0};
+        size_t sendAttempts{0};
+        size_t sendFailures{0};
         size_t connectCalls{0};
         size_t receiveWaiters{0};
         size_t sendWaiters{0};
@@ -1078,24 +1050,9 @@ public:
 
 private:
     mutable std::mutex _mutex;
-    std::condition_variable_any _receiveCondition;
-    std::condition_variable_any _sendCondition;
-    std::deque<std::vector<uint8_t>> _records;
-    std::vector<std::vector<uint8_t>> _sentRecords;
-    std::vector<uint8_t> _lastSend;
-    std::optional<size_t> _sendLimit;
-    std::optional<size_t> _sendFailure;
-    size_t _sendCalls{0};
-    size_t _sendAttempts{0};
-    size_t _receiveWaiters{0};
-    size_t _sendWaiters{0};
-    bool _connected{false};
-    bool _closed{false};
-    bool _eof{false};
-    bool _sendError{false};
-    size_t _sendFailures{0};
-    bool _blockSend{false};
-    std::function<void()> _sendHook;
+    std::condition_variable _condition;
+    bool _entered{false};
+    bool _completed{false};
 };
 
 // Builds and records the transports a Manager seam hands out, so a suite can inspect a

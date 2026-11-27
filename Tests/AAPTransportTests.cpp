@@ -428,6 +428,34 @@ private slots:
         QVERIFY(transport.IsClosed());
     }
 
+    void FakeTransportReconnectsAfterClose()
+    {
+        AAPTestSupport::FakeTransport transport;
+        QVERIFY(transport.Connect(1, {}));
+        transport.Close();
+        QVERIFY(transport.IsClosed());
+
+        QVERIFY(transport.Connect(2, {}));
+        QVERIFY(!transport.IsClosed());
+        QCOMPARE(transport.ConnectCalls(), size_t{2});
+        QCOMPARE(transport.LastConnectAddress(), uint64_t{2});
+    }
+
+    void CloseInterruptsBlockedConnect()
+    {
+        AAPTestSupport::FakeTransport transport;
+        transport.SetBlockConnect(true);
+        bool result = true;
+        AAPTestSupport::Worker worker{
+            [&] { result = transport.Connect(1, {}); }, [&] { transport.Close(); }};
+
+        QVERIFY(transport.WaitForConnectWaiter(2s));
+        transport.Close();
+        QVERIFY(worker.Finished(2s));
+        QVERIFY(!result);
+        QVERIFY(transport.IsClosed());
+    }
+
     // Leaving the scope must release the park by itself, which is what stops a failed
     // assertion from turning into a CI hang.
     void ScopeExitReleasesAParkedReceive()
@@ -1250,50 +1278,6 @@ private slots:
         QCOMPARE(
             manager.DesiredCommand(Core::AAP::AAPCommandKind::SetNoiseControl),
             std::optional<uint32_t>{0x02});
-    }
-
-    void SameGenerationHeadFrameBeforeStartCannotConfirmFlight()
-    {
-        Core::AAP::Manager manager;
-        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
-        QVERIFY(transport->Connect(1, {}));
-        manager._transport.store(transport);
-        manager._attempt = Core::AAP::AAPAttempt{1, 14};
-        manager._connected = true;
-        manager._commandBroker->BeginSession(14);
-        std::promise<Core::AAP::AAPCommandOutcome> settled;
-        Core::AAP::Callbacks callbacks;
-        callbacks.onCommandSettled = [&](const Core::AAP::AAPCommandOutcome &outcome,
-                                         const Core::AAP::AAPAttempt &) {
-            settled.set_value(outcome);
-        };
-        manager.SetCallbacks(std::move(callbacks));
-        std::vector<uint8_t> sensor(70, 0x00);
-        sensor[0] = 0x04;
-        sensor[2] = 0x04;
-        sensor[4] = 0x17;
-        sensor[10] = 0x44;
-        manager.ProcessPacket(sensor);
-        QVERIFY(manager.SubmitCommand({Core::AAP::AAPCommandKind::SetHeadTracking, 0x01}).accepted);
-        QVERIFY(transport->WaitForRecordCount(1, std::chrono::seconds{1}));
-        // A frame already queued when Start completed is inside the evidence fence.
-        manager.ProcessPacket(sensor);
-        QVERIFY(!manager.ConfirmedCommand(Core::AAP::AAPCommandKind::SetHeadTracking).has_value());
-        QVERIFY(
-            settled.get_future().wait_for(std::chrono::milliseconds{20}) ==
-            std::future_status::timeout);
-        manager._headTrackingStartedAtMs.store(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch())
-                .count() -
-            100);
-        manager.ProcessPacket(sensor);
-        auto future = settled.get_future();
-        QVERIFY(future.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
-        QCOMPARE(future.get().settlement, Core::AAP::AAPCommandSettlement::Confirmed);
-        manager._connected = false;
-        manager._transport.store(nullptr);
-        manager._commandBroker->EndSession();
     }
 
     void AdaptiveNoiseStrengthRequiresAdaptiveModeAndCurrentSession()

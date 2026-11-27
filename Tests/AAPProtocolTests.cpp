@@ -464,7 +464,7 @@ private slots:
     void StemDeduperCollapsesRepeatedLongPressBurstsAndReleaseTails()
     {
         using namespace std::chrono_literals;
-        using StemPressDeduper::TimePointT;
+        using TimePointT = std::chrono::steady_clock::time_point;
         auto now = TimePointT{};
         StemPressDeduper deduper([&] { return now; });
         const StemEvent leftLong{StemSide::Left, StemPress::Long};
@@ -2113,18 +2113,17 @@ private slots:
         QVERIFY(cancelled.has_value());
         QCOMPARE(cancelled->settlement, AAPCommandSettlement::Rejected);
         QCOMPARE(cancelled->failure, std::optional(AAPCommandFailure::Rejected));
+    }
 
-        // after the answer was actually read.
-        void AcknowledgementRecordsAreRecognised()
-        {
-            QVERIFY(IsHandshakeAck(Hex({0x01, 0x00, 0x04, 0x00})));
-            // Five bytes with the same prefix is an ATT Error Response instead.
-            QVERIFY(!IsHandshakeAck(Hex({0x01, 0x00, 0x04, 0x00, 0x0A})));
-            QVERIFY(!IsHandshakeAck(Hex({0x01, 0x00, 0x04})));
-            QVERIFY(IsFeatureFlagsAck(Hex({0x04, 0x00, 0x04, 0x00, 0x2B, 0x00})));
-            QVERIFY(!IsFeatureFlagsAck(Hex({0x04, 0x00, 0x04, 0x00, 0x4D, 0x00})));
-            QVERIFY(!Att::IsAttFrame(Hex({0x01, 0x00, 0x04, 0x00})));
-        }
+    void AcknowledgementRecordsAreRecognised()
+    {
+        QVERIFY(IsHandshakeAck(Hex({0x01, 0x00, 0x04, 0x00})));
+        // Five bytes with the same prefix is an ATT Error Response instead.
+        QVERIFY(!IsHandshakeAck(Hex({0x01, 0x00, 0x04, 0x00, 0x0A})));
+        QVERIFY(!IsHandshakeAck(Hex({0x01, 0x00, 0x04})));
+        QVERIFY(IsFeatureFlagsAck(Hex({0x04, 0x00, 0x04, 0x00, 0x2B, 0x00})));
+        QVERIFY(!IsFeatureFlagsAck(Hex({0x04, 0x00, 0x04, 0x00, 0x4D, 0x00})));
+        QVERIFY(!Att::IsAttFrame(Hex({0x01, 0x00, 0x04, 0x00})));
     }
 
     //////////////////////////////////////////////////
