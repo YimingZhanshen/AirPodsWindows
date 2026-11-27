@@ -59,9 +59,9 @@ private slots:
     void HandshakePacketIsSixteenBytes()
     {
         QCOMPARE(
-            Packets::Handshake,
-            Hex({0x00, 0x00, 0x04, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                 0x00, 0x00}));
+            Packets::Handshake, Hex(
+                                    {0x00, 0x00, 0x04, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00,
+                                     0x00, 0x00, 0x00, 0x00, 0x00, 0x00}));
     }
 
     // Blueprint 0.2: the capability mask is D7 (LibrePods Android/Linux), not the
@@ -69,8 +69,9 @@ private slots:
     void EnableFeaturesSendsD7CapabilityMask()
     {
         QCOMPARE(
-            Packets::EnableFeatures,
-            Hex({0x04, 0x00, 0x04, 0x00, 0x4D, 0x00, 0xD7, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}));
+            Packets::EnableFeatures, Hex(
+                                         {0x04, 0x00, 0x04, 0x00, 0x4D, 0x00, 0xD7, 0x00, 0x00,
+                                          0x00, 0x00, 0x00, 0x00, 0x00}));
     }
 
     void RequestNotificationsSubscribesAllSettings()
@@ -86,8 +87,7 @@ private slots:
 
     void NoiseControlPacketCoversAllModes()
     {
-        struct
-        {
+        struct {
             NoiseControlMode mode;
             uint8_t wire;
         } cases[] = {
@@ -100,7 +100,8 @@ private slots:
         for (const auto &item : cases) {
             auto packet = Packets::BuildNoiseControlPacket(item.mode);
             QCOMPARE(
-                packet, Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, item.wire, 0x00, 0x00, 0x00}));
+                packet,
+                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, item.wire, 0x00, 0x00, 0x00}));
         }
     }
 
@@ -184,24 +185,19 @@ private slots:
     void NoiseControlParserAcceptsAllModes()
     {
         QCOMPARE(
-            ParseNoiseControlNotification(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x01})),
+            ParseNoiseControlNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x01})),
             std::optional(NoiseControlMode::Off));
         QCOMPARE(
-            ParseNoiseControlNotification(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02})),
+            ParseNoiseControlNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02})),
             std::optional(NoiseControlMode::NoiseCancellation));
         QCOMPARE(
-            ParseNoiseControlNotification(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x03})),
+            ParseNoiseControlNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x03})),
             std::optional(NoiseControlMode::Transparency));
         QCOMPARE(
-            ParseNoiseControlNotification(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x04})),
+            ParseNoiseControlNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x04})),
             std::optional(NoiseControlMode::Adaptive));
         QCOMPARE(
-            ParseNoiseControlNotification(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x7F})),
+            ParseNoiseControlNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x7F})),
             std::optional(NoiseControlMode::Unknown));
         QVERIFY(!ParseNoiseControlNotification({0x00}).has_value());
         QVERIFY(!ParseNoiseControlNotification({}).has_value());
@@ -236,8 +232,7 @@ private slots:
         QCOMPARE(
             ParseSpeakingLevel(frame(0x02)),
             std::optional(SpeakingLevel::StartedSpeaking_GreatlyReduce));
-        QCOMPARE(
-            ParseSpeakingLevel(frame(0x03)), std::optional(SpeakingLevel::StoppedSpeaking));
+        QCOMPARE(ParseSpeakingLevel(frame(0x03)), std::optional(SpeakingLevel::StoppedSpeaking));
         for (uint8_t level = 0x04; level <= 0x07; ++level) {
             QCOMPARE(ParseSpeakingLevel(frame(level)), std::optional(SpeakingLevel::Unknown));
         }
@@ -248,21 +243,18 @@ private slots:
         QCOMPARE(
             ParseSpeakingLevel(frame(0x00)),
             std::optional(SpeakingLevel::StartedSpeaking_GreatlyReduce));
-        QVERIFY(!ParseSpeakingLevel(
-                     Hex({0x04, 0x00, 0x04, 0x00, 0x4B, 0x00, 0x02, 0x00, 0x01}))
+        QVERIFY(!ParseSpeakingLevel(Hex({0x04, 0x00, 0x04, 0x00, 0x4B, 0x00, 0x02, 0x00, 0x01}))
                      .has_value());
     }
 
     void EarDetectionParserReadsBothSides()
     {
-        auto result = ParseEarDetection(
-            Hex({0x04, 0x00, 0x04, 0x00, 0x06, 0x00, 0x00, 0x02}));
+        auto result = ParseEarDetection(Hex({0x04, 0x00, 0x04, 0x00, 0x06, 0x00, 0x00, 0x02}));
         QVERIFY(result.has_value());
         QCOMPARE(result->first, EarStatus::InEar);
         QCOMPARE(result->second, EarStatus::InCase);
 
-        auto outOfEar = ParseEarDetection(
-            Hex({0x04, 0x00, 0x04, 0x00, 0x06, 0x00, 0x01, 0x01}));
+        auto outOfEar = ParseEarDetection(Hex({0x04, 0x00, 0x04, 0x00, 0x06, 0x00, 0x01, 0x01}));
         QVERIFY(outOfEar.has_value());
         QCOMPARE(outOfEar->first, EarStatus::OutOfEar);
 
@@ -276,12 +268,10 @@ private slots:
     void PersonalizedVolumeParserAcceptsBothStates()
     {
         QCOMPARE(
-            ParsePersonalizedVolumeState(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x26, 0x01})),
+            ParsePersonalizedVolumeState(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x26, 0x01})),
             std::optional(PersonalizedVolumeState::Enabled));
         QCOMPARE(
-            ParsePersonalizedVolumeState(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x26, 0x02})),
+            ParsePersonalizedVolumeState(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x26, 0x02})),
             std::optional(PersonalizedVolumeState::Disabled));
     }
 
@@ -290,17 +280,15 @@ private slots:
     void AutomaticEarDetectionParserMatches0x0AOnly()
     {
         QCOMPARE(
-            ParseAutomaticEarDetectionState(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0A, 0x01})),
+            ParseAutomaticEarDetectionState(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0A, 0x01})),
             std::optional(true));
         QCOMPARE(
-            ParseAutomaticEarDetectionState(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0A, 0x02})),
+            ParseAutomaticEarDetectionState(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0A, 0x02})),
             std::optional(false));
         // OneBudANCMode echo (the identifier this feature used to misuse) is rejected.
-        QVERIFY(!ParseAutomaticEarDetectionState(
-                     Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x1B, 0x01}))
-                     .has_value());
+        QVERIFY(
+            !ParseAutomaticEarDetectionState(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x1B, 0x01}))
+                 .has_value());
     }
 
     void PpeCapLevelParserReadsLevel()
@@ -308,8 +296,7 @@ private slots:
         QCOMPARE(
             ParsePpeCapLevel(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38, 82})),
             std::optional<uint8_t>(82));
-        QVERIFY(!ParsePpeCapLevel(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 82}))
-                     .has_value());
+        QVERIFY(!ParsePpeCapLevel(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 82})).has_value());
     }
 
     // Kept for the legacy control path: 0x25 is VolumeSwipeMode, and the parser only
@@ -317,12 +304,10 @@ private slots:
     void LegacyLoudSoundReductionParserMatches0x25()
     {
         QCOMPARE(
-            ParseLoudSoundReductionState(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x25, 0x01})),
+            ParseLoudSoundReductionState(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x25, 0x01})),
             std::optional(LoudSoundReductionState::Enabled));
         QCOMPARE(
-            ParseLoudSoundReductionState(
-                Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x25, 0x00})),
+            ParseLoudSoundReductionState(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x25, 0x00})),
             std::optional(LoudSoundReductionState::Disabled));
     }
 
@@ -357,14 +342,12 @@ private slots:
 
     void ClassifierMatchesDocumentedFrames()
     {
-        QVERIFY(IsNoiseControlNotification(
-            Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02})));
+        QVERIFY(IsNoiseControlNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02})));
         QVERIFY(IsConversationalAwarenessNotification(
             Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x28, 0x01})));
         QVERIFY(IsSpeakingLevelNotification(
             Hex({0x04, 0x00, 0x04, 0x00, 0x4B, 0x00, 0x02, 0x00, 0x01, 0x08})));
-        QVERIFY(IsEarDetectionNotification(
-            Hex({0x04, 0x00, 0x04, 0x00, 0x06, 0x00, 0x00, 0x00})));
+        QVERIFY(IsEarDetectionNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x06, 0x00, 0x00, 0x00})));
         QVERIFY(IsBatteryNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x04, 0x00, 0x01})));
         QVERIFY(IsPersonalizedVolumeNotification(
             Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x26, 0x01})));
@@ -372,8 +355,7 @@ private slots:
             Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0A, 0x01})));
         QVERIFY(IsPpeCapLevelNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38, 0x19})));
         QVERIFY(!IsPpeCapLevelNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 0x19})));
-        QVERIFY(IsSettingsNotification(
-            Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38, 0x10})));
+        QVERIFY(IsSettingsNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38, 0x10})));
         QCOMPARE(
             GetSettingType(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38, 0x10})),
             std::optional<uint8_t>(0x38));
@@ -386,8 +368,7 @@ private slots:
         QVERIFY(!IsSettingsNotification(Packets::BuildLoudSoundReductionPacket(true)));
         QVERIFY(!IsSettingsNotification(Packets::BuildLoudSoundReductionPacket(false)));
         QVERIFY(!IsLoudSoundReductionNotification(Packets::BuildLoudSoundReductionPacket(true)));
-        QVERIFY(!IsAutomaticEarDetectionNotification(
-                     Packets::BuildLoudSoundReductionPacket(true)));
+        QVERIFY(!IsAutomaticEarDetectionNotification(Packets::BuildLoudSoundReductionPacket(true)));
     }
 
     // Truncated frames must be rejected everywhere, never read out of bounds.
@@ -400,8 +381,7 @@ private slots:
         }
         QVERIFY(!ParseNoiseControlNotification({0x04, 0x00, 0x04, 0x00, 0x09, 0x00}).has_value());
         QVERIFY(!ParseEarDetection({0x04, 0x00, 0x04, 0x00}).has_value());
-        QVERIFY(!ParseSpeakingLevel(
-                     Hex({0x04, 0x00, 0x04, 0x00, 0x4B, 0x00, 0x02, 0x00, 0x01}))
+        QVERIFY(!ParseSpeakingLevel(Hex({0x04, 0x00, 0x04, 0x00, 0x4B, 0x00, 0x02, 0x00, 0x01}))
                      .has_value());
         QVERIFY(!ParsePpeCapLevel(Hex({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x38})).has_value());
         QVERIFY(!IsPpeCapLevelNotification(Hex({0x04, 0x00, 0x04, 0x00, 0x09})));
@@ -413,20 +393,15 @@ private slots:
 
     void AttWriteCommandUsesLittleEndianHandle()
     {
-        QCOMPARE(
-            Att::BuildWriteCommand(0x1B, 0x01), Hex({0x12, 0x1B, 0x00, 0x01}));
-        QCOMPARE(
-            Att::BuildWriteCommand(0x0102, 0xAA), Hex({0x12, 0x02, 0x01, 0xAA}));
-        QCOMPARE(
-            Att::BuildLoudSoundReductionWrite(true), Hex({0x12, 0x1B, 0x00, 0x01}));
-        QCOMPARE(
-            Att::BuildLoudSoundReductionWrite(false), Hex({0x12, 0x1B, 0x00, 0x00}));
+        QCOMPARE(Att::BuildWriteCommand(0x1B, 0x01), Hex({0x12, 0x1B, 0x00, 0x01}));
+        QCOMPARE(Att::BuildWriteCommand(0x0102, 0xAA), Hex({0x12, 0x02, 0x01, 0xAA}));
+        QCOMPARE(Att::BuildLoudSoundReductionWrite(true), Hex({0x12, 0x1B, 0x00, 0x01}));
+        QCOMPARE(Att::BuildLoudSoundReductionWrite(false), Hex({0x12, 0x1B, 0x00, 0x00}));
     }
 
     void AttReadRequestCoversHandle()
     {
-        QCOMPARE(Att::BuildReadRequest(Att::kLoudSoundReductionHandle),
-                 Hex({0x0A, 0x1B, 0x00}));
+        QCOMPARE(Att::BuildReadRequest(Att::kLoudSoundReductionHandle), Hex({0x0A, 0x1B, 0x00}));
     }
 
     void AttReadResponseParserStripsOpcode()
@@ -482,16 +457,17 @@ private slots:
         // The exported report is matched against these names in bug reports;
         // renaming one silently breaks every past report.
         using Core::Diagnostics::Step;
-        QCOMPARE(QString{Core::Diagnostics::StepName(Step::ScannerStarted)},
-                 QStringLiteral("scanner_started"));
-        QCOMPARE(QString{Core::Diagnostics::StepName(Step::TransportConnect)},
-                 QStringLiteral("transport_connect"));
-        QCOMPARE(QString{Core::Diagnostics::StepName(Step::Handshake)},
-                 QStringLiteral("handshake"));
-        QCOMPARE(QString{Core::Diagnostics::StepName(Step::AttProbe)},
-                 QStringLiteral("att_probe"));
-        QCOMPARE(QString{Core::Diagnostics::StepName(Step::Disconnect)},
-                 QStringLiteral("disconnect"));
+        QCOMPARE(
+            QString{Core::Diagnostics::StepName(Step::ScannerStarted)},
+            QStringLiteral("scanner_started"));
+        QCOMPARE(
+            QString{Core::Diagnostics::StepName(Step::TransportConnect)},
+            QStringLiteral("transport_connect"));
+        QCOMPARE(
+            QString{Core::Diagnostics::StepName(Step::Handshake)}, QStringLiteral("handshake"));
+        QCOMPARE(QString{Core::Diagnostics::StepName(Step::AttProbe)}, QStringLiteral("att_probe"));
+        QCOMPARE(
+            QString{Core::Diagnostics::StepName(Step::Disconnect)}, QStringLiteral("disconnect"));
     }
 
     void DiagnosticsMasksDeviceAddress()
