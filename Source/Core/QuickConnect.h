@@ -24,6 +24,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stop_token>
 #include <thread>
 #include <vector>
@@ -32,6 +33,8 @@
 #include <QMetaType>
 #include <QString>
 #include <QTimer>
+
+#include "BluetoothLinkControl.h"
 
 namespace Core::QuickConnect {
 
@@ -63,6 +66,15 @@ public:
     virtual std::vector<Device> ListDevices(std::stop_token stopToken) = 0;
     virtual bool RequestReconnect(const QString &id, std::stop_token stopToken) = 0;
 
+    // Explicit link control for the tray connect/disconnect entry (blueprint
+    // 2.8). The backend owns the adapter's lifetime; returning nullptr means
+    // "this platform/backend cannot toggle the link" and produces the
+    // AdapterUnavailable outcome instead of a guess.
+    virtual Core::BluetoothLink::Adapter *LinkAdapter()
+    {
+        return nullptr;
+    }
+
     // Called once the Controller stops caring about endpoint-state changes for the device it last
     // asked to reconnect. A backend that arms system notifications must disarm them here, otherwise
     // it keeps doing that work for every device on the machine until the process exits.
@@ -91,16 +103,21 @@ public:
     static constexpr std::chrono::milliseconds kDefaultResolveTimeout{10'000};
     static constexpr std::chrono::milliseconds kAutoRetryCooldown{30'000};
 
-    // The backend is shared rather than borrowed because a reconnect request can still be inside a
-    // blocking driver call when the Controller goes away; that worker is detached and keeps the
-    // backend alive for as long as it needs it.
+    // The backend is shared rather than borrowed because a request can still be inside a blocking
+    // driver call when the Controller goes away. All backend work runs on one bounded, process-
+    // lifetime queue worker; destruction cancels logical work without joining a driver call on the
+    // GUI thread. If that call never returns, the single owned worker is reclaimed only by process
+    // exit (an intentional, documented residual rather than a detached std::thread).
     //
     // `resolveTimeout` is a parameter so tests can drive the real timer instead of calling the
-    // timeout slot by hand.
+    // timeout slot by hand. `linkDeadline` and `linkPoll` do the same for the explicit link
+    // requests; production keeps the five-second blueprint budget.
     explicit Controller(
         std::shared_ptr<Backend> backend,
         std::chrono::milliseconds resolveTimeout = kDefaultResolveTimeout,
-        std::chrono::milliseconds autoRetryCooldown = kAutoRetryCooldown);
+        std::chrono::milliseconds autoRetryCooldown = kAutoRetryCooldown,
+        std::chrono::milliseconds linkDeadline = Core::BluetoothLink::kLinkDeadline,
+        std::chrono::milliseconds linkPoll = Core::BluetoothLink::kLinkPollInterval);
     ~Controller() override;
 
     void SetEnabled(bool enabled);
@@ -113,11 +130,50 @@ public:
     void RefreshDevices();
     Outcome Request();
     Outcome OnEndpointStateChanged(const QString &id, bool connected);
+    void OnDeviceConnectionChanged(bool connected);
     Outcome ResolveTimedOut();
+
+    // Explicit link control (blueprint 2.8, tray "connect / disconnect").
+    //
+    // `SetLinkAddress` carries the bound classic-Bluetooth address; without it
+    // the toggle reports NoDevice instead of guessing which paired device the
+    // user meant. Requests never block the GUI thread: the whole query ->
+    // submit -> read-back round trip runs on a cancellable worker under the
+    // same deadline the OS budget uses, and a repeated click joins the running
+    // request rather than starting a second one. A successful manual
+    // disconnect suppresses automatic reconnect (playback-triggered quick
+    // connect and the AAP session in `Core::AirPods::Manager`) until an
+    // explicit connect lifts it; a device coming back on its own never does.
+    void SetLinkAddress(uint64_t address);
+    uint64_t LinkAddress() const
+    {
+        return _linkAddress;
+    }
+    bool IsLinkBusy() const
+    {
+        return _linkRunning;
+    }
+    bool IsLinkSuppressed() const
+    {
+        return _linkSuppressed;
+    }
+    bool IsLinkDisconnectPending() const
+    {
+        return _linkDisconnectRequested;
+    }
+    std::optional<bool> IsLinkConnected() const
+    {
+        return _lastLinkConnected;
+    }
+    Core::BluetoothLink::Outcome RequestLinkConnect();
+    Core::BluetoothLink::Outcome RequestLinkDisconnect();
 
 signals:
     void DevicesChanged();
     void OutcomeChanged(Core::QuickConnect::Outcome outcome, QString deviceName);
+    void LinkOutcomeChanged(Core::BluetoothLink::Outcome outcome, int failure);
+    void LinkBusyChanged(bool busy);
+    void LinkConnectionChanged();
 
 private:
     // Lets a worker post back without ever dereferencing a Controller that has started tearing
@@ -146,10 +202,23 @@ private:
     std::vector<Device> _devices;
     std::atomic<bool> _deviceRefreshRunning{};
     std::atomic<bool> _requestRunning{};
+    uint64_t _requestGeneration{};
     std::jthread _deviceRefreshThread;
     std::stop_source _requestStop;
-    std::thread _requestThread;
     QTimer _resolveTimer;
+
+    // Link-request state is only touched on the Controller's own thread; the
+    // worker talks to it exclusively through `PostToController`.
+    std::chrono::milliseconds _linkDeadline;
+    std::chrono::milliseconds _linkPoll;
+    uint64_t _linkAddress{};
+    uint64_t _linkGeneration{};
+    bool _linkRunning{};
+    bool _linkDisconnectRequested{};
+    bool _linkSuppressed{};
+    std::optional<bool> _lastLinkConnected;
+    std::stop_source _linkStop;
+    QTimer _linkDeadlineTimer;
 
     static void
     PostToController(const std::shared_ptr<Link> &link, std::function<void(Controller &)> work);
@@ -158,8 +227,15 @@ private:
     Outcome Request(bool automatic);
     Outcome Complete(Outcome outcome);
     void EmitOutcome(Outcome outcome, const QString &deviceName);
+    Core::BluetoothLink::Outcome RequestLink(bool connect);
+    void CancelQuickConnectRequests();
+    void FinishLink(uint64_t generation, Core::BluetoothLink::AttemptResult result);
+    void ResolveLinkTimedOut();
+    void
+    EmitLinkOutcome(Core::BluetoothLink::Outcome outcome, Core::BluetoothLink::Failure failure);
 };
 
 } // namespace Core::QuickConnect
 
 Q_DECLARE_METATYPE(Core::QuickConnect::Outcome)
+Q_DECLARE_METATYPE(Core::BluetoothLink::Outcome)

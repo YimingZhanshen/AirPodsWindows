@@ -78,6 +78,12 @@ private:
     QSystemTrayIcon *_tray = new QSystemTrayIcon{this};
     QMenu *_menu = new QMenu{this};
     QAction *_actionNewVersion = new QAction{tr("New version available!"), this};
+    // Explicit link toggle (blueprint 2.8). The text reflects the current
+    // state, and a request in flight disables the item and shows its own
+    // progress text so a double-click can no-op visibly instead of stacking.
+    QAction *_actionLinkToggle = new QAction{tr("Connect"), this};
+    bool _linkBusy{};
+    bool _linkBusyDisconnecting{};
 
     // Noise Control Menu
     QMenu *_noiseControlMenu = new QMenu{tr("Noise Control"), this};
@@ -118,6 +124,11 @@ private:
     void OnAboutClicked();
     void OnIconClicked(QSystemTrayIcon::ActivationReason reason);
     void OnQuickConnectOutcome(Core::QuickConnect::Outcome outcome, const QString &deviceName);
+    void OnLinkToggleTriggered();
+    void OnLinkBusyChanged(bool busy);
+    void OnLinkConnectionChanged();
+    void OnLinkOutcome(Core::BluetoothLink::Outcome outcome, int failure);
+    void UpdateLinkAction();
     void OnTrayIconBatteryChanged(Core::Settings::TrayIconBatteryBehavior value);
     void OnNoiseControlModeSelected(Core::AAP::NoiseControlMode mode);
     void OnLowAudioLatencyChanged(bool enabled);

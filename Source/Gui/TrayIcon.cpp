@@ -27,6 +27,7 @@
 
 #include <Config.h>
 #include "../Logger.h"
+#include "../Core/ConnectionDiagnostics.h"
 #include "MainWindow.h"
 
 namespace Gui {
@@ -51,6 +52,16 @@ TrayIcon::TrayIcon(
     connect(
         &_quickConnect, &Core::QuickConnect::Controller::OutcomeChanged, this,
         &TrayIcon::OnQuickConnectOutcome);
+    connect(_actionLinkToggle, &QAction::triggered, this, &TrayIcon::OnLinkToggleTriggered);
+    connect(
+        &_quickConnect, &Core::QuickConnect::Controller::LinkOutcomeChanged, this,
+        &TrayIcon::OnLinkOutcome);
+    connect(
+        &_quickConnect, &Core::QuickConnect::Controller::LinkBusyChanged, this,
+        &TrayIcon::OnLinkBusyChanged);
+    connect(
+        &_quickConnect, &Core::QuickConnect::Controller::LinkConnectionChanged, this,
+        &TrayIcon::OnLinkConnectionChanged);
 
     connect(
         this, &TrayIcon::OnTrayIconBatteryChangedSafely, this, &TrayIcon::OnTrayIconBatteryChanged);
@@ -64,6 +75,8 @@ TrayIcon::TrayIcon(
     SetupNoiseControlMenu();
 
     _menu->addAction(_actionNewVersion);
+    _menu->addSeparator();
+    _menu->addAction(_actionLinkToggle);
     _menu->addSeparator();
     _menu->addMenu(_noiseControlMenu);
     _menu->addSeparator();
@@ -192,6 +205,7 @@ void TrayIcon::UpdateState(const Core::AirPods::State &state)
         UpdateNoiseControlMenuState();
     }
 
+    UpdateLinkAction();
     Repaint();
 }
 
@@ -199,6 +213,7 @@ void TrayIcon::Unavailable()
 {
     _status = Status::Unavailable;
     _airPodsState.reset();
+    UpdateLinkAction();
     Repaint();
 }
 
@@ -214,6 +229,7 @@ void TrayIcon::Disconnect()
     _airPodsState.reset();
     _currentNoiseMode.reset();
     _noiseControlMenu->menuAction()->setVisible(false);
+    UpdateLinkAction();
     Repaint();
 }
 
@@ -223,6 +239,7 @@ void TrayIcon::Unbind()
     _airPodsState.reset();
     _currentNoiseMode.reset();
     _noiseControlMenu->menuAction()->setVisible(false);
+    UpdateLinkAction();
     Repaint();
 }
 
@@ -590,6 +607,127 @@ void TrayIcon::OnQuickConnectOutcome(Core::QuickConnect::Outcome outcome, const 
     _notification->Show(
         tr("Quick connect"), text, icon == QSystemTrayIcon::Warning,
         outcome == Core::QuickConnect::Outcome::RequestStarted, _tray->geometry());
+}
+
+//////////////////////////////////////////////////
+// Explicit link toggle (blueprint 2.8)
+//
+
+void TrayIcon::UpdateLinkAction()
+{
+    // The toggle only makes sense while a device binding exists.
+    const bool usable = _status == Status::Updating || _status == Status::Disconnected;
+    _actionLinkToggle->setVisible(usable);
+
+    if (_linkBusy) {
+        _actionLinkToggle->setText(
+            _linkBusyDisconnecting ? tr("Disconnecting...") : tr("Connecting..."));
+        _actionLinkToggle->setEnabled(false);
+        return;
+    }
+
+    // Prefer the link read-back from the last request; fall back to the
+    // advertisement-driven state until the link layer has spoken.
+    const bool connected = _quickConnect.IsLinkConnected().value_or(_status == Status::Updating);
+    _actionLinkToggle->setText(connected ? tr("Disconnect") : tr("Connect"));
+    _actionLinkToggle->setEnabled(true);
+}
+
+void TrayIcon::OnLinkToggleTriggered()
+{
+    const bool connected = _quickConnect.IsLinkConnected().value_or(_status == Status::Updating);
+
+    // RequestLink* never blocks: it starts (or joins) the worker and answers
+    // with Started synchronously. The terminal result arrives on this thread
+    // through OnLinkOutcome, so no widget is ever touched from the worker.
+    const auto outcome =
+        connected ? _quickConnect.RequestLinkDisconnect() : _quickConnect.RequestLinkConnect();
+    if (outcome == Core::BluetoothLink::Outcome::Started) {
+        _linkBusy = true;
+        _linkBusyDisconnecting = connected;
+        UpdateLinkAction();
+    }
+}
+
+void TrayIcon::OnLinkBusyChanged(bool busy)
+{
+    _linkBusy = busy;
+    if (!busy) {
+        _linkBusyDisconnecting = false;
+    }
+    UpdateLinkAction();
+}
+
+void TrayIcon::OnLinkConnectionChanged()
+{
+    UpdateLinkAction();
+}
+
+void TrayIcon::OnLinkOutcome(Core::BluetoothLink::Outcome outcome, int failure)
+{
+    using Outcome = Core::BluetoothLink::Outcome;
+
+    if (outcome == Outcome::Started) {
+        return; // feedback for a joined request; the controls already say it
+    }
+
+    const bool wasDisconnecting = _linkBusyDisconnecting;
+    _linkBusy = false;
+
+    const bool ok = outcome == Outcome::Connected || outcome == Outcome::Disconnected ||
+                    outcome == Outcome::AlreadyConnected || outcome == Outcome::AlreadyDisconnected;
+
+    // One stable-named diagnostics line per explicit request (blueprint 1.3
+    // classification, 1.4 export). Details carry outcome + failure names only;
+    // no address ever reaches the recorder here.
+    std::string detail{Core::BluetoothLink::OutcomeName(outcome)};
+    if (!ok) {
+        detail += ' ';
+        detail +=
+            Core::BluetoothLink::FailureName(static_cast<Core::BluetoothLink::Failure>(failure));
+    }
+    Core::Diagnostics::Recorder::Instance().Record(
+        wasDisconnecting ? Core::Diagnostics::Step::Disconnect
+                         : Core::Diagnostics::Step::ServiceEnabled,
+        ok, detail);
+
+    UpdateLinkAction();
+
+    QString text;
+    switch (outcome) {
+    case Outcome::NoDevice:
+        text = tr("Choose a Bluetooth audio device in Settings first.");
+        break;
+    case Outcome::AdapterUnavailable:
+        text = tr("Bluetooth connection control is unavailable right now.");
+        break;
+    case Outcome::DeviceNotFound:
+        text = tr("The paired Bluetooth device was not found. Pair it again in Windows settings.");
+        break;
+    case Outcome::NoSupportedService:
+        text = tr("The device does not expose Bluetooth audio services this app can control.");
+        break;
+    case Outcome::TimedOut:
+        text = wasDisconnecting
+                   ? tr("Disconnecting timed out. The device may still be connected.")
+                   : tr("Connecting timed out. Bring the device closer and try again.");
+        break;
+    case Outcome::Failed:
+        text = failure == static_cast<int>(Core::BluetoothLink::Failure::Unreadable)
+                   ? tr("Windows could not read the device connection state. Try again.")
+                   : tr("Windows refused to change the device connection. Try again.");
+        break;
+    case Outcome::Cancelled:
+        return; // superseded by a newer request or shutdown; the newer one speaks
+    case Outcome::Connected:
+    case Outcome::AlreadyConnected:
+    case Outcome::Disconnected:
+    case Outcome::AlreadyDisconnected:
+    default:
+        return; // menu and tooltip state update through the device state signals
+    }
+
+    _notification->Show(tr("Device link"), text, true, false, _tray->geometry());
 }
 
 void TrayIcon::ShowMessage(

@@ -330,6 +330,32 @@ public:
 private:
     AAP::Manager *_manager;
 };
+
+// Session-local manual-disconnect policy. A rebind starts a new policy scope,
+// so suppression for one address can never leak into another device.
+class LinkSuppressionState
+{
+public:
+    void BindAddress(uint64_t address)
+    {
+        if (_address != address) {
+            _address = address;
+            _suppressed = false;
+        }
+    }
+    void Set(bool suppressed)
+    {
+        _suppressed = suppressed;
+    }
+    bool IsSuppressed() const
+    {
+        return _suppressed;
+    }
+
+private:
+    uint64_t _address{};
+    bool _suppressed{};
+};
 } // namespace Details
 
 class Manager : public QObject
@@ -410,6 +436,18 @@ public:
     AAP::StemActionTable GetStemActions() const;
     bool ToggleNoiseControl(const AAP::StemActionRequest &request);
 
+    // Explicit link control (blueprint 2.8, tray connect/disconnect).
+    //
+    // A manual link disconnect tears the AAP session down through the same
+    // desired-address stop path as P2 (state-machine Stop/FinishStop, never a
+    // generation bypass) and keeps it down: natural device-connected events
+    // must not re-establish it. An explicit reconnect lifts the suppression
+    // and connects again when the bound model supports it. The flag is
+    // session-lifetime on purpose - a process restart re-reads the OS link
+    // state instead of inheriting a stale suppression (see task-D7 report).
+    void SetLinkSuppressed(bool suppressed);
+    bool IsLinkSuppressed() const;
+
     // Check if the model supports ANC features
     static bool SupportsANC(Model model);
 
@@ -440,6 +478,7 @@ private:
     QString _deviceName;
     Model _boundModel{Model::Unknown};
     bool _deviceConnected{false};
+    Details::LinkSuppressionState _manualLinkSuppressed;
     std::atomic<bool> _scannerWanted{false};
     std::atomic<bool> _automaticEarDetection{false};
     EarDetectSensitivity _earDetectSensitivity{EarDetectSensitivity::Normal};
@@ -552,6 +591,7 @@ private:
     void ConnectAAP();
     void StartAAPConnectWorker();
     void ScheduleAAPConnection(uint64_t address);
+    void ScheduleAAPConnectionLocked(uint64_t address);
     void DisconnectAAP();
     void AAPConnectLoop(std::stop_token stopToken);
     bool IsCurrentAAPAttempt(AAP::AAPAttempt attempt) const;
