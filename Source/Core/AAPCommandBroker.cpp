@@ -156,6 +156,14 @@ void AAPCommandBroker::OnEcho(AAPCommand command, uint64_t generation, uint64_t 
         // Either an unsolicited change or the device reporting a different value than the one
         // we asked for. Both are the device's truth, and neither confirms an in-flight command.
         state.confirmed = command.value;
+        if (!state.desired) {
+            // A first-session rollback cleared the desired value because no baseline existed.
+            // The refresh re-subscribe makes the device report its current value; that observed
+            // truth is now the best known desire and must survive reconnect, exactly like
+            // OnObserved does for an ATT read.
+            state.desired = command.value;
+            state.desiredRequestId = 0;
+        }
     }
     // A same-generation mismatch is useful rollback evidence, but it must not end the wait for
     // the requested value: only matching evidence (or the deadline) can settle this flight.

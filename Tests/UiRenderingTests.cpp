@@ -545,9 +545,14 @@ private Q_SLOTS:
         manager._aapMgr._connected = false;
         manager._aapMgr._transport.store(nullptr);
         manager._aapMgr._commandBroker->EndSession();
-        std::lock_guard lock{manager._aapWorkerMutex};
-        manager._aapConnectInProgress = false;
-        manager._aapActiveAttempt = {};
+        {
+            std::lock_guard lock{manager._aapWorkerMutex};
+            manager._aapConnectInProgress = false;
+            manager._aapActiveAttempt = {};
+        }
+        // The echo above persisted the observed value through SaveWithoutApply; hand the
+        // settings store back to defaults so the next test does not inherit ppe_cap_level=40.
+        Core::Settings::Save(Core::Settings::GetDefault());
     }
 
     void AudioAutoConnectIsOptionalAndIndependent()
