@@ -200,19 +200,19 @@ public:
         std::unique_lock lock{_mutex};
         return _sendCondition.wait_for(
             lock, timeout, [this, count] { return _sendAttempts >= count; });
+    }
 
-        size_t SendAttempts() const
-        {
-            std::lock_guard<std::mutex> lock{_mutex};
-            return _sendAttempts;
-        }
+    size_t SendAttempts() const
+    {
+        std::lock_guard<std::mutex> lock{_mutex};
+        return _sendAttempts;
+    }
 
-        bool WaitForSendCount(size_t count, std::chrono::milliseconds timeout)
-        {
-            std::unique_lock lock{_mutex};
-            return _sendCondition.wait_for(
-                lock, timeout, [this, count] { return _sendCalls >= count; });
-        }
+    bool WaitForSendCount(size_t count, std::chrono::milliseconds timeout)
+    {
+        std::unique_lock lock{_mutex};
+        return _sendCondition.wait_for(
+            lock, timeout, [this, count] { return _sendCalls >= count; });
     }
 
     std::vector<std::vector<uint8_t>> SentRecords() const
