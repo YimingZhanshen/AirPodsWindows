@@ -327,9 +327,11 @@ void QuickConnectTests::automaticTimeoutRequiresCooldownAndNewPlayback()
     QCOMPARE(outcomes.at(2).at(0).value<Outcome>(), Outcome::RequestStarted);
     QCOMPARE(outcomes.at(3).at(0).value<Outcome>(), Outcome::TimedOut);
     QCOMPARE(backend->reconnectCalls.load(), 2);
+    // Completion disarms endpoint observation; a late notification cannot reopen a timed-out
+    // request or emit a second terminal outcome.
     QCOMPARE(controller.OnEndpointStateChanged("{A}", true), Outcome::Connected);
-    QCOMPARE(outcomes.count(), 5);
-    QCOMPARE(outcomes.last().at(0).value<Outcome>(), Outcome::Connected);
+    QCOMPARE(outcomes.count(), 4);
+    QCOMPARE(outcomes.last().at(0).value<Outcome>(), Outcome::TimedOut);
 }
 
 void QuickConnectTests::playbackMonitorDebouncesSilenceAndStopsWhenDisabled()

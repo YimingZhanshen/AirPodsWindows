@@ -46,11 +46,17 @@ bool HasConflictingPodBatteries(const State &lhs, const State &rhs)
 bool IsStrongerCompleteReport(const Advertisement &candidate, const Advertisement &cached)
 {
     const auto &state = candidate.GetAdvState();
-    if (candidate.GetRssi() == kRssiUnavailable || cached.GetRssi() == kRssiUnavailable) {
+    if (candidate.GetRssi() == kRssiUnavailable || !state.pods.left.battery.Available() ||
+        !state.pods.right.battery.Available())
+    {
         return false;
     }
-    return state.pods.left.battery.Available() && state.pods.right.battery.Available() &&
-           candidate.GetRssi() >= cached.GetRssi() + 10;
+    if (cached.GetRssi() == kRssiUnavailable) {
+        // An unmeasured cached source cannot prove that it is stronger or that the candidate is
+        // farther away, so a measured complete report replaces it.
+        return true;
+    }
+    return candidate.GetRssi() >= cached.GetRssi() + 10;
 }
 
 } // namespace

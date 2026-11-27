@@ -239,8 +239,10 @@ private slots:
     // requests build exactly one transport and yield exactly one session.
     void ConcurrentConnectRequestsProduceOneSession()
     {
-        TransportFactory<BlockingTransport> factory{
-            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        TransportFactory<BlockingTransport> factory{[](BlockingTransport &transport) {
+            transport.Block(BlockingTransport::Op::Connect);
+            transport.Block(BlockingTransport::Op::Receive);
+        }};
         Core::AAP::Manager manager;
         manager._transportFactoryForTest = [&factory] { return factory.Build(); };
         PromiseGate firstAtLock;

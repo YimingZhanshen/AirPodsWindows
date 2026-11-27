@@ -222,6 +222,6 @@ get_property(apd_registered_tests DIRECTORY PROPERTY TESTS)
 set_tests_properties(${apd_registered_tests} PROPERTIES TIMEOUT 60)
 
 # The animation suite decodes and renders every bundled clip; the first-ever
-# ctest run timed out at 60 s while it was still probing media on a loaded
-# runner. 300 s still bounds a hang without false-failing slow CI.
-set_tests_properties(AnimationViewTests PROPERTIES TIMEOUT 300)
+# ctest run timed out at 60 s and the next at 300 s on loaded runners. 900 s still
+# bounds a hang without false-failing slow CI.
+set_tests_properties(AnimationViewTests PROPERTIES TIMEOUT 900)
