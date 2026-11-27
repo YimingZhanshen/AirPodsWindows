@@ -543,10 +543,6 @@ inline bool IsVolumeSwipeNotification(const std::vector<uint8_t> &data)
     return data.size() >= 7 && data[0] == 0x04 && data[1] == 0x00 && data[2] == 0x04 &&
            data[3] == 0x00 && data[4] == 0x09 && data[5] == 0x00 && data[6] == 0x25;
 }
-{
-    return data.size() >= 7 && data[0] == 0x04 && data[1] == 0x00 && data[2] == 0x04 &&
-           data[3] == 0x00 && data[4] == 0x09 && data[5] == 0x00 && data[6] == 0x25;
-}
 
 inline bool IsPpeCapLevelNotification(const std::vector<uint8_t> &data)
 {
