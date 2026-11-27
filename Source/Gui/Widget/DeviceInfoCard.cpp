@@ -51,6 +51,9 @@ DeviceInfoCard::DeviceInfoCard(QWidget *parent) : QFrame{parent}
 
     _titleLabel->setText(tr("Device information"));
     _titleLabel->setProperty("cssClass", "cardTitle");
+    // Captions carry no interaction: no link handling, no selection, no focus
+    // (blueprint rule 5 applies to the whole card, not only the values).
+    _titleLabel->setTextInteractionFlags(Qt::NoTextInteraction);
 
     _rowsLayout->setSpacing(2);
 
@@ -123,6 +126,7 @@ void DeviceInfoCard::Refresh()
 
         auto *label = new QLabel{row.label, this};
         label->setProperty("cssClass", kLabelClass);
+        label->setTextInteractionFlags(Qt::NoTextInteraction);
 
         auto *value = new QLabel{this};
         value->setTextFormat(Qt::PlainText);
