@@ -371,6 +371,17 @@ private Q_SLOTS:
     void HeadTrackingSettingPersistsWithoutAbiBump();
     void ConcurrentHeadTrackingTogglesKeepMirrorConsistent();
     void HeadTrackingSettlementSignalAllowsReentrantToggle();
+    void StemNoiseControlToggleUsesBrokerDesiredState();
+    void StemNoiseControlToggleAlternatesPendingDesiredState();
+    void HeadTrackingDataDoesNotEmitCommandState();
+    void SpeakingLevelIsQueuedWithGeneration();
+    void SpeakingLevelQueuedSlotRestoresAfterPolicyChange();
+    void SpeakingLevelQueuedSlotRejectsStaleStart();
+    void SpeakingLevelRestoreRetriesAfterFailure();
+    void SpeakingLevelPolicyCleanupPreservesNewAttenuation();
+    void SpeakingLevelRetiredSessionCleanupPreservesNewAttenuation();
+    void SpeakingLevelDisconnectRestoresAttenuation();
+    void SpeakingLevelRequestRevalidatesSessionAndPolicy();
     void DebouncesRapidRemovalAndInsertion();
     void DebounceCompletesAtDeadlineWithoutAnotherPacket();
     void SingleEarAlternationUsesFusedResult();
@@ -1052,6 +1063,406 @@ void AirPodsDomainTests::HeadTrackingSettlementSignalAllowsReentrantToggle()
     QVERIFY(worker.Finished(2s));
     QVERIFY(reentered.load());
     QVERIFY(!manager.IsHeadTrackingEnabled());
+}
+
+void AirPodsDomainTests::StemNoiseControlToggleUsesBrokerDesiredState()
+{
+    using namespace Core::AAP;
+    Core::AirPods::Manager manager;
+    auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+    QVERIFY(transport->Connect(1, {}));
+
+    const auto begun = manager._aapConnection.Begin(0x1234);
+    QVERIFY(begun.started);
+    QVERIFY(manager._aapConnection.TransportConnected(begun.attempt));
+    QVERIFY(
+        manager._aapConnection.Connected(begun.attempt, AAPConnectionStateMachine::Clock::now()));
+    manager._aapMgr._transport.store(transport);
+    manager._aapMgr._attempt = begun.attempt;
+    manager._aapMgr._connected = true;
+    manager._aapMgr._commandBroker->BeginSession(begun.attempt.generation);
+    manager._currentNoiseControlMode = static_cast<int>(NoiseControlMode::NoiseCancellation);
+
+    const StemActionRequest request{
+        static_cast<int>(StemAction::ToggleNoiseControl), begun.attempt.address,
+        begun.attempt.generation};
+    QVERIFY(manager.ToggleNoiseControl(request));
+    QCOMPARE(
+        manager._aapMgr.DesiredCommand(AAPCommandKind::SetNoiseControl),
+        std::optional<uint32_t>{static_cast<uint32_t>(NoiseControlMode::Off)});
+    QCOMPARE(
+        manager._currentNoiseControlMode.load(),
+        static_cast<int>(NoiseControlMode::NoiseCancellation));
+    QVERIFY(transport->WaitForRecordCount(1, std::chrono::seconds{1}));
+
+    manager._aapMgr.ProcessPacket(AAPTestSupport::Records::NoiseControl(
+        static_cast<uint8_t>(Helper::ToUnderlying(NoiseControlMode::Off))));
+    QCOMPARE(manager._currentNoiseControlMode.load(), static_cast<int>(NoiseControlMode::Off));
+    QVERIFY(manager._aapMgr.WaitForCommandsIdle(std::chrono::seconds{1}));
+
+    manager._aapMgr._connected = false;
+    manager._aapMgr._transport.store(nullptr);
+    manager._aapMgr._commandBroker->EndSession();
+
+    auto replacement = std::make_shared<AAPTestSupport::FakeTransport>();
+    QVERIFY(replacement->Connect(1, {}));
+    manager._aapMgr._transport.store(replacement);
+    manager._aapMgr._attempt = {begun.attempt.address, begun.attempt.generation + 1};
+    manager._aapMgr._connected = true;
+    manager._aapMgr._commandBroker->BeginSession(manager._aapMgr._attempt.generation);
+    manager._aapMgr._commandBroker->ReplayDesiredState(
+        manager._aapMgr._attempt.generation, [](AAPCommandKind) { return true; });
+    QVERIFY(replacement->WaitForRecordCount(1, std::chrono::seconds{1}));
+    QCOMPARE(replacement->LastSend(), (Packets::BuildNoiseControlPacket(NoiseControlMode::Off)));
+
+    manager._aapMgr._connected = false;
+    manager._aapMgr._transport.store(nullptr);
+    manager._aapMgr._commandBroker->EndSession();
+}
+
+void AirPodsDomainTests::StemNoiseControlToggleAlternatesPendingDesiredState()
+{
+    using namespace Core::AAP;
+    Core::AirPods::Manager manager;
+    auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+    QVERIFY(transport->Connect(1, {}));
+    transport->SetBlockSend(true);
+
+    const auto begun = manager._aapConnection.Begin(0x1234);
+    QVERIFY(begun.started);
+    QVERIFY(manager._aapConnection.TransportConnected(begun.attempt));
+    QVERIFY(
+        manager._aapConnection.Connected(begun.attempt, AAPConnectionStateMachine::Clock::now()));
+    manager._aapMgr._transport.store(transport);
+    manager._aapMgr._attempt = begun.attempt;
+    manager._aapMgr._connected = true;
+    manager._aapMgr._commandBroker->BeginSession(begun.attempt.generation);
+    manager._currentNoiseControlMode = static_cast<int>(NoiseControlMode::NoiseCancellation);
+
+    const StemActionRequest request{
+        static_cast<int>(StemAction::ToggleNoiseControl), begun.attempt.address,
+        begun.attempt.generation};
+    QVERIFY(manager.ToggleNoiseControl(request));
+    QVERIFY(transport->WaitForSendWaiter(std::chrono::seconds{1}));
+    QCOMPARE(
+        manager._aapMgr.DesiredCommand(AAPCommandKind::SetNoiseControl),
+        std::optional<uint32_t>{static_cast<uint32_t>(NoiseControlMode::Off)});
+
+    QVERIFY(manager.ToggleNoiseControl(request));
+    QCOMPARE(
+        manager._aapMgr.DesiredCommand(AAPCommandKind::SetNoiseControl),
+        std::optional<uint32_t>{static_cast<uint32_t>(NoiseControlMode::NoiseCancellation)});
+    QCOMPARE(
+        manager._currentNoiseControlMode.load(),
+        static_cast<int>(NoiseControlMode::NoiseCancellation));
+
+    transport->SetBlockSend(false);
+    QVERIFY(transport->WaitForRecordCount(2, std::chrono::seconds{1}));
+    manager._aapMgr.ProcessPacket(AAPTestSupport::Records::NoiseControl(
+        static_cast<uint8_t>(Helper::ToUnderlying(NoiseControlMode::NoiseCancellation))));
+    QVERIFY(manager._aapMgr.WaitForCommandsIdle(std::chrono::seconds{1}));
+
+    manager._aapMgr._connected = false;
+    manager._aapMgr._transport.store(nullptr);
+    manager._aapMgr._commandBroker->EndSession();
+}
+
+void AirPodsDomainTests::HeadTrackingDataDoesNotEmitCommandState()
+{
+    Core::AirPods::Manager manager;
+    const Core::AAP::AAPAttempt attempt{0x1234, 7};
+    manager._aapConnectInProgress = true;
+    manager._aapActiveAttempt = attempt;
+
+    std::atomic<int> commandStates{0};
+    std::atomic<int> records{0};
+    QObject::connect(
+        &manager, &Core::AirPods::Manager::AapCommandStateSafely, &manager,
+        [&](uint64_t, int kind, uint32_t) {
+            if (kind == static_cast<int>(Core::AAP::AAPCommandKind::SetHeadTracking)) {
+                ++commandStates;
+            }
+        },
+        Qt::DirectConnection);
+    QObject::connect(
+        &manager, &Core::AirPods::Manager::HeadTrackingRecordSafely, &manager,
+        [&](const Core::AirPods::HeadTrackingEvent &) { ++records; }, Qt::DirectConnection);
+
+    manager.OnHeadTrackingData(Core::AAP::HeadTrackingData{}, attempt);
+    QCOMPARE(records.load(), 1);
+    QCOMPARE(commandStates.load(), 0);
+}
+
+void AirPodsDomainTests::SpeakingLevelIsQueuedWithGeneration()
+{
+    using namespace Core::AAP;
+    std::optional<Core::AirPods::Manager> manager;
+    manager.emplace();
+    auto *sender = &*manager;
+    const AAPAttempt attempt{0x1234, 9};
+    manager->_aapConnectInProgress = true;
+    manager->_aapActiveAttempt = attempt;
+    manager->_conversationalAwarenessEnabled = true;
+    manager->_currentNoiseControlMode = static_cast<int>(NoiseControlMode::NoiseCancellation);
+
+    std::atomic<int> received{0};
+    std::atomic<int> receivedLevel{-1};
+    std::atomic<uint64_t> receivedAddress{0};
+    std::atomic<uint64_t> receivedGeneration{0};
+    QObject receiver;
+    QObject::connect(
+        sender, &Core::AirPods::Manager::SpeakingLevelRequestedSafely, &receiver,
+        [&](int level, qulonglong address, qulonglong generation) {
+            receivedLevel = level;
+            receivedAddress = address;
+            receivedGeneration = generation;
+            ++received;
+        },
+        Qt::QueuedConnection);
+
+    AAPTestSupport::Worker worker{
+        [&] { manager->OnSpeakingLevelChanged(SpeakingLevel::StoppedSpeaking, attempt); }};
+    QVERIFY(worker.Finished(2s));
+    QCOMPARE(received.load(), 0);
+    // Discard Manager's own queued COM slot; only the independent receiver observes the request.
+    manager.reset();
+    QCoreApplication::processEvents();
+    QCOMPARE(received.load(), 1);
+    QCOMPARE(receivedLevel.load(), static_cast<int>(SpeakingLevel::StoppedSpeaking));
+    QCOMPARE(receivedAddress.load(), attempt.address);
+    QCOMPARE(receivedGeneration.load(), attempt.generation);
+}
+
+void AirPodsDomainTests::SpeakingLevelQueuedSlotRestoresAfterPolicyChange()
+{
+    using namespace Core::AAP;
+    std::vector<int> writes;
+    Core::AirPods::Manager manager;
+    manager._speakingVolumeWriterForTest = [&](int percent) {
+        writes.push_back(percent);
+        return true;
+    };
+    const AAPAttempt attempt{0x1234, 9};
+    manager._aapConnectInProgress = true;
+    manager._aapActiveAttempt = attempt;
+    manager._conversationalAwarenessEnabled = true;
+    manager._currentNoiseControlMode = static_cast<int>(NoiseControlMode::NoiseCancellation);
+
+    manager.OnSpeakingLevelChanged(SpeakingLevel::StartedSpeaking_GreatlyReduce, attempt);
+    QVERIFY(writes.empty());
+    QCoreApplication::processEvents();
+    QCOMPARE(writes.size(), size_t{1});
+    QCOMPARE(writes.at(0), 40);
+    QVERIFY(manager._speakingAttenuationAttempt.has_value());
+
+    manager.OnSpeakingLevelChanged(SpeakingLevel::StoppedSpeaking, attempt);
+    manager._conversationalAwarenessEnabled = false;
+    QCoreApplication::processEvents();
+    QCOMPARE(writes.size(), size_t{2});
+    QCOMPARE(writes.at(1), 100);
+    QVERIFY(!manager._speakingAttenuationAttempt.has_value());
+
+    manager._conversationalAwarenessEnabled = true;
+    manager.OnSpeakingLevelChanged(SpeakingLevel::StartedSpeaking_GreatlyReduce, attempt);
+    QCoreApplication::processEvents();
+    QCOMPARE(writes.size(), size_t{3});
+    manager.OnConversationalAwarenessChanged(false);
+    QCoreApplication::processEvents();
+    QCOMPARE(writes.size(), size_t{4});
+    QCOMPARE(writes.at(3), 100);
+    QVERIFY(!manager._speakingAttenuationAttempt.has_value());
+}
+
+void AirPodsDomainTests::SpeakingLevelQueuedSlotRejectsStaleStart()
+{
+    using namespace Core::AAP;
+    std::vector<int> writes;
+    Core::AirPods::Manager manager;
+    manager._speakingVolumeWriterForTest = [&](int percent) {
+        writes.push_back(percent);
+        return true;
+    };
+    const AAPAttempt attempt{0x1234, 9};
+    manager._aapConnectInProgress = true;
+    manager._aapActiveAttempt = attempt;
+    manager._conversationalAwarenessEnabled = true;
+    manager._currentNoiseControlMode = static_cast<int>(NoiseControlMode::NoiseCancellation);
+
+    manager.OnSpeakingLevelChanged(SpeakingLevel::StartedSpeaking_GreatlyReduce, attempt);
+    QCoreApplication::processEvents();
+    QCOMPARE(writes.size(), size_t{1});
+    manager.OnSpeakingLevelChanged(SpeakingLevel::StoppedSpeaking, attempt);
+    QCoreApplication::processEvents();
+    QCOMPARE(writes.size(), size_t{2});
+    writes.clear();
+
+    manager.OnSpeakingLevelChanged(SpeakingLevel::StartedSpeaking_GreatlyReduce, attempt);
+    manager._conversationalAwarenessEnabled = false;
+    QCoreApplication::processEvents();
+    QVERIFY(writes.empty());
+    QVERIFY(!manager._speakingAttenuationAttempt.has_value());
+
+    manager._conversationalAwarenessEnabled = true;
+    manager._conversationalAwarenessVolumePercent = 100;
+    manager.OnSpeakingLevelChanged(SpeakingLevel::StartedSpeaking_GreatlyReduce, attempt);
+    QCoreApplication::processEvents();
+    QCOMPARE(writes.size(), size_t{1});
+    QCOMPARE(writes.at(0), 100);
+    QVERIFY(!manager._speakingAttenuationAttempt.has_value());
+}
+
+void AirPodsDomainTests::SpeakingLevelRestoreRetriesAfterFailure()
+{
+    using namespace Core::AAP;
+    std::vector<int> writes;
+    bool restoreSucceeds = false;
+    Core::AirPods::Manager manager;
+    manager._speakingVolumeWriterForTest = [&](int percent) {
+        writes.push_back(percent);
+        if (percent == 100 && !restoreSucceeds) {
+            restoreSucceeds = true;
+            return false;
+        }
+        return true;
+    };
+    const AAPAttempt attempt{0x1234, 9};
+    manager._aapConnectInProgress = true;
+    manager._aapActiveAttempt = attempt;
+    manager._conversationalAwarenessEnabled = true;
+    manager._currentNoiseControlMode = static_cast<int>(NoiseControlMode::NoiseCancellation);
+
+    manager.OnSpeakingLevelChanged(SpeakingLevel::StartedSpeaking_GreatlyReduce, attempt);
+    QCoreApplication::processEvents();
+    manager.OnSpeakingLevelChanged(SpeakingLevel::StoppedSpeaking, attempt);
+    QCoreApplication::processEvents();
+    QCOMPARE(writes.size(), size_t{2});
+    QVERIFY(manager._speakingAttenuationAttempt.has_value());
+
+    manager.OnSpeakingLevelChanged(SpeakingLevel::StoppedSpeaking, attempt);
+    QCoreApplication::processEvents();
+    QCOMPARE(writes.size(), size_t{3});
+    QCOMPARE(writes.at(2), 100);
+    QVERIFY(!manager._speakingAttenuationAttempt.has_value());
+}
+
+void AirPodsDomainTests::SpeakingLevelPolicyCleanupPreservesNewAttenuation()
+{
+    using namespace Core::AAP;
+    std::vector<int> writes;
+    Core::AirPods::Manager manager;
+    manager._speakingVolumeWriterForTest = [&](int percent) {
+        writes.push_back(percent);
+        return true;
+    };
+    const AAPAttempt attempt{0x1234, 9};
+    manager._aapConnectInProgress = true;
+    manager._aapActiveAttempt = attempt;
+    manager._conversationalAwarenessEnabled = true;
+    manager._currentNoiseControlMode = static_cast<int>(NoiseControlMode::NoiseCancellation);
+
+    manager.OnSpeakingLevelChanged(SpeakingLevel::StartedSpeaking_GreatlyReduce, attempt);
+    QCoreApplication::processEvents();
+    const auto oldSerial = manager._speakingAttenuationSerial;
+    manager.QueueSpeakingVolumeRestoration();
+    manager.OnSpeakingLevelRequested(
+        static_cast<int>(SpeakingLevel::StartedSpeaking_GreatlyReduce),
+        static_cast<qulonglong>(attempt.address), static_cast<qulonglong>(attempt.generation));
+    QVERIFY(manager._speakingAttenuationSerial > oldSerial);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(writes.size(), size_t{2});
+    QVERIFY(manager._speakingAttenuationAttempt.has_value());
+    manager.OnSpeakingLevelChanged(SpeakingLevel::StoppedSpeaking, attempt);
+    QCoreApplication::processEvents();
+    QCOMPARE(writes.size(), size_t{3});
+    QCOMPARE(writes.at(2), 100);
+    QVERIFY(!manager._speakingAttenuationAttempt.has_value());
+}
+
+void AirPodsDomainTests::SpeakingLevelRetiredSessionCleanupPreservesNewAttenuation()
+{
+    using namespace Core::AAP;
+    std::vector<int> writes;
+    Core::AirPods::Manager manager;
+    manager._speakingVolumeWriterForTest = [&](int percent) {
+        writes.push_back(percent);
+        return true;
+    };
+    const AAPAttempt oldAttempt{0x1234, 9};
+    const AAPAttempt newAttempt{0x1234, 10};
+    manager._aapConnectInProgress = true;
+    manager._aapActiveAttempt = oldAttempt;
+    manager._conversationalAwarenessEnabled = true;
+    manager._currentNoiseControlMode = static_cast<int>(NoiseControlMode::NoiseCancellation);
+
+    manager.OnSpeakingLevelChanged(SpeakingLevel::StartedSpeaking_GreatlyReduce, oldAttempt);
+    QCoreApplication::processEvents();
+    QCOMPARE(writes.size(), size_t{1});
+    manager.QueueSpeakingVolumeRestoration(oldAttempt);
+
+    manager._aapActiveAttempt = newAttempt;
+    manager.OnSpeakingLevelRequested(
+        static_cast<int>(SpeakingLevel::StartedSpeaking_GreatlyReduce),
+        static_cast<qulonglong>(newAttempt.address),
+        static_cast<qulonglong>(newAttempt.generation));
+    QCOMPARE(writes.size(), size_t{3});
+    QCOMPARE(writes.at(1), 100);
+    QCOMPARE(writes.at(2), 40);
+    QCoreApplication::processEvents();
+    QCOMPARE(writes.size(), size_t{3});
+    QVERIFY(manager._speakingAttenuationAttempt.has_value());
+    QCOMPARE(manager._speakingAttenuationAttempt->generation, newAttempt.generation);
+
+    manager.OnSpeakingLevelChanged(SpeakingLevel::StoppedSpeaking, newAttempt);
+    QCoreApplication::processEvents();
+    QCOMPARE(writes.size(), size_t{4});
+    QCOMPARE(writes.at(3), 100);
+    QVERIFY(!manager._speakingAttenuationAttempt.has_value());
+}
+
+void AirPodsDomainTests::SpeakingLevelDisconnectRestoresAttenuation()
+{
+    using namespace Core::AAP;
+    std::vector<int> writes;
+    Core::AirPods::Manager manager;
+    manager._speakingVolumeWriterForTest = [&](int percent) {
+        writes.push_back(percent);
+        return true;
+    };
+    const AAPAttempt attempt{0x1234, 9};
+    manager._aapConnectInProgress = true;
+    manager._aapActiveAttempt = attempt;
+    manager._conversationalAwarenessEnabled = true;
+    manager._currentNoiseControlMode = static_cast<int>(NoiseControlMode::NoiseCancellation);
+
+    manager.OnSpeakingLevelChanged(SpeakingLevel::StartedSpeaking_GreatlyReduce, attempt);
+    QCoreApplication::processEvents();
+    QCOMPARE(writes.size(), size_t{1});
+    manager.OnAAPDisconnected(attempt);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(writes.size(), size_t{2});
+    QCOMPARE(writes.at(1), 100);
+    QVERIFY(!manager._speakingAttenuationAttempt.has_value());
+}
+
+void AirPodsDomainTests::SpeakingLevelRequestRevalidatesSessionAndPolicy()
+{
+    using namespace Core::AAP;
+    Core::AirPods::Manager manager;
+    const AAPAttempt attempt{0x1234, 9};
+    manager._aapConnectInProgress = true;
+    manager._aapActiveAttempt = attempt;
+    manager._conversationalAwarenessEnabled = true;
+    manager._currentNoiseControlMode = static_cast<int>(NoiseControlMode::NoiseCancellation);
+    QVERIFY(manager.CanApplySpeakingLevelVolume(attempt));
+    QVERIFY(!manager.CanApplySpeakingLevelVolume({attempt.address, attempt.generation + 1}));
+
+    manager._conversationalAwarenessEnabled = false;
+    QVERIFY(!manager.CanApplySpeakingLevelVolume(attempt));
+    manager._conversationalAwarenessEnabled = true;
+    manager._currentNoiseControlMode = static_cast<int>(NoiseControlMode::Transparency);
+    QVERIFY(!manager.CanApplySpeakingLevelVolume(attempt));
 }
 
 void AirPodsDomainTests::HeadTrackingSettingPersistsWithoutAbiBump()

@@ -54,6 +54,19 @@ using AAPTestSupport::Worker;
 using namespace std::chrono_literals;
 
 namespace {
+using HandshakeFactoryHook = TransportFactory<BlockingTransport>::Hook;
+
+TransportFactory<BlockingTransport> MakeHandshakeFactory(HandshakeFactoryHook hook = {})
+{
+    return TransportFactory<BlockingTransport>{
+        [hook = std::move(hook)](BlockingTransport &transport) {
+            transport.QueueRecord(AAPTestSupport::Records::HandshakeAck());
+            if (hook) {
+                hook(transport);
+            }
+        }};
+}
+
 // Disconnect joins a production reader, so exercise it on a test-owned worker too. The
 // worker releases every injected transport on all exits and the deadline makes a broken
 // Close -> stop -> join sequence a failed assertion instead of an unbounded teardown.
@@ -84,12 +97,12 @@ private slots:
 #if defined(APD_OS_WIN)
     void InjectedTransportBecomesThePublishedSession()
     {
-        TransportFactory<BlockingTransport> factory{[](BlockingTransport &transport) {
+        auto factory = MakeHandshakeFactory([](BlockingTransport &transport) {
             // Park the reader so the session stays up deterministically instead of
             // racing an immediate EOF; the thread belongs to production, so the release
             // is an RAII guard rather than a Worker the test owns.
             transport.Block(BlockingTransport::Op::Receive);
-        }};
+        });
         CallbackRecorder recorder;
         Core::AAP::Callbacks callbacks;
         callbacks.onConnected = [&recorder](const Core::AAP::AAPAttempt &attempt) {
@@ -131,8 +144,8 @@ private slots:
     void ConnectOpensAndClosesTheDiagnosticsAttempt()
     {
         using Core::Diagnostics::Recorder;
-        TransportFactory<BlockingTransport> factory{
-            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        auto factory = MakeHandshakeFactory(
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); });
         Core::AAP::Manager manager;
         manager._transportFactoryForTest = [&factory] { return factory.Build(); };
 
@@ -162,7 +175,7 @@ private slots:
     // rather than on the transport snapshot silently made Connect() unable to send.
     void HandshakeReachesTheInjectedTransportBeforeTheSessionIsConnected()
     {
-        TransportFactory<BlockingTransport> factory;
+        auto factory = MakeHandshakeFactory();
         Core::AAP::Manager manager;
         manager._transportFactoryForTest = [&factory] { return factory.Build(); };
 
@@ -183,11 +196,214 @@ private slots:
         QVERIFY(!manager.IsConnected());
     }
 
+    void ConnectWithoutObservedHandshakeAckFailsClosed()
+    {
+        using Core::Diagnostics::Recorder;
+        TransportFactory<BlockingTransport> factory{
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        CallbackRecorder recorder;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onConnected = [&recorder](const Core::AAP::AAPAttempt &attempt) {
+            recorder.Record("connected", attempt);
+        };
+        Core::AAP::Manager manager;
+        manager._transportFactoryForTest = [&factory] { return factory.Build(); };
+        manager.SetCallbacks(std::move(callbacks));
+        Recorder::Instance().Reset();
+
+        const Core::AAP::AAPAttempt attempt{42, 1};
+        QVERIFY(!manager.Connect(attempt));
+        auto transport = factory.Last();
+        QVERIFY(transport != nullptr);
+        QVERIFY(!manager.IsConnected());
+        QVERIFY(!manager._readerThread.joinable());
+        QVERIFY(!manager._transport.load());
+        QVERIFY(transport->IsClosed());
+        QCOMPARE(manager.GetLastConnectFailure(), Core::AAP::ConnectFailure::HandshakeFailure);
+        QCOMPARE(recorder.Count("connected"), size_t{0});
+        const auto report = QString::fromStdString(Recorder::Instance().BuildReport({}));
+        QVERIFY(report.contains(QStringLiteral("handshake")));
+        QVERIFY(!report.contains(QStringLiteral("device ACK observed")));
+        QVERIFY(DisconnectWithin(manager, factory));
+    }
+
+    void HandshakeAckReturnedAfterDeadlineIsRejected()
+    {
+        class AckAfterStopTransport : public BlockingTransport
+        {
+        public:
+            std::optional<std::vector<uint8_t>> Receive(std::stop_token stop) override
+            {
+                if (!_firstReceive) {
+                    return BlockingTransport::Receive(stop);
+                }
+                _firstReceive = false;
+                std::stop_callback callback{stop, [this] { _stopped.Open(); }};
+                _stopped.Wait(2s);
+                return AAPTestSupport::Records::HandshakeAck();
+            }
+
+        private:
+            AAPTestSupport::AtomicGate _stopped;
+            bool _firstReceive{true};
+        };
+
+        auto transport = std::make_shared<AckAfterStopTransport>();
+        Core::AAP::Manager manager;
+        manager._transportFactoryForTest = [&] { return transport; };
+
+        bool result = true;
+        Worker connector{[&] { result = manager.Connect(Core::AAP::AAPAttempt{42, 1}); }};
+        QVERIFY(connector.Finished(3s));
+        QVERIFY(!result);
+        QVERIFY(!manager.IsConnected());
+        QCOMPARE(manager.GetLastConnectFailure(), Core::AAP::ConnectFailure::HandshakeFailure);
+        QVERIFY(!manager._readerThread.joinable());
+        QVERIFY(!manager._transport.load());
+        QVERIFY(transport->IsClosed());
+    }
+
+    void HandshakeAckAfterWallClockDeadlineIsRejectedBeforeTimerStop()
+    {
+        class GatedAckTransport : public BlockingTransport
+        {
+        public:
+            explicit GatedAckTransport(PromiseGate &release) : _release(release) {}
+
+            std::optional<std::vector<uint8_t>> Receive(std::stop_token stop) override
+            {
+                if (!_firstReceive) {
+                    return BlockingTransport::Receive(stop);
+                }
+                _firstReceive = false;
+                _release.Wait();
+                return AAPTestSupport::Records::HandshakeAck();
+            }
+
+        private:
+            PromiseGate &_release;
+            bool _firstReceive{true};
+        };
+
+        AAPTestSupport::AtomicGate deadlineEntered;
+        AAPTestSupport::AtomicGate deadlineStopped;
+        PromiseGate receiveRelease;
+        auto transport = std::make_shared<GatedAckTransport>(receiveRelease);
+        Core::AAP::Manager manager;
+        manager._transportFactoryForTest = [&] { return transport; };
+        manager._beforeHandshakeDeadlineStopForTest = [&](std::stop_token timerStop) {
+            deadlineEntered.Open();
+            std::stop_callback callback{timerStop, [&] { deadlineStopped.Open(); }};
+            deadlineStopped.Wait(2s);
+        };
+
+        bool result = true;
+        Worker connector{[&] { result = manager.Connect(Core::AAP::AAPAttempt{42, 1}); }};
+        ScopedUnblock unblock{receiveRelease};
+        QVERIFY(deadlineEntered.Wait(2s));
+        receiveRelease.Signal();
+        QVERIFY(connector.Finished(2s));
+        QVERIFY(!result);
+        QVERIFY(!manager.IsConnected());
+        QCOMPARE(manager.GetLastConnectFailure(), Core::AAP::ConnectFailure::HandshakeFailure);
+        QVERIFY(!manager._readerThread.joinable());
+        QVERIFY(!manager._transport.load());
+        QVERIFY(transport->IsClosed());
+    }
+
+    void CancelConnectWakesHandshakeAckWait()
+    {
+        TransportFactory<BlockingTransport> factory{
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        Core::AAP::Manager manager;
+        manager._transportFactoryForTest = [&factory] { return factory.Build(); };
+
+        bool result = true;
+        Worker connector{
+            [&] { result = manager.Connect(Core::AAP::AAPAttempt{42, 1}); },
+            [&] {
+                manager.CancelConnect();
+                factory.ReleaseAllBuilt();
+            }};
+        QVERIFY(factory.WaitForCount(1, 2s));
+        auto transport = factory.Last();
+        QVERIFY(transport != nullptr);
+        QVERIFY(transport->WaitForParked(BlockingTransport::Op::Receive, 2s));
+
+        manager.CancelConnect();
+        QVERIFY(connector.Finished(2s));
+        QVERIFY(!result);
+        QVERIFY(!manager.IsConnected());
+        QVERIFY(!manager._readerThread.joinable());
+        QVERIFY(transport->IsClosed());
+        QCOMPARE(manager.GetLastConnectFailure(), Core::AAP::ConnectFailure::TransportError);
+        QVERIFY(DisconnectWithin(manager, factory));
+    }
+
+    void RecordBeforeHandshakeAckIsProcessedAfterConnection()
+    {
+        using namespace Core::AAP;
+        TransportFactory<BlockingTransport> factory{[](BlockingTransport &transport) {
+            transport.QueueRecord(
+                AAPTestSupport::Records::NoiseControl(static_cast<uint8_t>(NoiseControlMode::Off)));
+            transport.QueueRecord(AAPTestSupport::Records::HandshakeAck());
+            transport.Block(BlockingTransport::Op::Receive);
+        }};
+        CallbackRecorder recorder;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onNoiseControlChanged = [&recorder](NoiseControlMode, const AAPAttempt &attempt) {
+            recorder.Record("noise", attempt);
+        };
+        Core::AAP::Manager manager;
+        manager._transportFactoryForTest = [&factory] { return factory.Build(); };
+        manager.SetCallbacks(std::move(callbacks));
+
+        const AAPAttempt attempt{42, 1};
+        QVERIFY(manager.Connect(attempt));
+        QVERIFY(recorder.WaitForCount("noise", 1, 2s));
+        auto transport = factory.Last();
+        QVERIFY(transport != nullptr);
+        // Two receives prove the handshake wait consumed both queued records before the reader
+        // replayed the noise record.
+        QCOMPARE(transport->CallCount(BlockingTransport::Op::Receive), size_t{2});
+        QCOMPARE(recorder.LastAttempt("noise")->generation, attempt.generation);
+        QCOMPARE(manager.GetNoiseControlMode(), std::optional(NoiseControlMode::Off));
+        QVERIFY(DisconnectWithin(manager, factory));
+    }
+
+    void PreAckRecordLimitFailsClosed()
+    {
+        using namespace Core::AAP;
+        TransportFactory<BlockingTransport> factory{[](BlockingTransport &transport) {
+            for (size_t index = 0; index < 65; ++index) {
+                transport.QueueRecord(AAPTestSupport::Records::NoiseControl(
+                    static_cast<uint8_t>(NoiseControlMode::Off)));
+            }
+            transport.QueueRecord(AAPTestSupport::Records::HandshakeAck());
+        }};
+        CallbackRecorder recorder;
+        Core::AAP::Callbacks callbacks;
+        callbacks.onNoiseControlChanged = [&recorder](NoiseControlMode, const AAPAttempt &attempt) {
+            recorder.Record("noise", attempt);
+        };
+        Core::AAP::Manager manager;
+        manager._transportFactoryForTest = [&factory] { return factory.Build(); };
+        manager.SetCallbacks(std::move(callbacks));
+
+        QVERIFY(!manager.Connect(AAPAttempt{42, 1}));
+        QVERIFY(!manager.IsConnected());
+        QVERIFY(!manager._readerThread.joinable());
+        QVERIFY(!manager._transport.load());
+        QCOMPARE(manager.GetLastConnectFailure(), ConnectFailure::HandshakeFailure);
+        QCOMPARE(recorder.Count("noise"), size_t{0});
+        QVERIFY(factory.Last()->IsClosed());
+    }
+
     void StaleCommandSettlementCannotOverwriteNewerRequest()
     {
         using namespace Core::AAP;
-        TransportFactory<BlockingTransport> factory{
-            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        auto factory = MakeHandshakeFactory(
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); });
         std::atomic<size_t> settlements{0};
         Core::AAP::Callbacks callbacks;
         callbacks.onCommandSettled = [&](const AAPCommandOutcome &, AAPAttempt) { ++settlements; };
@@ -237,8 +453,8 @@ private slots:
     void CommandSubmissionWaitsForSettlementCacheUpdate()
     {
         using namespace Core::AAP;
-        TransportFactory<BlockingTransport> factory{
-            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        auto factory = MakeHandshakeFactory(
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); });
         auto identityChecked = std::make_shared<PromiseGate>();
         auto identityRelease = std::make_shared<PromiseGate>();
         ScopedUnblock unblock{*identityRelease};
@@ -290,8 +506,8 @@ private slots:
     void CancelledCommandLosingConnectionDoesNotRecordOfflineIntent()
     {
         using namespace Core::AAP;
-        TransportFactory<BlockingTransport> factory{
-            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        auto factory = MakeHandshakeFactory(
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); });
         Core::AAP::Manager manager;
         manager._transportFactoryForTest = [&factory] { return factory.Build(); };
         QVERIFY(manager.Connect(Core::AAP::AAPAttempt{42, 1}));
@@ -316,8 +532,8 @@ private slots:
     void ShutdownCommandsDrainsPublishedCallbacks()
     {
         using namespace Core::AAP;
-        TransportFactory<BlockingTransport> factory{
-            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        auto factory = MakeHandshakeFactory(
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); });
         auto callbackEntered = std::make_shared<PromiseGate>();
         auto callbackRelease = std::make_shared<PromiseGate>();
         ScopedUnblock unblock{*callbackRelease};
@@ -347,8 +563,8 @@ private slots:
     {
         auto sendEntered = std::make_shared<PromiseGate>();
         auto sendRelease = std::make_shared<PromiseGate>();
-        TransportFactory<BlockingTransport> factory{
-            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        auto factory = MakeHandshakeFactory(
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); });
         Core::AAP::Manager manager;
         manager._transportFactoryForTest = [&factory] { return factory.Build(); };
 
@@ -389,8 +605,8 @@ private slots:
     {
         auto sendEntered = std::make_shared<PromiseGate>();
         auto sendRelease = std::make_shared<PromiseGate>();
-        TransportFactory<BlockingTransport> factory{
-            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        auto factory = MakeHandshakeFactory(
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); });
         Core::AAP::Manager manager;
         manager._transportFactoryForTest = [&factory] { return factory.Build(); };
 
@@ -434,10 +650,10 @@ private slots:
     // requests build exactly one transport and yield exactly one session.
     void ConcurrentConnectRequestsProduceOneSession()
     {
-        TransportFactory<BlockingTransport> factory{[](BlockingTransport &transport) {
+        auto factory = MakeHandshakeFactory([](BlockingTransport &transport) {
             transport.Block(BlockingTransport::Op::Connect);
             transport.Block(BlockingTransport::Op::Receive);
-        }};
+        });
         Core::AAP::Manager manager;
         manager._transportFactoryForTest = [&factory] { return factory.Build(); };
         PromiseGate firstAtLock;
@@ -505,8 +721,8 @@ private slots:
     // reachable and the application could not exit.
     void CancelConnectWakesABlockedConnect()
     {
-        TransportFactory<BlockingTransport> factory{
-            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Connect); }};
+        auto factory = MakeHandshakeFactory(
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Connect); });
         Core::AAP::Manager manager;
         manager._transportFactoryForTest = [&factory] { return factory.Build(); };
 
@@ -549,8 +765,8 @@ private slots:
     {
         auto publishEntered = std::make_shared<PromiseGate>();
         auto publishRelease = std::make_shared<PromiseGate>();
-        TransportFactory<BlockingTransport> factory{
-            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        auto factory = MakeHandshakeFactory(
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); });
         Core::AAP::Manager manager;
         manager._transportFactoryForTest = [&factory] { return factory.Build(); };
         manager._beforePendingPublishForTest = [&] {
@@ -588,8 +804,8 @@ private slots:
 
     void CallerCancellationWakesConnectAndJoinsTheWorker()
     {
-        TransportFactory<BlockingTransport> factory{
-            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Connect); }};
+        auto factory = MakeHandshakeFactory(
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Connect); });
         Core::AAP::Manager manager;
         manager._transportFactoryForTest = [&factory] { return factory.Build(); };
 
@@ -620,7 +836,7 @@ private slots:
     // destroying a joinable thread.
     void NaturalEofKeepsTheReaderJoinableAcrossReconnect()
     {
-        TransportFactory<BlockingTransport> factory;
+        auto factory = MakeHandshakeFactory();
         CallbackRecorder recorder;
         Core::AAP::Callbacks callbacks;
         callbacks.onConnected = [&recorder](const Core::AAP::AAPAttempt &attempt) {
@@ -646,7 +862,8 @@ private slots:
         QCOMPARE(factory.Count(), size_t{2});
         // Retiring the finished reader is what makes the reassignment safe. Natural EOF
         // withdraws the old transport snapshot; it is not an explicit Disconnect close.
-        QCOMPARE(first->CallCount(BlockingTransport::Op::Receive), size_t{1});
+        // One Receive consumed the handshake ACK and the reader's first Receive saw EOF.
+        QCOMPARE(first->CallCount(BlockingTransport::Op::Receive), size_t{2});
         QVERIFY(!first->IsClosed());
         QVERIFY(recorder.WaitForCount("connected", 2, 2s));
         QVERIFY(recorder.WaitForCount("disconnected", 2, 2s));
@@ -660,8 +877,8 @@ private slots:
     // reach a callback or mutate cached state.
     void RetiredGenerationEventsAreDiscarded()
     {
-        TransportFactory<BlockingTransport> factory{
-            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        auto factory = MakeHandshakeFactory(
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); });
         Core::AAP::Manager manager;
         manager._transportFactoryForTest = [&factory] { return factory.Build(); };
 

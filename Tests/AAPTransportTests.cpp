@@ -1816,6 +1816,9 @@ private slots:
         manager._transport.store(transport);
         manager._attempt = {0x1234, 7};
         manager._connected = true;
+        manager._commandBroker->BeginSession(7);
+        manager._commandBroker->SetConfirmMode(
+            Core::AAP::AAPCommandKind::SetNoiseControl, Core::AAP::AAPConfirmMode::Unverifiable);
         constexpr Core::AAP::NoiseControlMode mode = Core::AAP::NoiseControlMode::NoiseCancellation;
 
         QVERIFY(!manager.SetNoiseControlMode(mode, {0x1234, 8}, {}));
@@ -1832,10 +1835,13 @@ private slots:
         QCOMPARE(transport->SendCalls(), size_t{0});
 
         QVERIFY(manager.SetNoiseControlMode(mode, {0x1234, 7}, {}));
+        QVERIFY(transport->WaitForRecordCount(1, std::chrono::seconds{1}));
         QCOMPARE(
             transport->LastSend(),
             (std::vector<uint8_t>{
                 0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0x02, 0x00, 0x00, 0x00}));
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        manager._commandBroker->EndSession();
         manager._connected = false;
         manager._transport.store(nullptr);
     }
@@ -1848,25 +1854,36 @@ private slots:
         manager._transport.store(original);
         manager._attempt = {0x1234, 7};
         manager._connected = true;
+        manager._commandBroker->BeginSession(7);
+        manager._commandBroker->SetConfirmMode(
+            Core::AAP::AAPCommandKind::SetNoiseControl, Core::AAP::AAPConfirmMode::Unverifiable);
+
+        AAPTestSupport::PromiseGate entered;
+        AAPTestSupport::PromiseGate release;
+        AAPTestSupport::ScopedUnblock releaseGuard{release};
+        manager._beforeAttemptNoiseControlLockForTest = [&] {
+            entered.Signal();
+            release.Wait(AAPTestSupport::kRendezvousTimeout);
+        };
 
         // Hold the send gate after the queued request has been validated by its caller. The
-        // worker enters SetNoiseControlMode but cannot acquire _mutex until the replacement is
-        // installed.
+        // worker reaches the lock barrier before the replacement is installed.
         std::unique_lock barrier{manager._mutex};
         auto result = std::async(std::launch::async, [&] {
             return manager.SetNoiseControlMode(
                 Core::AAP::NoiseControlMode::NoiseCancellation, {0x1234, 7}, {});
         });
-        const bool blocked =
-            result.wait_for(std::chrono::milliseconds{20}) == std::future_status::timeout;
+        QVERIFY(entered.Wait(std::chrono::seconds{2}));
         manager._attempt = {0x1234, 8};
         manager._transport.store(replacement);
         barrier.unlock();
+        release.Signal();
 
-        QVERIFY(blocked);
         QVERIFY(!result.get());
         QCOMPARE(original->SendCalls(), size_t{0});
         QCOMPARE(replacement->SendCalls(), size_t{0});
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        manager._commandBroker->EndSession();
         manager._connected = false;
         manager._transport.store(nullptr);
     }
@@ -1878,20 +1895,31 @@ private slots:
         manager._transport.store(transport);
         manager._attempt = {0x1234, 7};
         manager._connected = true;
+        manager._commandBroker->BeginSession(7);
+        manager._commandBroker->SetConfirmMode(
+            Core::AAP::AAPCommandKind::SetNoiseControl, Core::AAP::AAPConfirmMode::Unverifiable);
+
+        AAPTestSupport::PromiseGate entered;
+        AAPTestSupport::PromiseGate release;
+        AAPTestSupport::ScopedUnblock releaseGuard{release};
+        manager._beforeAttemptNoiseControlLockForTest = [&] {
+            entered.Signal();
+            release.Wait(AAPTestSupport::kRendezvousTimeout);
+        };
 
         std::unique_lock barrier{manager._mutex};
         auto result = std::async(std::launch::async, [&] {
             return manager.SetNoiseControlMode(
                 Core::AAP::NoiseControlMode::NoiseCancellation, {0x1234, 7}, {});
         });
-        const bool blocked =
-            result.wait_for(std::chrono::milliseconds{20}) == std::future_status::timeout;
+        QVERIFY(entered.Wait(std::chrono::seconds{2}));
         manager._cancelledGeneration = 7;
         barrier.unlock();
+        release.Signal();
 
-        QVERIFY(blocked);
         QVERIFY(!result.get());
         QCOMPARE(transport->SendCalls(), size_t{0});
+        manager._commandBroker->EndSession();
         manager._connected = false;
         manager._transport.store(nullptr);
     }
@@ -1907,6 +1935,9 @@ private slots:
         manager._transport.store(original);
         manager._attempt = {0x1234, 7};
         manager._connected = true;
+        manager._commandBroker->BeginSession(7);
+        manager._commandBroker->SetConfirmMode(
+            Core::AAP::AAPCommandKind::SetNoiseControl, Core::AAP::AAPConfirmMode::Unverifiable);
 
         auto result = std::async(std::launch::async, [&] {
             return manager.SetNoiseControlMode(
@@ -1924,6 +1955,8 @@ private slots:
         QCOMPARE(original->SendCalls(), size_t{1});
         QCOMPARE(original->LastSend().at(6), uint8_t{0x0D});
         QCOMPARE(replacement->SendCalls(), size_t{0});
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        manager._commandBroker->EndSession();
         manager._connected = false;
         manager._transport.store(nullptr);
     }
@@ -1977,6 +2010,151 @@ private slots:
         QCOMPARE(outcome.settlement, AAPCommandSettlement::Confirmed);
         QVERIFY(manager.IsHeadTrackingActive());
         QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
+    }
+
+    void HeadTrackingStreamRecordConfirmsDesiredStartOnlyOnce()
+    {
+        using namespace Core::AAP;
+        Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = AAPAttempt{1, 41};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(41);
+
+        std::atomic<int> dataCallbacks{0};
+        std::atomic<int> settlements{0};
+        Callbacks callbacks;
+        callbacks.onHeadTrackingData = [&](const HeadTrackingData &, const AAPAttempt &) {
+            ++dataCallbacks;
+        };
+        callbacks.onCommandSettled = [&](const AAPCommandOutcome &, const AAPAttempt &) {
+            ++settlements;
+        };
+        manager.SetCallbacks(std::move(callbacks));
+
+        QVERIFY(manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x01}).accepted);
+        QVERIFY(transport->WaitForRecordCount(1, std::chrono::seconds{1}));
+        std::vector<uint8_t> sensor(70, 0);
+        const std::array<uint8_t, 10> prefix{0x04, 0x00, 0x04, 0x00, 0x17,
+                                             0x00, 0x00, 0x00, 0x10, 0x00};
+        std::copy(prefix.begin(), prefix.end(), sensor.begin());
+        sensor[10] = 0x44;
+        manager.ProcessPacket(sensor);
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        QTRY_VERIFY(manager.IsHeadTrackingActive());
+        QTRY_COMPARE(settlements.load(), 1);
+        QCOMPARE(dataCallbacks.load(), 1);
+
+        manager.ProcessPacket(sensor);
+        QVERIFY(manager.IsHeadTrackingActive());
+        QCOMPARE(dataCallbacks.load(), 2);
+        QCOMPARE(settlements.load(), 1);
+
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
+    }
+
+    void HeadTrackingStreamConfirmsStartQueuedBehindAnotherFlight()
+    {
+        using namespace Core::AAP;
+        std::promise<AAPCommandSettlement> headSettlement;
+        auto headFuture = headSettlement.get_future();
+        std::once_flag headOnce;
+        Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        transport->SetBlockSend(true);
+        manager._transport.store(transport);
+        manager._attempt = AAPAttempt{1, 42};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(42);
+        manager._commandBroker->SetConfirmMode(
+            AAPCommandKind::SetNoiseControl, AAPConfirmMode::Unverifiable);
+
+        Callbacks callbacks;
+        callbacks.onCommandSettled = [&](const AAPCommandOutcome &outcome, const AAPAttempt &) {
+            if (outcome.command.kind == AAPCommandKind::SetHeadTracking) {
+                std::call_once(headOnce, [&] { headSettlement.set_value(outcome.settlement); });
+            }
+        };
+        manager.SetCallbacks(std::move(callbacks));
+
+        QVERIFY(manager.SubmitCommand({AAPCommandKind::SetNoiseControl, 0x01}).accepted);
+        QVERIFY(transport->WaitForSendWaiter(std::chrono::seconds{1}));
+        QVERIFY(manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x01}).accepted);
+        QCOMPARE(manager._commandBroker->QueuedCount(), size_t{1});
+
+        std::vector<uint8_t> sensor(70, 0);
+        const std::array<uint8_t, 10> prefix{0x04, 0x00, 0x04, 0x00, 0x17,
+                                             0x00, 0x00, 0x00, 0x10, 0x00};
+        std::copy(prefix.begin(), prefix.end(), sensor.begin());
+        sensor[10] = 0x44;
+        manager.ProcessPacket(sensor);
+        QVERIFY(manager.IsHeadTrackingActive());
+
+        transport->SetBlockSend(false);
+        QVERIFY(transport->WaitForRecordCount(2, std::chrono::seconds{1}));
+        manager.ProcessPacket(sensor);
+        QVERIFY(headFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
+        QCOMPARE(headFuture.get(), AAPCommandSettlement::Confirmed);
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+
+        manager._connected = false;
+        manager._transport.store(nullptr);
+        manager._commandBroker->EndSession();
+    }
+
+    void LateHeadTrackingRecordDoesNotReviveStoppedStream()
+    {
+        using namespace Core::AAP;
+        Manager manager;
+        auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
+        QVERIFY(transport->Connect(1, {}));
+        manager._transport.store(transport);
+        manager._attempt = AAPAttempt{1, 41};
+        manager._connected = true;
+        manager._commandBroker->BeginSession(41);
+        manager._commandBroker->SetConfirmMode(
+            AAPCommandKind::SetHeadTracking, AAPConfirmMode::Unverifiable);
+
+        std::atomic<int> dataCallbacks{0};
+        std::atomic<int> settlements{0};
+        Callbacks callbacks;
+        callbacks.onHeadTrackingData = [&](const HeadTrackingData &, const AAPAttempt &) {
+            ++dataCallbacks;
+        };
+        callbacks.onCommandSettled = [&](const AAPCommandOutcome &, const AAPAttempt &) {
+            ++settlements;
+        };
+        manager.SetCallbacks(std::move(callbacks));
+
+        QVERIFY(manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x01}).accepted);
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        QTRY_COMPARE(settlements.load(), 1);
+        QVERIFY(manager.IsHeadTrackingActive());
+        QVERIFY(manager.SubmitCommand({AAPCommandKind::SetHeadTracking, 0x00}).accepted);
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
+        QTRY_COMPARE(settlements.load(), 2);
+        QVERIFY(!manager.IsHeadTrackingActive());
+        dataCallbacks = 0;
+        settlements = 0;
+
+        std::vector<uint8_t> sensor(70, 0);
+        const std::array<uint8_t, 10> prefix{0x04, 0x00, 0x04, 0x00, 0x17,
+                                             0x00, 0x00, 0x00, 0x10, 0x00};
+        std::copy(prefix.begin(), prefix.end(), sensor.begin());
+        sensor[10] = 0x44;
+        manager.ProcessPacket(sensor);
+
+        QVERIFY(!manager.IsHeadTrackingActive());
+        QCOMPARE(dataCallbacks.load(), 0);
+        QCOMPARE(settlements.load(), 0);
         manager._connected = false;
         manager._transport.store(nullptr);
         manager._commandBroker->EndSession();

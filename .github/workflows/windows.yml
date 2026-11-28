@@ -146,6 +146,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "Installer ordering fixtures failed with exit code $LASTEXITCODE."
           }
+          python Build/ReleaseAudit/test_audit_artifacts.py
+          if ($LASTEXITCODE -ne 0) {
+            throw "Artifact audit fixtures failed with exit code $LASTEXITCODE."
+          }
           $uiLog = Join-Path $env:RUNNER_TEMP 'UiRenderingTests.txt'
           $ui = Start-Process `
             -FilePath 'Build/Release/Binary/UiRenderingTests.exe' `
@@ -495,6 +499,16 @@ jobs:
             if ($LASTEXITCODE -ne 0) {
               throw "Authenticode verification failed for $($_.Name)."
             }
+          }
+
+      - name: Audit packaged release artifacts
+        timeout-minutes: 5
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python Build/ReleaseAudit/audit_artifacts.py dist $env:VERSION
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release artifact audit failed with exit code $LASTEXITCODE."
           }
 
       - name: Upload build artifacts

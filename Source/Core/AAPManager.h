@@ -40,6 +40,7 @@
 
 // Hardware-free suites that need the private session seam declared below.
 class AAPTransportTests;
+class AirPodsDomainTests;
 class UiRenderingTests;
 class AAPManagerWorkerTests;
 
@@ -237,6 +238,7 @@ private:
     // Hardware-free tests need to inject a transport and observe the validation
     // gate; neither behavior is reachable through the public connection API.
     friend class ::AAPTransportTests;
+    friend class ::AirPodsDomainTests;
     friend class ::UiRenderingTests;
     friend class ::AAPManagerWorkerTests;
 
@@ -335,6 +337,8 @@ private:
     std::function<void()> _publicSendBarrierForTest;
     std::function<void()> _afterCommandIdentityCheckForTest;
     std::function<void()> _beforeCommandSubmitLockForTest;
+    std::function<void()> _beforeAttemptNoiseControlLockForTest;
+    std::function<void(std::stop_token)> _beforeHandshakeDeadlineStopForTest;
     std::function<void()> _beforeStemReplayForTest;
     std::function<std::chrono::steady_clock::time_point()> _attNowForTest;
 
@@ -362,10 +366,14 @@ private:
         const std::vector<uint8_t> &packet, AAPAttempt attempt, const Callbacks &callbacks);
     void ReaderLoop(
         AAPAttempt attempt, std::shared_ptr<AAPTransport> transport, std::stop_token stopToken,
-        Callbacks callbacks);
+        Callbacks callbacks,
+        std::vector<std::vector<uint8_t>> pendingPackets = std::vector<std::vector<uint8_t>>{});
     bool InitializeConnection(
         const std::shared_ptr<AAPTransport> &transport, AAPAttempt attempt,
-        std::stop_token stopToken);
+        std::stop_token stopToken, std::vector<std::vector<uint8_t>> &pendingPackets);
+    bool WaitForHandshakeAck(
+        const std::shared_ptr<AAPTransport> &transport, AAPAttempt attempt,
+        std::stop_token stopToken, std::vector<std::vector<uint8_t>> &pendingPackets);
     bool WaitCancellable(std::chrono::milliseconds delay, std::stop_token callerStop);
     std::shared_ptr<AAPTransport>
     ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, ConnectFailure &failure);

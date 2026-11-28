@@ -500,6 +500,10 @@ private:
     EarDetectSensitivity _earDetectSensitivity{EarDetectSensitivity::Normal};
     std::atomic<bool> _conversationalAwarenessEnabled{false};
     std::atomic<uint8_t> _conversationalAwarenessVolumePercent{40};
+    mutable std::mutex _speakingVolumeMutex;
+    std::optional<AAP::AAPAttempt> _speakingAttenuationAttempt;
+    uint64_t _speakingAttenuationSerial{0};
+    std::function<bool(int)> _speakingVolumeWriterForTest;
     std::atomic<bool> _personalizedVolumeEnabled{false};
     std::atomic<bool> _loudSoundReductionEnabled{false};
     std::atomic<uint8_t> _ppeCapLevel{AAP::kPpeCapLevelDefault};
@@ -594,6 +598,14 @@ private:
     void OnAdaptiveNoiseLevelNotification(uint8_t level, AAP::AAPAttempt attempt);
     void OnAAPCommandSettled(const AAP::AAPCommandOutcome &outcome, AAP::AAPAttempt attempt);
     void OnSpeakingLevelChanged(AAP::SpeakingLevel level, AAP::AAPAttempt attempt);
+    bool CanApplySpeakingLevelVolume(AAP::AAPAttempt attempt) const;
+    bool ApplySpeakingVolume(int percent);
+    void RestoreSpeakingVolume(
+        std::optional<AAP::AAPAttempt> expectedAttempt = std::nullopt,
+        std::optional<uint64_t> expectedSerial = std::nullopt);
+    void
+    QueueSpeakingVolumeRestoration(std::optional<AAP::AAPAttempt> expectedAttempt = std::nullopt);
+    void OnSpeakingLevelRequested(int level, qulonglong address, qulonglong generation);
     void OnEarDetectionChanged(
         AAP::EarStatus primary, AAP::EarStatus secondary, AAP::AAPAttempt attempt,
         uint64_t resetGeneration);
@@ -648,6 +660,8 @@ Q_SIGNALS:
     // Device-reported state, not the saved combo selection. Zero/unknown means unavailable.
     void AapNoiseControlModeChangedSafely(int mode);
     void AapAdaptiveNoiseLevelChangedSafely(uint32_t level);
+    // Reader callbacks only queue this request; COM volume work runs on Manager's thread.
+    void SpeakingLevelRequestedSafely(int level, qulonglong address, qulonglong generation);
     // Blueprint 2.5. Both are emitted from AAP threads; the queued delivery Qt applies for a
     // GUI-thread receiver is what keeps the reader thread away from widgets.
     void HeadTrackingRecordSafely(const Core::AirPods::HeadTrackingEvent &record);

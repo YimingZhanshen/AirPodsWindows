@@ -208,6 +208,8 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         // attributed to the device that starts on this generation.
         _batterySnapshot.reset();
         _deviceInfo.reset();
+        _handshakeAckObserved = false;
+        _featureFlagsAckObserved = false;
 
         // A natural EOF intentionally leaves its reader joinable. Retire it before creating the
         // replacement so assignment can never destroy a live thread.
@@ -282,7 +284,8 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
                                                         : "L2CAP SEQPACKET link established");
     LOG(Info, "AAP: Transport connected; starting handshake");
 
-    const bool initialized = InitializeConnection(transport, attempt, stopToken);
+    std::vector<std::vector<uint8_t>> pendingPackets;
+    const bool initialized = InitializeConnection(transport, attempt, stopToken, pendingPackets);
     const bool connectionCancelled = cancelled();
     if (!initialized || connectionCancelled) {
         transport->Close();
@@ -324,9 +327,10 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         }
         else {
             _readerStop = std::move(readerStop);
-            _readerThread =
-                std::jthread{[attempt, transport, callbacks, token = _readerStop.get_token(),
-                              this] { ReaderLoop(attempt, transport, token, callbacks); }};
+            _readerThread = std::jthread{
+                [attempt, transport, callbacks, pendingPackets = std::move(pendingPackets),
+                 token = _readerStop.get_token(),
+                 this] { ReaderLoop(attempt, transport, token, callbacks, pendingPackets); }};
         }
     }
     if (cancelledAfterOpen) {
@@ -655,7 +659,20 @@ bool Manager::SetNoiseControlMode(
     if (stopToken.stop_requested() || _cancelledGeneration.load() == attempt.generation) {
         return false;
     }
-    return SendPacket(attempt, Packets::BuildNoiseControlPacket(mode), stopToken);
+    if (_beforeAttemptNoiseControlLockForTest) {
+        _beforeAttemptNoiseControlLockForTest();
+    }
+    std::lock_guard lock{_mutex};
+    if (stopToken.stop_requested() || _cancelledGeneration.load() == attempt.generation ||
+        !IsCurrentAttemptLocked(attempt))
+    {
+        return false;
+    }
+    return _commandBroker
+        ->Submit(
+            {AAPCommandKind::SetNoiseControl, static_cast<uint32_t>(Helper::ToUnderlying(mode))},
+            stopToken)
+        .accepted;
 }
 
 std::optional<NoiseControlMode> Manager::GetNoiseControlMode() const
@@ -1855,10 +1872,20 @@ void Manager::ProcessPacket(
     if (IsHeadTrackingStreamRecord(packet)) {
         auto trackingData = ParseHeadTrackingData(packet);
         if (trackingData.has_value()) {
-            // A valid current-generation record is proof of a live stream even if it arrived just
-            // after the broker's confirmation deadline.
-            _headTrackingActive.store(true);
-            RouteCommandEcho({AAPCommandKind::SetHeadTracking, 0x01}, attempt);
+            {
+                std::lock_guard lock{_mutex};
+                if (!IsCurrentAttemptLocked(attempt) ||
+                    _commandBroker->Desired(AAPCommandKind::SetHeadTracking) !=
+                        static_cast<uint32_t>(0x01))
+                {
+                    return;
+                }
+                // Every accepted desired-start record is evidence. The first may arrive while
+                // Start is still queued behind another broker flight; later records must keep
+                // confirming it until the queued Start becomes active.
+                _headTrackingActive.store(true);
+                _commandBroker->OnEcho({AAPCommandKind::SetHeadTracking, 0x01}, attempt.generation);
+            }
             if (callbacks.onHeadTrackingData) {
                 callbacks.onHeadTrackingData(trackingData.value(), attempt);
             }
@@ -1872,8 +1899,15 @@ void Manager::ProcessPacket(
 
 void Manager::ReaderLoop(
     AAPAttempt attempt, std::shared_ptr<AAPTransport> transport, std::stop_token stopToken,
-    Callbacks callbacks)
+    Callbacks callbacks, std::vector<std::vector<uint8_t>> pendingPackets)
 {
+    for (const auto &packet : pendingPackets) {
+        if (stopToken.stop_requested()) {
+            return;
+        }
+        ProcessPacket(packet, attempt, callbacks);
+    }
+
     while (transport && !stopToken.stop_requested()) {
         auto packet = transport->Receive(stopToken);
         if (!packet.has_value()) {
@@ -1958,9 +1992,78 @@ bool Manager::WaitCancellable(std::chrono::milliseconds delay, std::stop_token c
 
 // Protocol timing constants
 constexpr auto kPacketProcessingDelay = std::chrono::milliseconds(100);
+constexpr size_t kMaxPendingInitializationPackets = 64;
+
+bool Manager::WaitForHandshakeAck(
+    const std::shared_ptr<AAPTransport> &transport, AAPAttempt attempt, std::stop_token stopToken,
+    std::vector<std::vector<uint8_t>> &pendingPackets)
+{
+    if (stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
+        return false;
+    }
+
+    std::stop_source receiveStop;
+    std::stop_callback callerStopCallback{
+        stopToken, [&receiveStop] noexcept { receiveStop.request_stop(); }};
+    std::stop_callback managerStopCallback{
+        _connectStop.get_token(), [&receiveStop] noexcept { receiveStop.request_stop(); }};
+    const auto deadlineAt = std::chrono::steady_clock::now() + kPacketProcessingDelay;
+    std::jthread deadline{[this, &receiveStop](std::stop_token timerStop) {
+        if (WaitCancellable(kPacketProcessingDelay, timerStop)) {
+            if (_beforeHandshakeDeadlineStopForTest) {
+                _beforeHandshakeDeadlineStopForTest(timerStop);
+            }
+            std::lock_guard lock{_mutex};
+            receiveStop.request_stop();
+        }
+    }};
+
+    while (!receiveStop.stop_requested()) {
+        auto packet = transport->Receive(receiveStop.get_token());
+        if (!packet.has_value() || stopToken.stop_requested() ||
+            _connectStop.get_token().stop_requested() || receiveStop.stop_requested())
+        {
+            break;
+        }
+        if (IsHandshakeAck(*packet) &&
+            AAPMessage::Validate(*packet) == AAPMessage::ValidationResult::Valid)
+        {
+            bool accepted = false;
+            {
+                std::lock_guard lock{_mutex};
+                if (std::chrono::steady_clock::now() < deadlineAt &&
+                    !receiveStop.stop_requested() && !stopToken.stop_requested() &&
+                    !_connectStop.get_token().stop_requested() && _connecting &&
+                    _attempt.address == attempt.address &&
+                    _attempt.generation == attempt.generation)
+                {
+                    _handshakeAckObserved = true;
+                    accepted = true;
+                }
+            }
+            if (accepted) {
+                LOG(Info, "AAP: Handshake acknowledged by the device");
+                Diagnostics::Recorder::Instance().RecordForAttempt(
+                    attempt.generation, Diagnostics::Step::Handshake, true, "device ACK observed");
+            }
+            break;
+        }
+        if (pendingPackets.size() >= kMaxPendingInitializationPackets) {
+            LOG(Warn, "AAP: Too many records arrived before the handshake ACK");
+            break;
+        }
+        pendingPackets.push_back(std::move(*packet));
+    }
+
+    deadline.request_stop();
+    deadline.join();
+    std::lock_guard lock{_mutex};
+    return _handshakeAckObserved;
+}
 
 bool Manager::InitializeConnection(
-    const std::shared_ptr<AAPTransport> &transport, AAPAttempt attempt, std::stop_token stopToken)
+    const std::shared_ptr<AAPTransport> &transport, AAPAttempt attempt, std::stop_token stopToken,
+    std::vector<std::vector<uint8_t>> &pendingPackets)
 {
     if (stopToken.stop_requested() || _connectStop.get_token().stop_requested()) {
         return false;
@@ -1978,7 +2081,10 @@ bool Manager::InitializeConnection(
     Diagnostics::Recorder::Instance().RecordPendingForAttempt(
         attempt.generation, Diagnostics::Step::Handshake, "send accepted, ACK unconfirmed");
 
-    if (!WaitCancellable(kPacketProcessingDelay, stopToken)) {
+    if (!WaitForHandshakeAck(transport, attempt, stopToken, pendingPackets)) {
+        LOG(Error, "AAP: Handshake was not acknowledged by the device");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::Handshake, false, "device ACK not observed");
         return false;
     }
 
@@ -2234,13 +2340,24 @@ bool Manager::SendPacket(
 }
 void Manager::ProcessPacket(const std::vector<uint8_t> &) {}
 void Manager::ProcessPacket(const std::vector<uint8_t> &, AAPAttempt, const Callbacks &) {}
-void Manager::ReaderLoop(AAPAttempt, std::shared_ptr<AAPTransport>, std::stop_token, Callbacks) {}
+void Manager::ReaderLoop(
+    AAPAttempt, std::shared_ptr<AAPTransport>, std::stop_token, Callbacks,
+    std::vector<std::vector<uint8_t>>)
+{
+}
+bool Manager::WaitForHandshakeAck(
+    const std::shared_ptr<AAPTransport> &, AAPAttempt, std::stop_token,
+    std::vector<std::vector<uint8_t>> &)
+{
+    return false;
+}
 bool Manager::WaitCancellable(std::chrono::milliseconds, std::stop_token)
 {
     return false;
 }
 bool Manager::InitializeConnection(
-    const std::shared_ptr<AAPTransport> &, AAPAttempt, std::stop_token)
+    const std::shared_ptr<AAPTransport> &, AAPAttempt, std::stop_token,
+    std::vector<std::vector<uint8_t>> &)
 {
     return false;
 }

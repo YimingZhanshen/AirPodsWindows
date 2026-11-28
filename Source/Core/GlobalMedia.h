@@ -45,9 +45,9 @@ inline bool Execute(Details::MediaAction action, int volumeStepPercent)
 }
 #endif
 
-inline void SetVolume(int percent)
+inline bool SetVolume(int percent)
 {
-    Controller::GetInstance().SetVolume(percent);
+    return Controller::GetInstance().SetVolume(percent);
 }
 
 inline std::optional<float> GetVolume()

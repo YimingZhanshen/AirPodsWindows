@@ -80,7 +80,9 @@ public:
     // Stem gesture media operations (blueprint 2.4). Returns false when nothing accepted the
     // command - no media session, or the audio endpoint refused - and the reason is logged.
     bool Execute(Details::MediaAction action, int volumeStepPercent) override;
-    void SetVolume(int percent);
+    // False reports a failed endpoint operation; an existing attenuation session is retained for
+    // retry.
+    bool SetVolume(int percent);
     std::optional<float> GetVolume() const;
     void ClearVolumeReductionState(); // Explicitly clear saved volume state
 

@@ -422,6 +422,10 @@ Manager::Manager(QObject *parent) : QObject{parent}
     _earDebounceTimer.setTimerType(Qt::PreciseTimer);
     connect(&_earDebounceTimer, &QTimer::timeout, this, &Manager::ReevaluateEarDetection);
 
+    connect(
+        this, &Manager::SpeakingLevelRequestedSafely, this, &Manager::OnSpeakingLevelRequested,
+        Qt::QueuedConnection);
+
     _stateMgr.SetOnDiscardState([this] {
         _lidTracker.OnLost(Details::LidTracker::Clock::now());
         // The BLE baseline is gone; battery events must not republish a stale state.
@@ -559,6 +563,7 @@ Manager::~Manager()
     }
 
     DisconnectAAP();
+    RestoreSpeakingVolume();
     _aapMgr.ShutdownCommands();
     StopScanner();
 
@@ -991,6 +996,7 @@ void Manager::DisconnectAAP()
     // to unwind; this is also the cancellation path used during shutdown.
     _aapMgr.CancelConnect();
     _aapMgr.Disconnect();
+    QueueSpeakingVolumeRestoration();
 
     // The reader may push one last record while it is being joined. Clear again
     // after teardown so no late callback can repopulate the GUI-facing snapshot.
@@ -1578,14 +1584,18 @@ bool Manager::ToggleNoiseControl(const AAP::StemActionRequest &request)
         return false;
     }
 
-    const auto current = static_cast<AAP::NoiseControlMode>(_currentNoiseControlMode.load());
+    auto current = static_cast<AAP::NoiseControlMode>(_currentNoiseControlMode.load());
+    if (const auto desired = _aapMgr.DesiredCommand(AAP::AAPCommandKind::SetNoiseControl);
+        desired.has_value() && *desired >= 0x01 && *desired <= 0x04)
+    {
+        current = static_cast<AAP::NoiseControlMode>(*desired);
+    }
     const auto next = current == AAP::NoiseControlMode::NoiseCancellation
                           ? AAP::NoiseControlMode::Off
                           : AAP::NoiseControlMode::NoiseCancellation;
     if (!_aapMgr.SetNoiseControlMode(next, {request.address, request.generation})) {
         return false;
     }
-    _currentNoiseControlMode = static_cast<int>(next);
     return true;
 }
 
@@ -1674,6 +1684,9 @@ void Manager::OnConversationalAwarenessChanged(bool enable)
     _aapMgr.SubmitCommand(
         {AAP::AAPCommandKind::SetConversationalAwareness,
          static_cast<uint32_t>(enable ? 0x01 : 0x02)});
+    if (!enable) {
+        QueueSpeakingVolumeRestoration();
+    }
 }
 
 void Manager::OnConversationalAwarenessVolumePercentChanged(uint8_t percent)
@@ -1724,6 +1737,9 @@ void Manager::OnNoiseControlModeChanged(AAP::NoiseControlMode mode)
     _currentNoiseControlMode = static_cast<int>(mode);
     _aapMgr.SubmitCommand(
         {AAP::AAPCommandKind::SetNoiseControl, static_cast<uint32_t>(Helper::ToUnderlying(mode))});
+    if (mode == AAP::NoiseControlMode::Transparency) {
+        QueueSpeakingVolumeRestoration();
+    }
 }
 
 // AAP callbacks
@@ -1747,6 +1763,9 @@ void Manager::OnNoiseControlModeNotification(AAP::NoiseControlMode mode, AAP::AA
         attempt.generation, static_cast<int>(AAP::AAPCommandKind::SetNoiseControl),
         static_cast<uint32_t>(Helper::ToUnderlying(mode)));
     emit AapNoiseControlModeChangedSafely(static_cast<int>(mode));
+    if (mode == AAP::NoiseControlMode::Transparency) {
+        QueueSpeakingVolumeRestoration();
+    }
 }
 
 void Manager::OnAdaptiveNoiseLevelNotification(uint8_t level, AAP::AAPAttempt attempt)
@@ -2088,8 +2107,6 @@ void Manager::OnHeadTrackingData(AAP::HeadTrackingData data, AAP::AAPAttempt att
     LOG(Trace, "Head tracking: o1={}, o2={}, o3={}, hAccel={}, vAccel={}", data.orientation1,
         data.orientation2, data.orientation3, data.horizontalAcceleration,
         data.verticalAcceleration);
-    emit AapCommandStateSafely(
-        attempt.generation, static_cast<int>(AAP::AAPCommandKind::SetHeadTracking), 0x01);
     emit HeadTrackingRecordSafely(event);
 }
 
@@ -2130,48 +2147,127 @@ void Manager::OnStemPress(AAP::StemEvent event, AAP::AAPAttempt attempt)
 // not literally 100%
 constexpr int kFullVolumePercent = 100; // Signal value to restore to original volume
 
-void Manager::OnSpeakingLevelChanged(AAP::SpeakingLevel level, AAP::AAPAttempt attempt)
+bool Manager::CanApplySpeakingLevelVolume(AAP::AAPAttempt attempt) const
 {
-    if (!IsCurrentAAPAttempt(attempt)) {
-        return;
-    }
-    if (!_conversationalAwarenessEnabled) {
-        return;
+    if (!IsCurrentAAPAttempt(attempt) || !_conversationalAwarenessEnabled) {
+        return false;
     }
 
-    // Disable conversational awareness in transparency mode to avoid volume restoration bugs
-    // The AAP firmware in transparency mode doesn't reliably send restoration events
+    // Transparency firmware may omit restoration events, so volume work is unsafe there.
     if (auto mode = _currentNoiseControlMode.load();
         mode >= 0 &&
         static_cast<AAP::NoiseControlMode>(mode) == AAP::NoiseControlMode::Transparency)
     {
         LOG(Info, "Conversational awareness disabled in transparency mode to avoid volume bugs");
+        return false;
+    }
+    return true;
+}
+
+void Manager::OnSpeakingLevelChanged(AAP::SpeakingLevel level, AAP::AAPAttempt attempt)
+{
+    if (!CanApplySpeakingLevelVolume(attempt)) {
+        return;
+    }
+    emit SpeakingLevelRequestedSafely(
+        static_cast<int>(level), static_cast<qulonglong>(attempt.address),
+        static_cast<qulonglong>(attempt.generation));
+}
+
+bool Manager::ApplySpeakingVolume(int percent)
+{
+    if (_speakingVolumeWriterForTest) {
+        return _speakingVolumeWriterForTest(percent);
+    }
+    return Core::GlobalMedia::SetVolume(percent);
+}
+
+void Manager::RestoreSpeakingVolume(
+    std::optional<AAP::AAPAttempt> expectedAttempt, std::optional<uint64_t> expectedSerial)
+{
+    std::lock_guard lock{_speakingVolumeMutex};
+    if (!_speakingAttenuationAttempt ||
+        (expectedAttempt &&
+         (expectedAttempt->address != _speakingAttenuationAttempt->address ||
+          expectedAttempt->generation != _speakingAttenuationAttempt->generation)) ||
+        (expectedSerial && *expectedSerial != _speakingAttenuationSerial))
+    {
+        return;
+    }
+    LOG(Info, "User stopped speaking - restoring media volume");
+    if (ApplySpeakingVolume(kFullVolumePercent)) {
+        _speakingAttenuationAttempt.reset();
+    }
+}
+
+void Manager::QueueSpeakingVolumeRestoration(std::optional<AAP::AAPAttempt> expectedAttempt)
+{
+    std::optional<AAP::AAPAttempt> attempt;
+    std::optional<uint64_t> serial;
+    {
+        std::lock_guard lock{_speakingVolumeMutex};
+        if (!_speakingAttenuationAttempt ||
+            (expectedAttempt &&
+             (expectedAttempt->address != _speakingAttenuationAttempt->address ||
+              expectedAttempt->generation != _speakingAttenuationAttempt->generation)))
+        {
+            return;
+        }
+        attempt = _speakingAttenuationAttempt;
+        serial = _speakingAttenuationSerial;
+    }
+    if (attempt) {
+        QMetaObject::invokeMethod(
+            this, [this, attempt, serial] { RestoreSpeakingVolume(attempt, serial); },
+            Qt::QueuedConnection);
+    }
+}
+
+void Manager::OnSpeakingLevelRequested(int level, qulonglong address, qulonglong generation)
+{
+    const AAP::AAPAttempt attempt{
+        static_cast<uint64_t>(address), static_cast<uint64_t>(generation)};
+    const auto speakingLevel = static_cast<AAP::SpeakingLevel>(level);
+    const bool restores =
+        speakingLevel == AAP::SpeakingLevel::StoppedSpeaking ||
+        speakingLevel == AAP::SpeakingLevel::NormalVolume ||
+        speakingLevel == AAP::SpeakingLevel::NormalVolume2 ||
+        (static_cast<uint8_t>(level) >= 0x04 && static_cast<uint8_t>(level) <= 0x07);
+    if (restores) {
+        // Restoration belongs to the attenuation session, not the policy that started it. A
+        // queued stop must still run after awareness, Transparency, or the AAP session changes.
+        RestoreSpeakingVolume(attempt);
+        return;
+    }
+    if (speakingLevel != AAP::SpeakingLevel::StartedSpeaking_GreatlyReduce &&
+        speakingLevel != AAP::SpeakingLevel::StartedSpeaking_GreatlyReduce2)
+    {
         return;
     }
 
-    switch (level) {
-    case AAP::SpeakingLevel::StartedSpeaking_GreatlyReduce:
-    case AAP::SpeakingLevel::StartedSpeaking_GreatlyReduce2:
-        LOG(Info, "User started speaking - reducing media volume to {}%",
-            _conversationalAwarenessVolumePercent);
-        Core::GlobalMedia::SetVolume(_conversationalAwarenessVolumePercent);
-        break;
-
-    case AAP::SpeakingLevel::StoppedSpeaking:
-    case AAP::SpeakingLevel::NormalVolume:
-    case AAP::SpeakingLevel::NormalVolume2:
-        LOG(Info, "User stopped speaking - restoring media volume");
-        Core::GlobalMedia::SetVolume(kFullVolumePercent);
-        break;
-
-    default:
-        // Intermediate levels (0x04-0x07) - restore volume to be safe
-        // This ensures volume is restored even if final event is missed
-        if (static_cast<uint8_t>(level) >= 0x04 && static_cast<uint8_t>(level) <= 0x07) {
-            LOG(Info, "Intermediate speaking level detected - restoring media volume");
-            Core::GlobalMedia::SetVolume(kFullVolumePercent);
+    std::lock_guard lock{_speakingVolumeMutex};
+    if (!CanApplySpeakingLevelVolume(attempt)) {
+        return;
+    }
+    if (_speakingAttenuationAttempt &&
+        (_speakingAttenuationAttempt->address != attempt.address ||
+         _speakingAttenuationAttempt->generation != attempt.generation))
+    {
+        if (!ApplySpeakingVolume(kFullVolumePercent)) {
+            return;
         }
-        break;
+        _speakingAttenuationAttempt.reset();
+    }
+    const int reductionPercent = _conversationalAwarenessVolumePercent;
+    LOG(Info, "User started speaking - reducing media volume to {}%", reductionPercent);
+    if (ApplySpeakingVolume(reductionPercent)) {
+        if (reductionPercent == kFullVolumePercent) {
+            _speakingAttenuationAttempt.reset();
+        }
+        else {
+            ++_speakingAttenuationSerial;
+            _speakingAttenuationAttempt = attempt;
+        }
     }
 }
 
@@ -2240,6 +2336,7 @@ void Manager::OnAAPDisconnected(AAP::AAPAttempt attempt)
     _currentNoiseControlMode = -1;
     emit AapNoiseControlModeChangedSafely(0);
 
+    QueueSpeakingVolumeRestoration(attempt);
     if (currentAttempt) {
         // The session is over: drop the overlay and republish the BLE-only state.
         {

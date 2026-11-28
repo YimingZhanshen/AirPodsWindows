@@ -16,6 +16,12 @@ CMakeSettings.json
 
 # Build
 Build/
+!Build/
+Build/*
+!Build/ReleaseAudit/
+Build/ReleaseAudit/*
+!Build/ReleaseAudit/audit_artifacts.py
+!Build/ReleaseAudit/test_audit_artifacts.py
 
 # Test files
 TestBuild/

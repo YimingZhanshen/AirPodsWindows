@@ -670,7 +670,7 @@ bool Controller::SetEndpointVolume(float percent)
     }
 }
 
-void Controller::SetVolume(int percent)
+bool Controller::SetVolume(int percent)
 {
     std::lock_guard<std::mutex> lock{_mutex};
     percent = std::clamp(percent, 0, 100);
@@ -682,25 +682,30 @@ void Controller::SetVolume(int percent)
             // Duplicate or late restore after a manual stem adjustment: never force the endpoint
             // to 100% merely because an old speaking session has already ended.
             LOG(Trace, "SetVolume: Ignore restore without an active attenuation session");
-            return;
+            return true;
         }
         if (!SetEndpointVolume(*target)) {
-            return;
+            return false;
         }
         _volumeReduction.End();
         LOG(Trace, "SetVolume: Restored to {}% and ended attenuation session", *target);
-        return;
+        return true;
     }
 
-    if (!_volumeReduction.IsActive() && !_volumeReduction.Begin(GetVolume())) {
+    const bool started = !_volumeReduction.IsActive();
+    if (started && !_volumeReduction.Begin(GetVolume())) {
         LOG(Warn, "SetVolume: Cannot start attenuation without a valid endpoint volume read");
-        return;
+        return false;
     }
     const float target = _volumeReduction.ReductionTarget(percent);
     if (!SetEndpointVolume(target)) {
-        return;
+        if (started) {
+            _volumeReduction.End();
+        }
+        return false;
     }
     LOG(Trace, "SetVolume: Applied {}% attenuation relative to the session baseline", percent);
+    return true;
 }
 
 std::optional<float> Controller::GetVolume() const

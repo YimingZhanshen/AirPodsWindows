@@ -40,6 +40,7 @@
 #include <utility>
 #include <vector>
 
+#include "Source/Core/AAP.h"
 #include "Source/Core/AAPCommandBroker.h"
 #include "Source/Core/AAPConnectionStateMachine.h"
 #include "Source/Core/AAPTransport.h"
@@ -393,6 +394,11 @@ public:
                 return false;
             }
             state->sentRecords.push_back(std::vector<uint8_t>(data.begin(), data.end()));
+            // The scripted peer acknowledges a successful handshake write so Manager tests
+            // exercise the real pre-session receive gate instead of bypassing it with a flag.
+            if (std::vector<uint8_t>(data.begin(), data.end()) == Core::AAP::Packets::Handshake) {
+                state->records.push_back({0x01, 0x00, 0x04, 0x00});
+            }
             state->condition.notify_all();
         }
         return true;
