@@ -255,20 +255,20 @@ class LidTracker
 public:
     using Clock = std::chrono::steady_clock;
     using Timestamp = std::chrono::time_point<Clock>;
+    enum class Lid : uint8_t { Opened, Closed, Unobservable };
 
-    enum class Lid : uint8_t {
-        Opened,
-        Closed,
-        Unobservable, // At least one pod is out of the case.
-    };
-
-    // How long the last seen lid state is trusted after the device was lost.
     static constexpr std::chrono::seconds kMemory{60};
+    // Blueprint 2.6 (D6): an opened lid pops the window at most once per cooldown window, so
+    // rapid open/close cycling cannot bombard the desktop. Closes are reported regardless.
+    static constexpr std::chrono::seconds kCooldown{60};
 
-    // Returns true when the lid was seen opening, false when it was seen closing, and nothing
-    // otherwise. `oldLid` is empty for the first state after the device was lost or bound.
-    std::optional<bool> Update(std::optional<Lid> oldLid, Lid newLid, Timestamp now);
+    std::optional<bool>
+    Update(std::optional<Lid> oldLid, Lid newLid, Timestamp now, bool popupAllowed = true);
     void OnLost(Timestamp now);
+    // Drops learned lid state while retaining popup-rate limits. Used when a link briefly drops
+    // and the same device may reconnect.
+    void ForgetDevice();
+    // Drops all lid memory for an explicit unbind or rebind to another device.
     void Reset();
 
 private:
@@ -489,8 +489,6 @@ private:
     uint64_t _earDeadlineEpoch{1};
     std::optional<AAP::AAPAttempt> _earDeadlineSession;
     Details::StateManager _stateMgr;
-    Details::LidTracker _lidTracker;
-    Details::EarDetectionTracker _earDetection;
     std::optional<Bluetooth::Device> _boundDevice;
     std::optional<Model> _modelOverride;
     QString _deviceName;

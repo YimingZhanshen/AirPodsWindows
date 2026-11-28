@@ -67,12 +67,6 @@ Advertisement::Advertisement(const Bluetooth::AdvertisementWatcher::ReceivedData
     _state.pods.left.isInCase = inCase(_state.pods.left);
     _state.pods.right.isInCase = inCase(_state.pods.right);
 
-    const auto inCase = [&](const PodState &pod) {
-        return _state.caseBox.isBothPodsInCase || (pod.isCharging && !pod.isInEar);
-    };
-    _state.pods.left.isInCase = inCase(_state.pods.left);
-    _state.pods.right.isInCase = inCase(_state.pods.right);
-
     if (_state.pods.left.battery.Available()) {
         _state.pods.left.battery = _state.pods.left.battery.Value() * 10;
     }
