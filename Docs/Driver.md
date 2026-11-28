@@ -153,7 +153,7 @@ irm "https://magicpods.app/utils/magicaap-community-v1.ps1" | iex
 | 状态卡显示「未安装」 | 驱动未安装 | 按[路径 A](#3-路径-a官方未签名版长期有效代价高)或[路径 B](#4-路径-b社区签名版便捷有时效风险)之一安装 |
 | 已安装但无法加载（设备管理器报代码 52 或类似签名错误） | 2026-04 Windows 安全更新引入的驱动策略问题 | 管理员 PowerShell 运行 `CiTool.exe --remove-policy "{8F9CB695-5D48-48D6-A329-7202B44607E3}"`，并保持该策略禁用 |
 | 驱动在但应用显示「已连接（其他通道）」 | 驱动被禁用或相关服务未启动 | 打开设备管理器，检查 MagicAAP 设备状态（是否被禁用、是否有错误代码），必要时启用设备或重启服务 |
-| ANC 菜单灰色 / 不可用 | 驱动未就绪，或耳机不支持 ANC | 先确认驱动状态卡；若驱动正常，则属机型限制——仅 AirPods Pro / AirPods Max / AirPods 4（ANC 版）支持 ANC |
+| ANC 菜单灰色 / 不可用 | 驱动未就绪，或耳机不支持 ANC | 先确认驱动状态卡；若驱动正常，则属机型限制——支持 ANC 的机型为 AirPods Pro（各代）、AirPods Max（Lightning 与 USB-C）、AirPods 4（ANC 版）、AirPods 5（含无线充电盒版） |
 
 补充检查顺序：
 

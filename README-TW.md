@@ -27,7 +27,7 @@
 > **這是 Fork，不是原專案 AirPodsDesktop。**
 > AirPodsWindows 完整繼承上游功能，並加上原專案沒有的部分：透過 [MagicAAP 驅動程式](https://magicpods.app/magicaap/)
 > 實作的 **Windows 平台完整 ANC 控制** —— 降噪模式切換、對話感知（含說話音量降低滑桿）、個人化音量、
-> 大聲降低、自適應通透等級，以及託降噪選單。
+> 大聲降低、聽力保護上限、自適應降噪強度，以及系統匣降噪選單。
 > 想要原版？→ [SpriteOvO/AirPodsDesktop](https://github.com/SpriteOvO/AirPodsDesktop)
 
 ## 🆚 AirPodsWindows 與 AirPodsDesktop 的差異
@@ -37,8 +37,8 @@
 | 電池 / 入耳偵測 / 彈窗動畫 / 淺色深色主題 | ✅ | ✅ |
 | **Windows 降噪控制** —— 關閉 / 降噪 / 通透 / 自適應 | ❌ | ✅（需 MagicAAP 驅動程式） |
 | 對話感知 **+ 說話音量降低滑桿** | ❌ | ✅ |
-| 個人化音量 · 大聲降低 · 自適應通透等級 | ❌ | ✅ |
-| 託降噪選單 | ❌ | ✅ |
+| 個人化音量 · 大聲降低 · 聽力保護上限 · 自適應降噪強度 | ❌ | ✅ |
+| 系統匣降噪選單 | ❌ | ✅ |
 | 發布與程式內更新指向 | `SpriteOvO/AirPodsDesktop` | **`YimingZhanshen/AirPodsWindows`** |
 | 本建置的 Issue 追蹤 | 上游倉庫 | 本倉庫 |
 | 技術基線 | 0.6.1 起 Qt 6.8.3、僅 x64 | 與上游保持同步 |
@@ -66,14 +66,16 @@
 * 🔊 個人化音量 - 根據環境和聆聽習慣自動調整音量。
 * 👂 入耳偵測狀態 - 即時偵測左右耳機佩戴狀態。
 * 🔇 大聲降低 - 降低過大的聲音以保護聽力。
-* 📊 自適應通透等級 - 精細控制環境聲音透過程度（0-50）。
+* 📊 聽力保護上限 - 限制外界聲音的最大響度，用於聽力保護（0-100）。
+* 🎚️ 自適應降噪強度 - 調整自適應模式對環境噪音的過濾程度（0-100），僅在裝置回報自適應模式時可用。
 
 ## 💻 系統需求
 
 正式版本支援 Windows 10 1809 以上或 Windows 11 x64，不支援 32 位元 Windows 與 ARM64。
 現有 Qt 5／Win32 用戶可直接使用程式內更新器遷移至 Qt 6／x64，既有使用者設定會保留。
 
-ANC 控制另外需要 [MagicAAP 驅動程式](https://magicpods.app/magicaap/)，且僅適用於 AirPods Pro / Max / AirPods 4（ANC）。
+ANC 控制另外需要 [MagicAAP 驅動程式](https://magicpods.app/magicaap/)，且僅適用於 AirPods Pro（各代）、
+AirPods Max（Lightning 與 USB-C）、AirPods 4（ANC）以及 AirPods 5（含無線充電盒版）。
 
 ## 📦 安裝
 

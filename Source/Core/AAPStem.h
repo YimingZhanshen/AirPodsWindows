@@ -171,7 +171,7 @@ private:
 uint8_t StemConfigMask(const StemActionTable &actions) noexcept;
 
 namespace Packets {
-// Control command 0x0039, Raw Gestures config. The four payload bytes are mask, zero, zero, zero.
+// Raw Gestures config: id 0x39 in the 0x0009 control envelope; payload is mask, 0, 0, 0.
 std::vector<uint8_t> BuildStemConfigPacket(uint8_t mask);
 } // namespace Packets
 

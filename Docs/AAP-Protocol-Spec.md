@@ -136,6 +136,7 @@ Stop（28B）：`04 00 04 00 17 00 | 00 00 10 00 11 00 08 7E 10 02 42 0B 08 4E 1
 | 0x33 | Hearing Assist | `01` 开、`02` 关 | `control_commands.md:180-182`；`airpods_packets.h:100-108` |
 | 0x37 | PPE Toggle | `01` 开、`02` 关（文档未给值） | `control_commands.md:196-197`；`HearingProtectionScreen.kt:102-115` |
 | 0x38 | PPE Cap Level | 单字节，值域文档未给出（demo `52`） | `control_commands.md:199-200` |
+| 0x39 | Raw Gestures Config（杆按键订阅） | d1=mask：`01` 单击、`02` 双击、`04` 三击、`08` 长按（`0F`=全部）；d2、d3d3' 恒 `00`。**双耳共用一个 mask**，侧别只出现在 §6 的 `0x0019` 事件字节里 | 本仓库 `AAPStem.h:119-125`、`AAPStem.cpp:63-87` |
 
 **分歧/风险**：① 0x1F 文档 1 字节、Android 实发 2 字节（第二字节恒 `0x50`，含义未知）——照抄两字节；② 0x40 仅文档；另有 ATT 版盒提示音开关 `12 3A 00 01 00 08 [setting]`，`00`=On、`01`=Off（**取值反向**，`AAP Definitions.md:218-231`），与 0x31 的关系文档未给出；③ 0x30/0x38 值域文档未给出。
 
@@ -267,6 +268,7 @@ BLE id 位置：manufacturer data(0x004C) 的 `data[3]<<8|data[4]`（`BLEManager
 | Phone::NOTIFICATION / CONNECTED / DISCONNECTED | `00 04 00 01` / `00 01 00 01` / `00 01 00 00` |
 | Phone::STATUS_REQUEST / DISCONNECT_REQUEST | `00 02 00 03` / `00 02 00 00` |
 | AdaptiveNoise::HEADER / getPacket(level) | `04 00 04 00 09 00 2E` / `HEADER+[level]+00 00 00` |
+| StemConfig::getPacket(mask) | `04 00 04 00 09 00 39 [mask] 00 00 00`（11B，fork 新增，`AAPStem.cpp:83-87`） |
 | Rename::getPacket(name) | `04 00 04 00 1A 00 01 [len] 00 [name]` |
 | MagicPairing::REQUEST_MAGIC_CLOUD_KEYS | `04 00 04 00 30 00 05 00`（8B） |
 | MagicPairing::MAGIC_CLOUD_KEYS_HEADER | `04 00 04 00 31 00 02`（7B）；响应≥47B：`…|01 00 10 xx [16B IRK]|04 00 10 xx [16B EncKey]`（len 2B 大端+1 保留） |

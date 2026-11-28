@@ -50,8 +50,9 @@ Confirm that the workflow completed successfully, then download both installer a
 that their SHA-256 values match:
 
 ```powershell
-$win64Hash = (Get-FileHash .\AirPodsDesktop-0.6.0-win64.exe -Algorithm SHA256).Hash
-$bridgeHash = (Get-FileHash .\AirPodsDesktop-0.6.0-win32-bridge.exe -Algorithm SHA256).Hash
+$version = '1.4.0'
+$win64Hash = (Get-FileHash ".\AirPodsWindows-$version-win64.exe" -Algorithm SHA256).Hash
+$bridgeHash = (Get-FileHash ".\AirPodsWindows-$version-win32-bridge.exe" -Algorithm SHA256).Hash
 if ($win64Hash -ne $bridgeHash) { throw 'Installer hashes do not match.' }
 ```
 
@@ -66,7 +67,7 @@ NSIS payload, whether signed or unsigned. Test an upgrade from the latest public
 before publishing.
 
 Also run the new installer while the previous release is still open in the tray. Setup must offer
-to close it, replace `AirPodsDesktop.exe`, and launch the new version from its finish page. A copy
+to close it, replace `AirPodsWindows.exe`, and launch the new version from its finish page. A copy
 left running locks the old files and keeps the instance mutex, so without this step users keep the
 old build after an apparently successful install.
 

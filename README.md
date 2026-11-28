@@ -28,7 +28,8 @@
 > AirPodsWindows keeps everything the upstream project offers and adds the part upstream does not have:
 > **full ANC control on Windows** through the [MagicAAP driver](https://magicpods.app/magicaap/) —
 > noise-control modes, conversational awareness with a speaking-volume slider, personalized volume,
-> loud-sound reduction, adaptive transparency, and a tray noise-control menu.
+> loud-sound reduction, a hearing protection cap, adaptive noise strength, and a tray noise-control
+> menu.
 > Looking for the original project? → [SpriteOvO/AirPodsDesktop](https://github.com/SpriteOvO/AirPodsDesktop)
 
 ## 🆚 AirPodsWindows vs AirPodsDesktop
@@ -38,7 +39,7 @@
 | Battery, ear detection, popup animations, light/dark themes | ✅ | ✅ |
 | **Windows ANC control** — Off / Noise Cancellation / Transparency / Adaptive | ❌ | ✅ (MagicAAP driver) |
 | Conversational awareness **+ speaking-volume reduction slider** | ❌ | ✅ |
-| Personalized volume · loud-sound reduction · adaptive transparency level | ❌ | ✅ |
+| Personalized volume · loud-sound reduction · hearing protection cap · adaptive noise strength | ❌ | ✅ |
 | Tray noise-control menu | ❌ | ✅ |
 | Releases & in-app updater point to | `SpriteOvO/AirPodsDesktop` | **`YimingZhanshen/AirPodsWindows`** |
 | Issue tracker for this build | upstream issues | this repository |
@@ -68,7 +69,8 @@
 * 🔊 Personalized volume - adjusts volume from your environment and listening habits.
 * 👂 Ear detection status - real-time left/right wearing status.
 * 🔇 Loud sound reduction - protects your hearing by lowering loud sounds.
-* 📊 Adaptive transparency level - fine control of environmental sound pass-through (0-50).
+* 📊 Hearing protection cap - limits how loud surrounding sounds get, for hearing protection (0-100).
+* 🎚️ Adaptive noise strength - tunes how much Adaptive mode filters ambient noise (0-100), available only while the device reports Adaptive mode.
 
 ## 💻 System requirements
 
@@ -77,7 +79,8 @@ are not supported. Existing Qt 5/Win32 users can migrate through the in-app upda
 their user settings.
 
 ANC control additionally requires the [MagicAAP driver](https://magicpods.app/magicaap/) and only
-applies to AirPods Pro / Max / AirPods 4 (ANC).
+applies to AirPods Pro (every generation), AirPods Max (Lightning and USB-C), AirPods 4 (ANC), and
+AirPods 5 including the Wireless Charging Case variant.
 
 ## 📦 Installation
 
