@@ -77,6 +77,13 @@ $cases = @(
     @{ Name = 'block-comments'; ExpectAccepted = $false; ExpectedLines = @($null, $null, 5) }
     @{ Name = 'trailing-comments'; ExpectAccepted = $false; ExpectedLines = @($null, $null, 5) }
     @{ Name = 'after-copy'; ExpectAccepted = $false; ExpectedLines = @(7, 9, 5) }
+    @{ Name = 'missing-user-data-cleanup'; ExpectAccepted = $false; ExpectedLines = @(2, 4, 6) }
+    @{ Name = 'missing-roaming-cleanup'; ExpectAccepted = $false; ExpectedLines = @(2, 4, 6) }
+    @{ Name = 'missing-migration-env'; ExpectAccepted = $false; ExpectedLines = @(2, 4, 6) }
+    @{ Name = 'missing-user-shell-context'; ExpectAccepted = $false; ExpectedLines = @(2, 4, 6) }
+    @{ Name = 'migration-guard-after-cleanup'; ExpectAccepted = $false; ExpectedLines = @(2, 4, 6) }
+    @{ Name = 'missing-migration-failure-guard'; ExpectAccepted = $false; ExpectedLines = @(2, 4, 6) }
+    @{ Name = 'context-restored-outside-uninstall'; ExpectAccepted = $false; ExpectedLines = @(2, 4, 6) }
 )
 
 $failures = @()

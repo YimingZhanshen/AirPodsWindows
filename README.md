@@ -88,6 +88,19 @@ AirPods 5 including the Wireless Charging Case variant.
 2. Run the installer or extract the portable version
 3. (Optional) Install the MagicAAP driver to enable ANC control features — [see Docs/Driver.md for full installation instructions](/Docs/Driver.md)
 
+### Your data and uninstalling
+
+Settings are stored in the current user's registry at
+`HKCU\Software\AirPodsWindows\AirPodsWindows`. Logs are written to
+`%APPDATA%\AirPodsWindows\` and may contain masked device addresses. Uninstalling with the
+installer removes the logs and the auto-start entry, but keeps settings so reinstalling restores
+them. To remove settings too, delete that registry key.
+
+Portable installs have no uninstaller: delete the portable folder, then remove the same log folder
+and registry key if you want a clean slate. Older builds may also have left logs in
+`%LOCALAPPDATA%\AirPodsWindows\`; the installer removes that legacy folder too. The MagicAAP driver
+is uninstalled separately.
+
 ## 🛠️ Build and test
 
 See the [Build Instructions](/Docs/Build.md) for Windows prerequisites, build commands, and tests.

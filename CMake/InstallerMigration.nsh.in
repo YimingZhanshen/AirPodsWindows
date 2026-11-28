@@ -82,7 +82,22 @@ StrCpy $R7 0
 ClearErrors
 StrLen $R5 "\Uninstall.exe"
 StrCpy $R6 $R3 -$R5
+; The replacement install is not a user-requested uninstall. Current uninstallers honor this
+; process-local environment variable and keep the auto-start entry and logs; older uninstallers
+; never removed them. The variable disappears with this process if the installer is interrupted.
+System::Call 'kernel32::SetEnvironmentVariable(t, t) i("AirPodsWindowsMigration", "1").r0'
+StrCmp $0 0 apd_migration_guard_failed
 ExecWait '"$R3" /S _?=$R6' $R4
+System::Call 'kernel32::SetEnvironmentVariable(t, t) i("AirPodsWindowsMigration", "").r0'
+Goto apd_migration_guard_done
+
+apd_migration_guard_failed:
+MessageBox MB_OK|MB_ICONSTOP \
+  "AirPodsWindows could not protect your settings and logs during the upgrade. Close any running copy and try again." \
+  /SD IDOK
+Abort
+
+apd_migration_guard_done:
 ClearErrors
 
 ; The old uninstaller removes what it installed but never empties the directory: logs, settings

@@ -71,6 +71,10 @@ to close it, replace `AirPodsWindows.exe`, and launch the new version from its f
 left running locks the old files and keeps the instance mutex, so without this step users keep the
 old build after an apparently successful install.
 
+Also verify that an in-place upgrade preserves the auto-start entry and `%APPDATA%\AirPodsWindows\`
+logs, while a manual uninstall removes both (plus any legacy `%LOCALAPPDATA%\AirPodsWindows\` logs)
+and leaves `HKCU\Software\AirPodsWindows\AirPodsWindows` settings intact for a later reinstall.
+
 ## Optional Code-Signing Secrets
 
 Qt 6.8.3 is installed from the public package feed and does not require Qt account credentials.

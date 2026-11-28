@@ -683,7 +683,7 @@ if (APD_GENERATE_INSTALLER)
         set(CPACK_NSIS_EXECUTABLES_DIRECTORY "./")
         set(CPACK_NSIS_MUI_FINISHPAGE_RUN "./${PROJECT_NAME}.exe")
         set(CPACK_NSIS_BRANDING_TEXT "${PROJECT_NAME} installer")
-        foreach (APD_NSIS_SNIPPET InstallerCloseRunningApp InstallerMigration)
+        foreach (APD_NSIS_SNIPPET InstallerCloseRunningApp InstallerMigration InstallerUninstallUserData)
             configure_file(
                 "${CMAKE_CURRENT_SOURCE_DIR}/CMake/${APD_NSIS_SNIPPET}.nsh.in"
                 "${CMAKE_CURRENT_BINARY_DIR}/${APD_NSIS_SNIPPET}.nsh"
@@ -716,7 +716,7 @@ if (APD_GENERATE_INSTALLER)
         )
         set(
             CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
-            "${APD_NSIS_InstallerCloseRunningApp_COMMANDS}SetRegView 64\nDelete \\\"$DESKTOP\\\\${SHORTCUT_NAME}.lnk\\\""
+            "${APD_NSIS_InstallerCloseRunningApp_COMMANDS}SetRegView 64\n${APD_NSIS_InstallerUninstallUserData_COMMANDS}Delete \\\"$DESKTOP\\\\${SHORTCUT_NAME}.lnk\\\""
         )
     endif()
 

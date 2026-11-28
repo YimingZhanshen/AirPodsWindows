@@ -1,0 +1,19 @@
+; AirPodsWindows uninstall hook.
+;
+; Injected into CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS after the running copy is closed. A normal
+; uninstall removes the auto-start entry and logs but keeps HKCU settings so a reinstall retains
+; them. The installer migration sets AirPodsWindowsMigration only in its own process environment
+; while it invokes this uninstaller; in that case leave both untouched for the replacement
+; installation. The variable disappears with the installer if it is interrupted.
+ReadEnvStr $R0 "AirPodsWindowsMigration"
+StrCmp $R0 "1" apd_keep_user_data
+
+; CPack runs the elevated uninstaller in all-users shell context, which would resolve both paths
+; below to ProgramData. Switch only for user-data cleanup, then restore CPack's expected context.
+SetShellVarContext current
+DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "AirPodsWindows"
+RMDir /r "$APPDATA\AirPodsWindows"
+RMDir /r "$LOCALAPPDATA\AirPodsWindows"
+SetShellVarContext all
+
+apd_keep_user_data:

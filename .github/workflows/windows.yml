@@ -254,6 +254,107 @@ jobs:
               $openMutexLine -ge $copyLine -or $taskkillLine -ge $copyLine) {
             throw "The installer must open the instance mutex (line $openMutexLine) and taskkill the running copy (line $taskkillLine) before the first File /r (line $copyLine)."
           }
+
+          # A manual uninstall must remove the auto-start entry and logs. The migration hook sets
+          # a process-local environment variable while it invokes the old uninstaller, so upgrades
+          # preserve both; this gate checks the cleanup and both sides of that contract are present.
+          $uninstallSectionLine = ($executableScript |
+            Select-String -Pattern '^\s*Section\s+"?Uninstall"?\s*$' |
+            Select-Object -First 1).LineNumber
+          $uninstallSectionEndLine = ($executableScript |
+            Select-String -Pattern '^\s*SectionEnd\s*$' |
+            Where-Object { $_.LineNumber -gt $uninstallSectionLine } |
+            Select-Object -First 1).LineNumber
+          $runDeleteLine = ($executableScript |
+            Select-String -Pattern '^\s*DeleteRegValue\s+HKCU\s+"Software\\Microsoft\\Windows\\CurrentVersion\\Run"\s+"AirPodsWindows"\s*$' |
+            Select-Object -First 1).LineNumber
+          $roamingLogDeleteLine = ($executableScript |
+            Select-String -Pattern '^\s*RMDir\s+/r\s+"\$APPDATA\\AirPodsWindows"\s*$' |
+            Select-Object -First 1).LineNumber
+          $localLogDeleteLine = ($executableScript |
+            Select-String -Pattern '^\s*RMDir\s+/r\s+"\$LOCALAPPDATA\\AirPodsWindows"\s*$' |
+            Select-Object -First 1).LineNumber
+          $userContextLine = ($executableScript |
+            Select-String -Pattern '^\s*SetShellVarContext\s+current\s*$' |
+            Select-Object -First 1).LineNumber
+          $restoredContextLine = ($executableScript |
+            Select-String -Pattern '^\s*SetShellVarContext\s+all\s*$' |
+            Where-Object { $_.LineNumber -gt $localLogDeleteLine -and
+              $_.LineNumber -lt $uninstallSectionEndLine } |
+            Select-Object -First 1).LineNumber
+          if (-not $uninstallSectionLine -or -not $uninstallSectionEndLine -or
+              -not $runDeleteLine -or -not $roamingLogDeleteLine -or
+              -not $localLogDeleteLine -or -not $userContextLine -or
+              -not $restoredContextLine -or
+              $runDeleteLine -le $uninstallSectionLine -or
+              $roamingLogDeleteLine -le $uninstallSectionLine -or
+              $localLogDeleteLine -le $uninstallSectionLine -or
+              $userContextLine -le $uninstallSectionLine -or
+              $userContextLine -ge $runDeleteLine -or
+              $userContextLine -ge $roamingLogDeleteLine -or
+              $userContextLine -ge $localLogDeleteLine -or
+              $restoredContextLine -le $runDeleteLine -or
+              $restoredContextLine -le $roamingLogDeleteLine -or
+              $restoredContextLine -le $localLogDeleteLine -or
+              $runDeleteLine -ge $uninstallSectionEndLine -or
+              $roamingLogDeleteLine -ge $uninstallSectionEndLine -or
+              $localLogDeleteLine -ge $uninstallSectionEndLine -or
+              $userContextLine -ge $uninstallSectionEndLine -or
+              $restoredContextLine -ge $uninstallSectionEndLine) {
+            throw "The uninstall section (lines $uninstallSectionLine-$uninstallSectionEndLine) must switch to the current user (line $userContextLine), remove the Run value (line $runDeleteLine), roaming logs (line $roamingLogDeleteLine) and legacy local logs (line $localLogDeleteLine), then restore all-users context (line $restoredContextLine)."
+          }
+          $migrationEnvSetLine = ($executableScript |
+            Select-String -Pattern '^\s*System::Call .*SetEnvironmentVariable.*AirPodsWindowsMigration.*"1"' |
+            Select-Object -First 1).LineNumber
+          $migrationEnvFailCmpLine = ($executableScript |
+            Select-String -Pattern '^\s*StrCmp\s+\$0\s+0\s+apd_migration_guard_failed\s*$' |
+            Select-Object -First 1).LineNumber
+          $migrationExecLine = ($executableScript |
+            Select-String -Pattern '^\s*ExecWait\s+.*\/S.*_\?=\$R6' |
+            Select-Object -First 1).LineNumber
+          $migrationEnvClearLine = ($executableScript |
+            Select-String -Pattern '^\s*System::Call .*SetEnvironmentVariable.*AirPodsWindowsMigration.*""' |
+            Select-Object -First 1).LineNumber
+          $migrationEnvDoneGotoLine = ($executableScript |
+            Select-String -Pattern '^\s*Goto\s+apd_migration_guard_done\s*$' |
+            Select-Object -First 1).LineNumber
+          $migrationEnvFailLabelLine = ($executableScript |
+            Select-String -Pattern '^\s*apd_migration_guard_failed:\s*$' |
+            Select-Object -First 1).LineNumber
+          $migrationEnvAbortLine = ($executableScript |
+            Select-String -Pattern '^\s*Abort\s*$' |
+            Where-Object { $_.LineNumber -gt $migrationEnvFailLabelLine } |
+            Select-Object -First 1).LineNumber
+          $migrationEnvDoneLabelLine = ($executableScript |
+            Select-String -Pattern '^\s*apd_migration_guard_done:\s*$' |
+            Select-Object -First 1).LineNumber
+          $migrationGuardLine = ($executableScript |
+            Select-String -Pattern '^\s*ReadEnvStr\s+\$R0\s+"AirPodsWindowsMigration"\s*$' |
+            Select-Object -First 1).LineNumber
+          $migrationGuardCmpLine = ($executableScript |
+            Select-String -Pattern '^\s*StrCmp\s+\$R0\s+"1"\s+apd_keep_user_data\s*$' |
+            Select-Object -First 1).LineNumber
+          if (-not $migrationEnvSetLine -or -not $migrationEnvFailCmpLine -or
+              -not $migrationExecLine -or -not $migrationEnvClearLine -or
+              -not $migrationEnvDoneGotoLine -or -not $migrationEnvFailLabelLine -or
+              -not $migrationEnvAbortLine -or -not $migrationEnvDoneLabelLine -or
+              -not $migrationGuardLine -or -not $migrationGuardCmpLine -or
+              $migrationEnvSetLine -ge $migrationEnvFailCmpLine -or
+              $migrationEnvFailCmpLine -ge $migrationExecLine -or
+              $migrationExecLine -ge $migrationEnvClearLine -or
+              $migrationEnvClearLine -ge $migrationEnvDoneGotoLine -or
+              $migrationEnvDoneGotoLine -ge $migrationEnvDoneLabelLine -or
+              $migrationEnvFailLabelLine -le $migrationExecLine -or
+              $migrationEnvAbortLine -le $migrationEnvFailLabelLine -or
+              $migrationEnvAbortLine -ge $migrationEnvDoneLabelLine -or
+              $migrationGuardLine -le $uninstallSectionLine -or
+              $migrationGuardLine -ge $migrationGuardCmpLine -or
+              $migrationGuardCmpLine -le $uninstallSectionLine -or
+              $migrationGuardCmpLine -ge $userContextLine -or
+              $migrationGuardLine -ge $uninstallSectionEndLine -or
+              $migrationGuardCmpLine -ge $uninstallSectionEndLine) {
+            throw "The migration environment set/failure-guard/exec/clear lines ($migrationEnvSetLine/$migrationEnvFailCmpLine/$migrationExecLine/$migrationEnvClearLine) must abort on guard failure, and the uninstall guard lines ($migrationGuardLine/$migrationGuardCmpLine) must run before cleanup inside the uninstall section."
+          }
           $requiredRuntimeFiles = @(
             'AirPodsWindows.exe',
             'Animations.rcc',
