@@ -59,6 +59,13 @@ Advertisement::Advertisement(const Bluetooth::AdvertisementWatcher::ReceivedData
     _state.caseBox.isCharging = _protocol.IsCaseCharging();
     _state.caseBox.isBothPodsInCase = _protocol.IsBothPodsInCase();
     _state.caseBox.isLidOpened = _protocol.IsLidOpened();
+    // The advertisement only says "both in case"; a pod that charges while the other does not
+    // is the one still sitting in the case.
+    const auto inCase = [&](const PodState &pod) {
+        return _state.caseBox.isBothPodsInCase || (pod.isCharging && !pod.isInEar);
+    };
+    _state.pods.left.isInCase = inCase(_state.pods.left);
+    _state.pods.right.isInCase = inCase(_state.pods.right);
 
     const auto inCase = [&](const PodState &pod) {
         return _state.caseBox.isBothPodsInCase || (pod.isCharging && !pod.isInEar);
@@ -77,6 +84,8 @@ Advertisement::Advertisement(const Bluetooth::AdvertisementWatcher::ReceivedData
     }
 
     if (HasSingleBattery(_state.model)) {
+        // Prefer the field for the side that sent this advertisement, then fall back to the
+        // other one. Both pod slots carry the headset battery so merging stays side-agnostic.
         const auto &primary = _state.side == Side::Left ? _state.pods.left : _state.pods.right;
         const auto &secondary = _state.side == Side::Left ? _state.pods.right : _state.pods.left;
         const PodState headset = primary.battery.Available() ? primary : secondary;
@@ -88,6 +97,8 @@ Advertisement::Advertisement(const Bluetooth::AdvertisementWatcher::ReceivedData
     }
 
     if (!ReportsLidState(_state.model)) {
+        // Neither a lid to open nor a case to rest in, so stray case bits must not pop the
+        // battery card up.
         _state.caseBox.isBothPodsInCase = false;
         _state.caseBox.isLidOpened = false;
         _state.pods.left.isInCase = false;

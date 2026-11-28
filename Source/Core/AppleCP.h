@@ -127,6 +127,8 @@ public:
     bool IsRightInEar() const;
     bool IsPrimaryLeft() const;
 
+    Color GetColor() const;
+
     AirPods Desensitize() const;
 
 private:
@@ -157,7 +159,7 @@ private:
         uint8_t closed : 1;
         uint8_t unk10 : 4;
     } lid;
-    Color color; // Untested because I don't have a device other than white
+    Color color; // Verified on white AirPods 5 (0x0) and Space Gray AirPods Max (0xF)
     uint8_t unk11[1];
     uint8_t unk12[16]; // Hash or encrypted payload
 };

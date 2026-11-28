@@ -44,6 +44,9 @@ namespace Core::QuickConnect {
 class Backend;
 class Controller;
 } // namespace Core::QuickConnect
+namespace Core::GlobalMedia {
+class PlaybackMonitor;
+}
 
 namespace Core::GlobalMedia {
 class PlaybackMonitor;

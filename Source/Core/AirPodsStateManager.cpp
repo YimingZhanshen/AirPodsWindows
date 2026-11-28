@@ -158,8 +158,9 @@ bool StateManager::IsPossibleDesiredAdv(const Advertisement &adv) const
     auto &lastAdv = advState.side == Side::Left ? _adv.left : _adv.right;
     auto &lastAnotherAdv = advState.side == Side::Left ? _adv.right : _adv.left;
 
-    // The RSSI floor prevents locking onto a stranger, but weak packets from an address we
-    // already track must still update ear state and keep the lost timer alive.
+    // The RSSI floor keeps us from locking onto a stranger's AirPods. Once we are tracking an
+    // address, weak advertisements from that same address are still ours; rejecting them would
+    // drop in-ear changes and starve the lost timer while the pods are merely far from the PC.
     const auto advRssi = adv.GetRssi();
     if (advRssi < _rssiMin) {
         if (!IsKnownAddress(adv.GetAddress())) {
@@ -180,6 +181,7 @@ bool StateManager::IsPossibleDesiredAdv(const Advertisement &adv) const
             advRssi, _rssiMin);
     }
 
+    // An unavailable RSSI on either side says nothing about the distance between two packets.
     const auto isPlausibleRssiDiff = [&](int16_t cachedRssi) {
         if (advRssi == kRssiUnavailable || cachedRssi == kRssiUnavailable) {
             return true;
@@ -203,7 +205,10 @@ bool StateManager::IsPossibleDesiredAdv(const Advertisement &adv) const
     if (lastAdv.has_value() && lastAdv->first.GetAddress() != adv.GetAddress()) {
         const auto &lastAdvState = lastAdv->first.GetAdvState();
 
-        // A different source cannot erase a selected pod reading while that source is fresh.
+        // A different source must not erase a selected pod reading while that source is
+        // still fresh. Otherwise a partial report can bypass the peer conflict check and
+        // let an unrelated pod replace the selected pair. Same-source updates and the
+        // existing advertisement expiry still allow genuine single-pod transitions.
         if ((lastAdvState.pods.left.battery.Available() &&
              !advState.pods.left.battery.Available()) ||
             (lastAdvState.pods.right.battery.Available() &&
@@ -233,8 +238,8 @@ bool StateManager::IsPossibleDesiredAdv(const Advertisement &adv) const
                 static_cast<SignedBatteryValue>(lastAdvState.caseBox.battery.Value()));
         }
 
-        // Values are percentages now, so one broadcast bucket is 10. A clearly stronger
-        // complete report may replace a wrong startup source.
+        // Values have already been scaled to percentages, so one broadcast bucket is 10.
+        // A clearly stronger complete source can also recover from a wrong startup choice.
         if ((leftBatteryDiff > 10 || rightBatteryDiff > 10 || caseBatteryDiff > 10) &&
             !IsStrongerCompleteReport(adv, lastAdv->first))
         {

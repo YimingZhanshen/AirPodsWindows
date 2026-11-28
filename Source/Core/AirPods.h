@@ -191,6 +191,8 @@ public:
         uint64_t generation{1};
     };
 
+    // How long a side may stay silent before its cached advertisement is dropped, and how long
+    // the whole device may stay silent before it is reported lost. Tests shorten them.
     struct Intervals {
         std::chrono::milliseconds lost{std::chrono::seconds{10}};
         std::chrono::milliseconds stateReset{std::chrono::seconds{10}};
@@ -219,7 +221,8 @@ private:
     Helper::Timer _lostTimer;
     Helper::Sides<Helper::Timer> _stateResetTimer;
     Helper::Sides<std::optional<std::pair<Advertisement, Timestamp>>> _adv;
-    // Addresses outlive expired advertisements so weak packets from a known side remain usable.
+    // Outlives `_adv`: a side that goes quiet loses its cached advertisement after
+    // `Intervals::stateReset`, but its address stays valid until the device disconnects.
     Helper::Sides<std::optional<Advertisement::AddressType>> _knownAddress;
     std::optional<State> _cachedState;
     uint64_t _generation{1};
@@ -235,26 +238,37 @@ private:
     void DoStateReset(Side side);
 };
 
-// Remembers lid transitions across short advertisement gaps and while the pods are out of the case.
+// Decides whether the case lid opened or closed between two states.
+//
+// StateManager drops its state after 10 seconds without advertisements, and that also happens
+// while the lid stays open. The first state after such a gap has no previous state to compare
+// with, so it used to count as a fresh "lid opened" every time and reopened the popup (#233).
+// Remembering the last lid state for a while after the device is lost tells those gaps apart
+// from a real opening. It is reset when the Bluetooth connection drops or another device is
+// bound, because the lid can close without being advertised then.
+//
+// The lid is only advertised while both pods sit in the case. Taking the pods out is neither an
+// opening nor a closing, so the popup that came up for an opened case stays while they come out.
+//
 class LidTracker
 {
 public:
     using Clock = std::chrono::steady_clock;
     using Timestamp = std::chrono::time_point<Clock>;
-    enum class Lid : uint8_t { Opened, Closed, Unobservable };
 
+    enum class Lid : uint8_t {
+        Opened,
+        Closed,
+        Unobservable, // At least one pod is out of the case.
+    };
+
+    // How long the last seen lid state is trusted after the device was lost.
     static constexpr std::chrono::seconds kMemory{60};
-    // Blueprint 2.6 (D6): an opened lid pops the window at most once per cooldown window, so
-    // rapid open/close cycling cannot bombard the desktop. Closes are reported regardless.
-    static constexpr std::chrono::seconds kCooldown{60};
 
-    std::optional<bool>
-    Update(std::optional<Lid> oldLid, Lid newLid, Timestamp now, bool popupAllowed = true);
+    // Returns true when the lid was seen opening, false when it was seen closing, and nothing
+    // otherwise. `oldLid` is empty for the first state after the device was lost or bound.
+    std::optional<bool> Update(std::optional<Lid> oldLid, Lid newLid, Timestamp now);
     void OnLost(Timestamp now);
-    // Drops learned lid state while retaining popup-rate limits. Used when a link briefly drops
-    // and the same device may reconnect.
-    void ForgetDevice();
-    // Drops all lid memory for an explicit unbind or rebind to another device.
     void Reset();
 
 private:
@@ -475,6 +489,8 @@ private:
     uint64_t _earDeadlineEpoch{1};
     std::optional<AAP::AAPAttempt> _earDeadlineSession;
     Details::StateManager _stateMgr;
+    Details::LidTracker _lidTracker;
+    Details::EarDetectionTracker _earDetection;
     std::optional<Bluetooth::Device> _boundDevice;
     std::optional<Model> _modelOverride;
     QString _deviceName;

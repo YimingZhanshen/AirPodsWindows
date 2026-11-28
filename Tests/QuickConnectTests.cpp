@@ -21,12 +21,14 @@
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <cmath>
 #include <memory>
 #include <mutex>
 
 #include "Source/Core/AirPods.h"
 #include "Source/Core/PlaybackMonitor.h"
 #include "Source/Core/QuickConnect.h"
+#include "Source/Core/PlaybackMonitor.h"
 #include "Source/Gui/TrayActivation.h"
 
 using namespace std::chrono_literals;

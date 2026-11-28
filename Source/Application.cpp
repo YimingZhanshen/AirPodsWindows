@@ -41,6 +41,7 @@
 #include "Core/LowAudioLatency.h"
 #include "Core/PlaybackMonitor.h"
 #include "Core/QuickConnect.h"
+#include "Core/PlaybackMonitor.h"
 #if defined APD_OS_WIN
     #include "Core/QuickConnect_win.h"
 #endif
@@ -582,6 +583,12 @@ void ApdApplication::OnAudioAutoConnectEnabledChanged(bool enable)
 void ApdApplication::OnTrayQuickConnectDeviceChanged(const QString &deviceId)
 {
     _quickConnect->SetDeviceId(deviceId);
+}
+
+void ApdApplication::OnAudioAutoConnectEnabledChanged(bool enable)
+{
+    _quickConnect->SetAudioAutoConnectEnabled(enable);
+    _playbackMonitor->SetEnabled(enable);
 }
 
 void ApdApplication::OnTaskbarBatteryChanged(Core::Settings::TaskbarStatusBehavior behavior)

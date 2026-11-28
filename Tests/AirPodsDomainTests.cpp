@@ -37,6 +37,9 @@
 #include "Source/Gui/HeadTrackingPresentation.h"
 #include "Source/Gui/MainWindowPresentation.h"
 #include "Source/Gui/TaskbarGeometry.h"
+#include "Source/Utils.h"
+
+#include <sddl.h>
 
 namespace {
 
@@ -153,6 +156,8 @@ public:
     Core::Settings::AppearanceMode appearanceMode{Core::Settings::AppearanceMode::System};
     int appearanceModeChanges{0};
     bool quickConnectEnabled{false};
+    bool audioAutoConnectEnabled{false};
+    int audioAutoConnectChanges{};
     int quickConnectEnabledChanges{0};
     QString quickConnectDeviceId;
     int quickConnectDeviceChanges{0};
@@ -349,6 +354,11 @@ private Q_SLOTS:
     void BasicStateEqualityCoversBatterySourceFields();
     void PresentationCarriesBatterySourceFields();
     void MergesAdvertisementsFromBothSides();
+    void RejectsConflictingPeerBatteryReports();
+    void ShowsTheAdvertisedColorRender();
+    void ParsesInEarBitsPerBroadcastSide();
+    void EarDetectionTrackerSurvivesStateLoss();
+    void AcceptsAdjacentBatteryBucketsAfterAddressRotation();
     void RejectsAdvertisementsFromDifferentModels();
     void AcceptsKnownModelAfterUnknownAdvertisement();
     void TracksLidAcrossShortGaps();
@@ -418,6 +428,7 @@ private Q_SLOTS:
     void HebrewUpdateWindowTranslationsAreFinished();
     void MapsMainWindowAnimationResources();
     void ConvertsTaskbarGeometryAcrossDpiBoundaries();
+    void TreatsInaccessibleInstanceMutexAsRunning();
 };
 
 void AirPodsDomainTests::RejectsMalformedPackets()
@@ -2378,6 +2389,7 @@ void AirPodsDomainTests::PropagatesQuickConnectSettings()
     repository->Write("abi_version", Core::Settings::kFieldsAbiVersion);
     repository->Write("tray_quick_connect_enabled", true);
     repository->Write("tray_quick_connect_device_id", "{A}");
+    repository->Write("audio_auto_connect_enabled", true);
     Core::Settings::SetRepository(std::move(repository));
 
     QCOMPARE(Core::Settings::Load(), Core::Settings::LoadResult::Successful);
@@ -2389,6 +2401,8 @@ void AirPodsDomainTests::PropagatesQuickConnectSettings()
     QCOMPARE(observer.quickConnectEnabledChanges, 1);
     QCOMPARE(observer.quickConnectDeviceId, QString{"{A}"});
     QCOMPARE(observer.quickConnectDeviceChanges, 1);
+    QVERIFY(observer.audioAutoConnectEnabled);
+    QCOMPARE(observer.audioAutoConnectChanges, 1);
 
     Core::Settings::SetApplyObserver(nullptr);
     Core::Settings::SetRepository(Core::Settings::CreatePersistentRepository());
@@ -3007,7 +3021,94 @@ void AirPodsDomainTests::PresentsMainWindowDeviceState()
     QCOMPARE(presentation.leftBattery.value, 80U);
     QVERIFY(presentation.rightBattery.visible);
     QCOMPARE(presentation.rightBattery.value, 60U);
+    QCOMPARE(presentation.leftBattery.badge, Gui::BatteryBadge::Left);
+    QCOMPARE(presentation.rightBattery.badge, Gui::BatteryBadge::Right);
     QVERIFY(!presentation.caseBattery.visible);
+}
+
+void AirPodsDomainTests::MergesMatchingPodBatteries()
+{
+    Core::AirPods::State state;
+    state.model = Core::AirPods::Model::AirPods_Pro_2;
+    state.pods.left.battery = 95;
+    state.pods.right.battery = 95;
+    state.caseBox.battery = 99;
+
+    Gui::MainWindowViewModel viewModel;
+    viewModel.UpdateState(state);
+    auto presentation = viewModel.Present();
+
+    QVERIFY(!presentation.leftBattery.visible);
+    QVERIFY(presentation.rightBattery.visible);
+    QCOMPARE(presentation.rightBattery.value, 95U);
+    QCOMPARE(presentation.rightBattery.badge, Gui::BatteryBadge::None);
+    QCOMPARE(presentation.caseBattery.badge, Gui::BatteryBadge::Case);
+
+    // Both pods in the case: the case glyph goes away as well.
+    state.caseBox.isBothPodsInCase = true;
+    state.pods.left.isInCase = state.pods.right.isInCase = true;
+    viewModel.UpdateState(state);
+    QCOMPARE(viewModel.Present().caseBattery.badge, Gui::BatteryBadge::None);
+    QCOMPARE(viewModel.Present().scene, Gui::Scene::PodsInCase);
+    state.caseBox.isBothPodsInCase = false;
+    state.pods.left.isInCase = state.pods.right.isInCase = false;
+
+    // Same level but only one side charging: shown separately again.
+    state.pods.right.isCharging = true;
+    viewModel.UpdateState(state);
+    presentation = viewModel.Present();
+    QVERIFY(presentation.leftBattery.visible);
+    QCOMPARE(presentation.leftBattery.badge, Gui::BatteryBadge::Left);
+    QCOMPARE(presentation.rightBattery.badge, Gui::BatteryBadge::Right);
+}
+
+void AirPodsDomainTests::PresentsScenesFromPodPlacement()
+{
+    Core::AirPods::State state;
+    state.model = Core::AirPods::Model::AirPods_Pro_2;
+    state.pods.left.battery = 80;
+    state.pods.right.battery = 60;
+    state.pods.right.isCharging = true;
+    state.caseBox.battery = 99;
+
+    Gui::MainWindowViewModel viewModel;
+
+    // Both in the case: one ring for the pair even though the levels differ.
+    state.pods.left.isInCase = state.pods.right.isInCase = true;
+    state.caseBox.isBothPodsInCase = true;
+    viewModel.UpdateState(state);
+    auto presentation = viewModel.Present();
+    QCOMPARE(presentation.scene, Gui::Scene::PodsInCase);
+    QVERIFY(!presentation.leftBattery.visible);
+    QCOMPARE(presentation.rightBattery.value, 60U);
+    QCOMPARE(presentation.rightBattery.badge, Gui::BatteryBadge::None);
+    QCOMPARE(presentation.caseBattery.badge, Gui::BatteryBadge::None);
+
+    // One pod out: both rings labelled, case ring labelled.
+    state.pods.right.isInCase = false;
+    state.caseBox.isBothPodsInCase = false;
+    viewModel.UpdateState(state);
+    presentation = viewModel.Present();
+    QCOMPARE(presentation.scene, Gui::Scene::OnePodOut);
+    QVERIFY(presentation.leftBattery.visible && presentation.rightBattery.visible);
+    QCOMPARE(presentation.caseBattery.badge, Gui::BatteryBadge::Case);
+
+    // Both out: like iOS the case stays in the picture with its ring, and the pods keep their
+    // own labelled rings while they differ.
+    state.pods.left.isInCase = false;
+    viewModel.UpdateState(state);
+    presentation = viewModel.Present();
+    QCOMPARE(presentation.scene, Gui::Scene::BothPodsOut);
+    QVERIFY(presentation.leftBattery.visible && presentation.rightBattery.visible);
+    QCOMPARE(presentation.leftBattery.badge, Gui::BatteryBadge::Left);
+    QCOMPARE(presentation.rightBattery.badge, Gui::BatteryBadge::Right);
+    QVERIFY(presentation.caseBattery.visible);
+    QCOMPARE(presentation.caseBattery.value, 99U);
+
+    // Ear state does not change the scene.
+    state.pods.left.isInEar = state.pods.right.isInEar = true;
+    viewModel.UpdateState(state);
+    QCOMPARE(viewModel.Present(), presentation);
 }
 
 void AirPodsDomainTests::PresentsMainWindowCaseBattery()
@@ -3682,6 +3783,197 @@ void AirPodsDomainTests::ConvertsTaskbarGeometryAcrossDpiBoundaries()
         Gui::TaskbarGeometry::CalculateLayout(QSize{50, 1440}, QRect{0, 120, 50, 1270}, 120, false);
     QCOMPARE(vertical.statusLogical, QRect(0, 1112, 40, 40));
     QCOMPARE(vertical.taskButtonsNative, QRect(0, 120, 50, 1270));
+}
+
+void AirPodsDomainTests::TreatsInaccessibleInstanceMutexAsRunning()
+{
+    const auto pid = QCoreApplication::applicationPid();
+
+    // A fresh name is the first instance; opening it again reports the running one.
+    const auto freeName = QString{"AirPodsDesktopTests_Free_%1"}.arg(pid);
+    QVERIFY(Utils::Process::SingleInstance(freeName));
+    QVERIFY(!Utils::Process::SingleInstance(freeName));
+
+    // Reproduces issues #50, #158, #164 and #247: the running instance was started elevated, so a
+    // non-elevated launch may not open its mutex and gets ERROR_ACCESS_DENIED instead of
+    // ERROR_ALREADY_EXISTS. A DACL that only grants SYSTEM access stands in for that here.
+    const auto deniedName = QString{"AirPodsDesktopTests_Denied_%1"}.arg(pid);
+    const auto deniedMutexName = ("Global\\" + deniedName + "_InstanceMutex").toStdWString();
+
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    QVERIFY(ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        L"D:P(A;;GA;;;SY)", SDDL_REVISION_1, &descriptor, nullptr));
+    SECURITY_ATTRIBUTES attributes{sizeof(attributes), descriptor, FALSE};
+    HANDLE owner = CreateMutexW(&attributes, FALSE, deniedMutexName.c_str());
+    LocalFree(descriptor);
+    QVERIFY(owner != nullptr);
+
+    QVERIFY(CreateMutexW(nullptr, FALSE, deniedMutexName.c_str()) == nullptr);
+    QCOMPARE(GetLastError(), static_cast<DWORD>(ERROR_ACCESS_DENIED));
+    QVERIFY(!Utils::Process::SingleInstance(deniedName));
+
+    CloseHandle(owner);
+}
+
+void AirPodsDomainTests::RejectsConflictingPeerBatteryReports()
+{
+    StateManager manager;
+    manager.OnRssiMinChanged(-80);
+    // Live AirPods 4 ANC reports; phone confirms ~90/90, not the weaker 40/unknown source.
+    auto left = MakeAdvertisementData(0x1111, -72, Side::Left, 4, 15, 15, 0x201B);
+    left.manufacturerDataMap.at(Core::AppleCP::VendorId)[5] = 0x22;
+    auto right = MakeAdvertisementData(0x2222, -55, Side::Right, 9, 9, 15, 0x201B);
+    right.manufacturerDataMap.at(Core::AppleCP::VendorId)[5] = 0x0B;
+    QVERIFY(manager.OnAdvReceived(Advertisement{right}).has_value());
+    QVERIFY(!manager.OnAdvReceived(Advertisement{left}).has_value());
+    QCOMPARE(manager.GetCurrentState()->pods.left.battery.Value(), 90U);
+    QCOMPARE(manager.GetCurrentState()->pods.right.battery.Value(), 90U);
+    for (int i = 0; i < 5; ++i) {
+        QVERIFY(!manager.OnAdvReceived(Advertisement{left}).has_value());
+        manager.OnAdvReceived(Advertisement{right});
+        QCOMPARE(manager.GetCurrentState()->pods.left.battery.Value(), 90U);
+        QCOMPARE(manager.GetCurrentState()->pods.right.battery.Value(), 90U);
+    }
+
+    // Genuine changes from the selected source must continue to reach the UI.
+    right.manufacturerDataMap.at(Core::AppleCP::VendorId)[6] = 0x89;
+    manager.OnAdvReceived(Advertisement{right});
+    QCOMPARE(manager.GetCurrentState()->pods.left.battery.Value(), 80U);
+}
+
+void AirPodsDomainTests::ShowsTheAdvertisedColorRender()
+{
+    // The model ids the protocol recognises, so the color byte travels in real packets.
+    std::map<Model, uint16_t> modelIds;
+    for (uint32_t id = 0x2000; id <= 0x20FF; ++id) {
+        const auto model = Core::AppleCP::AirPods::GetModel(static_cast<uint16_t>(id));
+        if (model != Model::Unknown) {
+            modelIds.try_emplace(model, static_cast<uint16_t>(id));
+        }
+    }
+
+    int checkedColorModels = 0;
+    for (uint32_t i = 0; i < static_cast<uint32_t>(Model::_Max); ++i) {
+        const auto model = static_cast<Model>(i);
+        const auto modelId = modelIds.find(model);
+        if (modelId == modelIds.end()) {
+            continue;
+        }
+        // A model sold in white only lists that one color and ignores the advertised code.
+        const auto colors = Gui::GetAnimationColors(model);
+        const bool colored = colors.size() > 1;
+        checkedColorModels += colored ? 1 : 0;
+
+        for (uint32_t code = 0; code <= 0xFF; ++code) {
+            // Both sides advertise, as a pair does, and the state manager merges them.
+            StateManager manager;
+            manager.OnRssiMinChanged(-80);
+            std::optional<Core::AirPods::State> state;
+            for (const auto &[address, side] :
+                 {std::pair{0x1111ULL, Side::Left}, std::pair{0x2222ULL, Side::Right}})
+            {
+                auto data = MakeAdvertisementData(address, -45, side, 8, 7, 5, modelId->second);
+                data.manufacturerDataMap.at(Core::AppleCP::VendorId)[9] =
+                    static_cast<uint8_t>(code);
+                if (auto update = manager.OnAdvReceived(Advertisement{data})) {
+                    state = update->newState;
+                }
+            }
+            const auto name = QString{"model %1 color %2"}.arg(i).arg(code);
+            QVERIFY2(state.has_value(), qPrintable(name));
+            QVERIFY2(state->model == model, qPrintable(name));
+            QVERIFY2(Helper::ToUnderlying(state->color) == code, qPrintable(name));
+
+            Gui::MainWindowViewModel viewModel;
+            viewModel.UpdateState(*state);
+            const auto presentation = viewModel.Present();
+            QVERIFY2(presentation.animationModel == model, qPrintable(name));
+
+            const auto resource =
+                Gui::GetAnimationPresentation(model, presentation.animationColor).resource;
+            if (!colored) {
+                QVERIFY2(
+                    resource == Gui::GetAnimationPresentation(model).resource,
+                    qPrintable(QString{"%1 shows %2"}.arg(name, resource)));
+                continue;
+            }
+            // Its own render when the catalog has one, otherwise the model's default color.
+            const auto rendered = std::find(
+                                      colors.cbegin(), colors.cend(),
+                                      static_cast<Core::AppleCP::Color>(code)) != colors.cend();
+            const auto expected = rendered ? code : Helper::ToUnderlying(colors.front());
+            QVERIFY2(
+                resource.endsWith(QString{"/%1.avi"}.arg(expected)),
+                qPrintable(QString{"%1 shows %2"}.arg(name, resource)));
+        }
+    }
+    QVERIFY(checkedColorModels > 0);
+}
+
+void AirPodsDomainTests::ParsesInEarBitsPerBroadcastSide()
+{
+    // The packet only knows "current" (broadcasting) and "another" pod, so the same bit maps to
+    // a different side depending on the broadcast-from flag (bit 5).
+    const auto parse = [](uint8_t statusByte, uint8_t chargingByte = 0x8f) {
+        return Advertisement{
+            MakeTraceAdvertisementData(0x1234, -45, statusByte, 0x88, chargingByte)}
+            .GetAdvState();
+    };
+
+    auto state = parse(0x2b);
+    QCOMPARE(state.model, Model::AirPods_Pro_2_USB_C);
+    QCOMPARE(state.side, Side::Left);
+    QVERIFY(state.pods.left.isInEar);
+    QVERIFY(state.pods.right.isInEar);
+
+    state = parse(0x23);
+    QVERIFY(state.pods.left.isInEar);
+    QVERIFY(!state.pods.right.isInEar);
+
+    state = parse(0x29);
+    QVERIFY(!state.pods.left.isInEar);
+    QVERIFY(state.pods.right.isInEar);
+
+    state = parse(0x0b);
+    QCOMPARE(state.side, Side::Right);
+    QVERIFY(state.pods.left.isInEar);
+    QVERIFY(state.pods.right.isInEar);
+
+    state = parse(0x03);
+    QVERIFY(!state.pods.left.isInEar);
+    QVERIFY(state.pods.right.isInEar);
+
+    state = parse(0x09);
+    QVERIFY(state.pods.left.isInEar);
+    QVERIFY(!state.pods.right.isInEar);
+
+    // A charging pod reports a stale in-ear bit, so charging masks it.
+    state = parse(0x2b, 0x9f);
+    QVERIFY(state.pods.left.isCharging);
+    QVERIFY(!state.pods.left.isInEar);
+    QVERIFY(state.pods.right.isInEar);
+}
+
+void AirPodsDomainTests::EarDetectionTrackerSurvivesStateLoss()
+{
+    const auto makeState = [](bool leftInEar, bool rightInEar) {
+        Core::AirPods::State state;
+        state.pods.left.isInEar = leftInEar;
+        state.pods.right.isInEar = rightInEar;
+        return state;
+    };
+
+    Core::AirPods::Details::EarDetectionTracker tracker;
+
+    // The first observation has nothing to compare against.
+    QCOMPARE(tracker.Update(makeState(true, true)), std::optional<bool>{});
+    QCOMPARE(tracker.Update(makeState(true, false)), std::optional<bool>{false});
+    QCOMPARE(tracker.Update(makeState(true, false)), std::optional<bool>{});
+    QCOMPARE(tracker.Update(makeState(false, false)), std::optional<bool>{});
+    QCOMPARE(tracker.Update(makeState(true, true)), std::optional<bool>{true});
+
+    tracker.Reset();
+    QCOMPARE(tracker.Update(makeState(true, true)), std::optional<bool>{});
 }
 
 QTEST_GUILESS_MAIN(AirPodsDomainTests)

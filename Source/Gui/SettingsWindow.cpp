@@ -294,6 +294,11 @@ SettingsWindow::SettingsWindow(
             On_cbTrayQuickConnectEnabled_toggled(checked);
         }
     });
+    connect(_ui.cbAudioAutoConnectEnabled, &QCheckBox::toggled, this, [this](bool checked) {
+        if (_trigger) {
+            ModifiableAccess()->audio_auto_connect_enabled = checked;
+        }
+    });
 
     connect(_ui.cbAudioAutoConnectEnabled, &QCheckBox::toggled, this, [this](bool checked) {
         if (_trigger) {
@@ -1265,6 +1270,11 @@ void SettingsWindow::On_hsAdaptiveNoiseLevel_valueChanged(int value)
 void SettingsWindow::On_cbHeadTracking_toggled(bool checked)
 {
     ModifiableAccess()->head_tracking = checked;
+}
+
+void SettingsWindow::On_cbLidPopup_toggled(bool checked)
+{
+    ModifiableAccess()->popup_on_lid_open = checked;
 }
 
 void SettingsWindow::On_hsMaxReceivingRange_valueChanged(int value)

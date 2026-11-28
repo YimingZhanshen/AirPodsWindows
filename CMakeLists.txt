@@ -153,7 +153,6 @@ if (MSVC)
     
     add_compile_options(
         "/MP"           # Multi-processor compilation
-
         "/await"        # Enable the legacy pre-C++20 coroutine.
                         # Workaround for cppwinrt v2.0.200609.3 in C++20.
                         # For more information, see https://github.com/microsoft/cppwinrt/issues/866
@@ -370,12 +369,12 @@ set(
     "Source/Gui/SelectWindow.cpp"
     "Source/Gui/UpdateWindow.cpp"
     "Source/Gui/SettingsWindow.cpp"
-    "Source/Gui/Widget/Battery.cpp"
-    "Source/Gui/Widget/AnimationView.cpp"
     "Source/Gui/Widget/ActivityIndicator.cpp"
+    "Source/Gui/Widget/Battery.cpp"
     "Source/Gui/Widget/CloseButton.cpp"
     "Source/Gui/Widget/DeviceStill.cpp"
     "Source/Gui/Widget/FadeOverlay.cpp"
+    "Source/Gui/Widget/AnimationView.cpp"
     "Source/Gui/Widget/DriverStatusCard.cpp"
     "Source/Gui/Widget/HeadTrackingCard.cpp"
     "Source/Gui/Widget/DeviceInfoCard.cpp"
