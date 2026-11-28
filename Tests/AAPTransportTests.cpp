@@ -974,6 +974,8 @@ private slots:
         manager._attempt = Core::AAP::AAPAttempt{1, 1};
         manager._connected = true;
         manager._headTrackingActive = true;
+        manager._commandBroker->RecordDesired({Core::AAP::AAPCommandKind::SetHeadTracking, 0x01});
+        manager._commandBroker->BeginSession(1);
 
         // Use the shared classifier's documented prefix. The parser only needs 56 bytes, but
         // the documented sensor record is at least 70 bytes; the callback witnesses rejection
@@ -997,6 +999,8 @@ private slots:
 
         manager.ProcessPacket(sensor);
         QCOMPARE(trackingCallbacks, 1);
+        manager._commandBroker->EndSession();
+        manager._connected = false;
     }
 
     void UnknownAapIsNotMisparsedAsHeadTracking()
@@ -1946,16 +1950,17 @@ private slots:
         const bool reachedSendBarrier = original->WaitForSendWaiter(std::chrono::seconds{1});
         if (reachedSendBarrier) {
             // Replacement after the identity gate must not redirect an in-flight write.
+            std::lock_guard lock{manager._mutex};
             manager._attempt = {0x1234, 8};
             manager._transport.store(replacement);
         }
         original->SetBlockSend(false);
         QVERIFY(reachedSendBarrier);
         QVERIFY(result.get());
+        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
         QCOMPARE(original->SendCalls(), size_t{1});
         QCOMPARE(original->LastSend().at(6), uint8_t{0x0D});
         QCOMPARE(replacement->SendCalls(), size_t{0});
-        QVERIFY(manager.WaitForCommandsIdle(std::chrono::seconds{1}));
         manager._commandBroker->EndSession();
         manager._connected = false;
         manager._transport.store(nullptr);

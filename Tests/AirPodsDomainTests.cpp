@@ -1069,6 +1069,9 @@ void AirPodsDomainTests::StemNoiseControlToggleUsesBrokerDesiredState()
 {
     using namespace Core::AAP;
     Core::AirPods::Manager manager;
+    manager._aapMgr.SubmitCommand(
+        {AAPCommandKind::SetNoiseControl,
+         static_cast<uint32_t>(NoiseControlMode::NoiseCancellation)});
     auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
     QVERIFY(transport->Connect(1, {}));
 
@@ -1124,6 +1127,9 @@ void AirPodsDomainTests::StemNoiseControlToggleAlternatesPendingDesiredState()
 {
     using namespace Core::AAP;
     Core::AirPods::Manager manager;
+    manager._aapMgr.SubmitCommand(
+        {AAPCommandKind::SetNoiseControl,
+         static_cast<uint32_t>(NoiseControlMode::NoiseCancellation)});
     auto transport = std::make_shared<AAPTestSupport::FakeTransport>();
     QVERIFY(transport->Connect(1, {}));
     transport->SetBlockSend(true);
@@ -1157,7 +1163,12 @@ void AirPodsDomainTests::StemNoiseControlToggleAlternatesPendingDesiredState()
         static_cast<int>(NoiseControlMode::NoiseCancellation));
 
     transport->SetBlockSend(false);
-    QVERIFY(transport->WaitForRecordCount(2, std::chrono::seconds{1}));
+    QVERIFY(transport->WaitForRecordCount(1, std::chrono::seconds{1}));
+    QCOMPARE(transport->SendAttempts(), size_t{2});
+    QCOMPARE(transport->SentRecords().size(), size_t{1});
+    QCOMPARE(
+        transport->LastSend(),
+        (Packets::BuildNoiseControlPacket(NoiseControlMode::NoiseCancellation)));
     manager._aapMgr.ProcessPacket(AAPTestSupport::Records::NoiseControl(
         static_cast<uint8_t>(Helper::ToUnderlying(NoiseControlMode::NoiseCancellation))));
     QVERIFY(manager._aapMgr.WaitForCommandsIdle(std::chrono::seconds{1}));
