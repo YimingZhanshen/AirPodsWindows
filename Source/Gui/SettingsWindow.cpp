@@ -1272,11 +1272,6 @@ void SettingsWindow::On_cbHeadTracking_toggled(bool checked)
     ModifiableAccess()->head_tracking = checked;
 }
 
-void SettingsWindow::On_cbLidPopup_toggled(bool checked)
-{
-    ModifiableAccess()->popup_on_lid_open = checked;
-}
-
 void SettingsWindow::On_hsMaxReceivingRange_valueChanged(int value)
 {
     ModifiableAccess()->rssi_min = -value;

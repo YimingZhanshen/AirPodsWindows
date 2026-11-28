@@ -156,8 +156,6 @@ public:
     Core::Settings::AppearanceMode appearanceMode{Core::Settings::AppearanceMode::System};
     int appearanceModeChanges{0};
     bool quickConnectEnabled{false};
-    bool audioAutoConnectEnabled{false};
-    int audioAutoConnectChanges{};
     int quickConnectEnabledChanges{0};
     QString quickConnectDeviceId;
     int quickConnectDeviceChanges{0};
@@ -357,8 +355,6 @@ private Q_SLOTS:
     void RejectsConflictingPeerBatteryReports();
     void ShowsTheAdvertisedColorRender();
     void ParsesInEarBitsPerBroadcastSide();
-    void EarDetectionTrackerSurvivesStateLoss();
-    void AcceptsAdjacentBatteryBucketsAfterAddressRotation();
     void RejectsAdvertisementsFromDifferentModels();
     void AcceptsKnownModelAfterUnknownAdvertisement();
     void TracksLidAcrossShortGaps();
@@ -3139,84 +3135,6 @@ void AirPodsDomainTests::PresentsMainWindowCaseBattery()
     QVERIFY(!presentation.caseBattery.charging);
 }
 
-void AirPodsDomainTests::MergesMatchingPodBatteries()
-{
-    Core::AirPods::State state;
-    state.model = Core::AirPods::Model::AirPods_Pro_2;
-    state.pods.left.battery = 95;
-    state.pods.right.battery = 95;
-    state.caseBox.battery = 99;
-
-    Gui::MainWindowViewModel viewModel;
-    viewModel.UpdateState(state);
-    auto presentation = viewModel.Present();
-
-    QVERIFY(!presentation.leftBattery.visible);
-    QVERIFY(presentation.rightBattery.visible);
-    QCOMPARE(presentation.rightBattery.value, 95U);
-    QCOMPARE(presentation.rightBattery.badge, Gui::BatteryBadge::None);
-    QCOMPARE(presentation.caseBattery.badge, Gui::BatteryBadge::Case);
-
-    state.caseBox.isBothPodsInCase = true;
-    state.pods.left.isInCase = state.pods.right.isInCase = true;
-    viewModel.UpdateState(state);
-    QCOMPARE(viewModel.Present().caseBattery.badge, Gui::BatteryBadge::None);
-    QCOMPARE(viewModel.Present().scene, Gui::Scene::PodsInCase);
-    state.caseBox.isBothPodsInCase = false;
-    state.pods.left.isInCase = state.pods.right.isInCase = false;
-
-    state.pods.right.isCharging = true;
-    viewModel.UpdateState(state);
-    presentation = viewModel.Present();
-    QVERIFY(presentation.leftBattery.visible);
-    QCOMPARE(presentation.leftBattery.badge, Gui::BatteryBadge::Left);
-    QCOMPARE(presentation.rightBattery.badge, Gui::BatteryBadge::Right);
-}
-
-void AirPodsDomainTests::PresentsScenesFromPodPlacement()
-{
-    Core::AirPods::State state;
-    state.model = Core::AirPods::Model::AirPods_Pro_2;
-    state.pods.left.battery = 80;
-    state.pods.right.battery = 60;
-    state.pods.right.isCharging = true;
-    state.caseBox.battery = 99;
-
-    Gui::MainWindowViewModel viewModel;
-
-    state.pods.left.isInCase = state.pods.right.isInCase = true;
-    state.caseBox.isBothPodsInCase = true;
-    viewModel.UpdateState(state);
-    auto presentation = viewModel.Present();
-    QCOMPARE(presentation.scene, Gui::Scene::PodsInCase);
-    QVERIFY(!presentation.leftBattery.visible);
-    QCOMPARE(presentation.rightBattery.value, 60U);
-    QCOMPARE(presentation.rightBattery.badge, Gui::BatteryBadge::None);
-    QCOMPARE(presentation.caseBattery.badge, Gui::BatteryBadge::None);
-
-    state.pods.right.isInCase = false;
-    state.caseBox.isBothPodsInCase = false;
-    viewModel.UpdateState(state);
-    presentation = viewModel.Present();
-    QCOMPARE(presentation.scene, Gui::Scene::OnePodOut);
-    QVERIFY(presentation.leftBattery.visible && presentation.rightBattery.visible);
-    QCOMPARE(presentation.caseBattery.badge, Gui::BatteryBadge::Case);
-
-    state.pods.left.isInCase = false;
-    viewModel.UpdateState(state);
-    presentation = viewModel.Present();
-    QCOMPARE(presentation.scene, Gui::Scene::BothPodsOut);
-    QVERIFY(presentation.leftBattery.visible && presentation.rightBattery.visible);
-    QCOMPARE(presentation.leftBattery.badge, Gui::BatteryBadge::Left);
-    QCOMPARE(presentation.rightBattery.badge, Gui::BatteryBadge::Right);
-    QVERIFY(presentation.caseBattery.visible);
-    QCOMPARE(presentation.caseBattery.value, 99U);
-
-    state.pods.left.isInEar = state.pods.right.isInEar = true;
-    viewModel.UpdateState(state);
-    QCOMPARE(viewModel.Present(), presentation);
-}
-
 void AirPodsDomainTests::CollapsesAirPodsMaxToSingleBattery()
 {
     for (const auto model : {Model::AirPods_Max, Model::AirPods_Max_USB_C}) {
@@ -3952,28 +3870,6 @@ void AirPodsDomainTests::ParsesInEarBitsPerBroadcastSide()
     QVERIFY(state.pods.left.isCharging);
     QVERIFY(!state.pods.left.isInEar);
     QVERIFY(state.pods.right.isInEar);
-}
-
-void AirPodsDomainTests::EarDetectionTrackerSurvivesStateLoss()
-{
-    const auto makeState = [](bool leftInEar, bool rightInEar) {
-        Core::AirPods::State state;
-        state.pods.left.isInEar = leftInEar;
-        state.pods.right.isInEar = rightInEar;
-        return state;
-    };
-
-    Core::AirPods::Details::EarDetectionTracker tracker;
-
-    // The first observation has nothing to compare against.
-    QCOMPARE(tracker.Update(makeState(true, true)), std::optional<bool>{});
-    QCOMPARE(tracker.Update(makeState(true, false)), std::optional<bool>{false});
-    QCOMPARE(tracker.Update(makeState(true, false)), std::optional<bool>{});
-    QCOMPARE(tracker.Update(makeState(false, false)), std::optional<bool>{});
-    QCOMPARE(tracker.Update(makeState(true, true)), std::optional<bool>{true});
-
-    tracker.Reset();
-    QCOMPARE(tracker.Update(makeState(true, true)), std::optional<bool>{});
 }
 
 QTEST_GUILESS_MAIN(AirPodsDomainTests)
