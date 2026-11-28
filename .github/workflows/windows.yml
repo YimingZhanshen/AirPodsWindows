@@ -141,6 +141,11 @@ jobs:
         # or mis-registered suite into a failure instead of a silent pass.
         timeout-minutes: 25
         run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File Tests/InstallerOrderingGateTests.ps1
+          if ($LASTEXITCODE -ne 0) {
+            throw "Installer ordering fixtures failed with exit code $LASTEXITCODE."
+          }
           $uiLog = Join-Path $env:RUNNER_TEMP 'UiRenderingTests.txt'
           $ui = Start-Process `
             -FilePath 'Build/Release/Binary/UiRenderingTests.exe' `
