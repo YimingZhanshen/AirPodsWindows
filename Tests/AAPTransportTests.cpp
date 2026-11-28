@@ -1624,10 +1624,15 @@ private slots:
             return std::shared_ptr<Core::AAP::AAPTransport>{magicAAP};
         };
 
+        // DriverOpen records are attempt-tagged since the production BeginAttempt wiring was
+        // restored; this test drives ConnectTransport directly, so it opens generation 1
+        // itself and closes it right after the report copy is taken.
         Core::Diagnostics::Recorder::Instance().Reset();
+        Core::Diagnostics::Recorder::Instance().BeginAttempt(1);
         ConnectFailure failure = ConnectFailure::None;
         const auto transport = manager.ConnectTransport({1, 1}, {}, failure);
         const auto report = Core::Diagnostics::Recorder::Instance().BuildReport({});
+        Core::Diagnostics::Recorder::Instance().EndAttempt(1);
         if (status == MagicAAPBindStatus::Connected) {
             QVERIFY(transport != nullptr);
             QVERIFY(report.find("driver_open  ok") != std::string::npos);
@@ -1656,10 +1661,13 @@ private slots:
             return std::shared_ptr<Core::AAP::AAPTransport>{magicAAP};
         };
 
+        // Same attempt-tagged DriverOpen contract as the bind-status table above.
         Core::Diagnostics::Recorder::Instance().Reset();
+        Core::Diagnostics::Recorder::Instance().BeginAttempt(1);
         Core::AAP::ConnectFailure failure = Core::AAP::ConnectFailure::None;
         const auto transport = manager.ConnectTransport({1, 1}, {}, failure);
         const auto report = Core::Diagnostics::Recorder::Instance().BuildReport({});
+        Core::Diagnostics::Recorder::Instance().EndAttempt(1);
         QVERIFY(transport == nullptr);
         QCOMPARE(failure, Core::AAP::ConnectFailure::TransportError);
         QVERIFY(report.find("driver_open  FAILED") != std::string::npos);
@@ -2464,6 +2472,46 @@ private slots:
         QVERIFY(manager.GetDeviceInfo().has_value());
         QCOMPARE(manager.GetDeviceInfo()->serial, std::string{"SESSIONC"});
         manager.Disconnect();
+    }
+    // Reset happens before the new attempt records AdvertisementMatched, so the report starts
+    // with this attempt's evidence and never inherits an older session's lines. Restored from
+    // the P3 batch after a merge resolution dropped it together with the production wiring.
+    void BeginAttemptResetsBeforeRecordingAdvertisementMatched()
+    {
+        constexpr uint64_t kOldGeneration = 4304;
+        constexpr uint64_t kFreshGeneration = 4305;
+        auto &recorder = Core::Diagnostics::Recorder::Instance();
+        recorder.BeginAttempt(kOldGeneration);
+        recorder.RecordForAttempt(
+            kOldGeneration, Core::Diagnostics::Step::AdvertisementMatched, true, "old attempt");
+        recorder.EndAttempt(kOldGeneration);
+
+        // These untagged events must really be accepted before the new attempt clears them.
+        recorder.Record(Core::Diagnostics::Step::ScannerStarted, true);
+        recorder.Record(
+            Core::Diagnostics::Step::AdvertisementMatched, true, "old preconnect event");
+        QCOMPARE(recorder.StepCount(), size_t{3});
+
+        recorder.BeginAttempt(kFreshGeneration);
+        QCOMPARE(recorder.StepCount(), size_t{0});
+        const auto masked = Core::Diagnostics::Recorder::MaskAddress(0x1122334455667788ULL);
+        recorder.RecordForAttempt(
+            kFreshGeneration, Core::Diagnostics::Step::AdvertisementMatched, true,
+            "address=" + masked);
+        recorder.RecordForAttempt(
+            kFreshGeneration, Core::Diagnostics::Step::TransportConnect, false,
+            "MagicAAP driver unavailable");
+
+        const auto report = QString::fromStdString(recorder.BuildReport({}));
+        QVERIFY(!report.contains("scanner_started"));
+        QVERIFY(!report.contains("old attempt"));
+        QVERIFY(!report.contains("old preconnect event"));
+        QVERIFY(report.contains("attempt 4305"));
+        QVERIFY(report.contains("advertisement_matched"));
+        QVERIFY(report.indexOf("advertisement_matched") < report.indexOf("transport_connect"));
+        QVERIFY(report.contains("transport_connect  FAILED  MagicAAP driver unavailable"));
+        QVERIFY(!report.contains("1122334455667788"));
+        recorder.EndAttempt(kFreshGeneration);
     }
 #endif
 };

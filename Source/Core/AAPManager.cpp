@@ -75,6 +75,58 @@ private:
 
 namespace Core::AAP {
 
+namespace {
+
+const char *DescribeFailure(ConnectFailure failure)
+{
+    switch (failure) {
+    case ConnectFailure::None:
+        return "no failure recorded";
+    case ConnectFailure::DriverMissing:
+        return "MagicAAP driver unavailable";
+    case ConnectFailure::ServiceUnavailable:
+        return "device does not expose the AAP service";
+    case ConnectFailure::TransportError:
+        return "transport could not be established";
+    case ConnectFailure::HandshakeFailure:
+        return "AAP handshake did not complete";
+    case ConnectFailure::NoMatch:
+        return "no interface proves the bound address";
+    case ConnectFailure::OpenFailed:
+        return "exact target interface could not be opened";
+    }
+    return "unknown failure";
+}
+
+// Returns the diagnostics recorder to the preconnect phase when a Connect call ends
+// without an established session; Disconnect() and the reader's unexpected end are the
+// matching end points for a live one. Without it the next advertisement match would be
+// attributed to the attempt that already failed, and the report would lose the evidence
+// that the device was seen again.
+class AttemptPhaseGuard
+{
+public:
+    explicit AttemptPhaseGuard(AAPAttempt attempt) : _attempt(attempt) {}
+
+    void Succeeded() noexcept
+    {
+        _live = true;
+    }
+
+    ~AttemptPhaseGuard()
+    {
+        if (!_live) {
+            Diagnostics::Recorder::Instance().EndAttempt(_attempt.generation);
+        }
+    }
+
+private:
+    AAPAttempt _attempt;
+    bool _live{false};
+};
+
+} // namespace
+
 Manager::Manager()
     : _driverInstalledProbe([] { return MagicAAPWinRT::MagicAAPWinRTClient::IsDriverInstalled(); }),
       _driverRunningProbe([] { return MagicAAPWinRT::MagicAAPWinRTClient::IsDriverRunning(); })
@@ -180,9 +232,13 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         return false;
     }
 
-    Diagnostics::Recorder::Instance().Reset();
-    Diagnostics::Recorder::Instance().Record(
-        Diagnostics::Step::TransportConnect, true, "connect attempt started");
+    // BeginAttempt resets the recorder before this generation opens. AdvertisementMatched is
+    // recorded afterwards so it cannot be erased by that reset or attributed to an old session.
+    Diagnostics::Recorder::Instance().BeginAttempt(attempt.generation);
+    Diagnostics::Recorder::Instance().RecordForAttempt(
+        attempt.generation, Diagnostics::Step::AdvertisementMatched, true,
+        "address=" + Diagnostics::Recorder::MaskAddress(attempt.address));
+    AttemptPhaseGuard attemptPhase{attempt};
 
     ConnectFailure failure = ConnectFailure::None;
     auto transport = ConnectTransport(attempt, stopToken, failure);
@@ -192,6 +248,8 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         if (transport) {
             transport->Close();
         }
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::TransportConnect, false, "connect cancelled");
         std::lock_guard lock{_mutex};
         if (_connecting) {
             _connecting = false;
@@ -204,6 +262,11 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         if (_connecting) {
             _connecting = false;
         }
+        // Only a transport that really came up is recorded as connected; the reason is the
+        // one ConnectTransport determined, never a generic "started".
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::TransportConnect, false,
+            DescribeFailure(failure));
         LOG(Error, "AAP: All supported transport methods failed");
         return false;
     }
@@ -213,6 +276,10 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
         _transport.store(transport);
         _usingMagicAAP = transport->Kind() == AAPTransportKind::MagicAAP;
     }
+    Diagnostics::Recorder::Instance().RecordForAttempt(
+        attempt.generation, Diagnostics::Step::TransportConnect, true,
+        transport->Kind() == AAPTransportKind::MagicAAP ? "MagicAAP device interface established"
+                                                        : "L2CAP SEQPACKET link established");
     LOG(Info, "AAP: Transport connected; starting handshake");
 
     const bool initialized = InitializeConnection(transport, attempt, stopToken);
@@ -298,6 +365,9 @@ bool Manager::Connect(AAPAttempt attempt, std::stop_token stopToken)
     if (callbacks.onConnected) {
         callbacks.onConnected(attempt);
     }
+    // The session owns the open diagnostic attempt from here; Disconnect() and the reader's
+    // unexpected end are its matching end points.
+    attemptPhase.Succeeded();
     return true;
 }
 
@@ -384,8 +454,8 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
         }
         LOG(Info, "AAP: MagicAAP driver not installed");
         failure = ConnectFailure::DriverMissing;
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::DriverOpen, false, "driver not installed");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::DriverOpen, false, "driver not installed");
         return nullptr;
     }
     if (cancelled()) {
@@ -399,8 +469,8 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
         }
         LOG(Warn, "AAP: MagicAAP driver installed but not running");
         failure = ConnectFailure::DriverMissing;
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::DriverOpen, false, "driver not running");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::DriverOpen, false, "driver not running");
         return nullptr;
     }
 
@@ -429,7 +499,8 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
         return nullptr;
     }
     if (magicConnected) {
-        Diagnostics::Recorder::Instance().Record(Diagnostics::Step::DriverOpen, true);
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::DriverOpen, true);
         failure = ConnectFailure::None;
         return magicAAP;
     }
@@ -445,26 +516,29 @@ Manager::ConnectTransport(AAPAttempt attempt, std::stop_token stopToken, Connect
     switch (bindStatus) {
     case MagicAAPWinRT::MagicAAPBindStatus::NoMatch:
         failure = ConnectFailure::NoMatch;
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::DriverOpen, false,
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::DriverOpen, false,
             "no interface proves the bound address and ContainerId");
         break;
     case MagicAAPWinRT::MagicAAPBindStatus::OpenFailed:
         failure = ConnectFailure::OpenFailed;
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::DriverOpen, false, "exact target interface open failed");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::DriverOpen, false,
+            "exact target interface open failed");
         break;
     case MagicAAPWinRT::MagicAAPBindStatus::DriverMissing:
         failure = ConnectFailure::DriverMissing;
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::DriverOpen, false, "driver unavailable during bind");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::DriverOpen, false,
+            "driver unavailable during bind");
         break;
     case MagicAAPWinRT::MagicAAPBindStatus::TransportError:
     case MagicAAPWinRT::MagicAAPBindStatus::Cancelled:
     default:
         failure = ConnectFailure::TransportError;
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::DriverOpen, false, "transport or receiver startup failed");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::DriverOpen, false,
+            "transport or receiver startup failed");
         break;
     }
     return nullptr;
@@ -529,7 +603,11 @@ void Manager::Disconnect()
     }
 
     LOG(Info, "AAP: Disconnected");
-    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::Disconnect, true);
+    Diagnostics::Recorder::Instance().RecordForAttempt(
+        attempt.generation, Diagnostics::Step::Disconnect, true);
+    // The attempt is over: the next scanner/advertisement events belong to the following
+    // generation, and this one stays in the report as the most recent attempt.
+    Diagnostics::Recorder::Instance().EndAttempt(attempt.generation);
     if (callback) {
         callback(attempt);
     }
@@ -1105,6 +1183,13 @@ void Manager::SetCallbacks(Callbacks callbacks)
 
 AttPathState Manager::GetAttPathState() const
 {
+    // Snapshot the attempt before taking _attReadMutex: every other path nests those two
+    // locks in this order, so inverting them here could deadlock a concurrent Disconnect.
+    AAPAttempt attempt;
+    {
+        std::lock_guard<std::mutex> attemptLock{_mutex};
+        attempt = _attempt;
+    }
     std::unique_lock<std::mutex> lock{_attReadMutex};
     auto state = _attPathState.load();
     if (state == AttPathState::Pending) {
@@ -1118,8 +1203,9 @@ AttPathState Manager::GetAttPathState() const
                 _attReadOwner.reset();
                 _attReadCondition.notify_all();
             }
-            Diagnostics::Recorder::Instance().Record(
-                Diagnostics::Step::AttProbe, false, "no ATT answer within 500ms");
+            Diagnostics::Recorder::Instance().RecordForAttempt(
+                attempt.generation, Diagnostics::Step::AttProbe, false,
+                "no ATT answer within 500ms");
             state = AttPathState::Unconfirmed;
         }
     }
@@ -1195,11 +1281,13 @@ void Manager::StartAttProbe(
     if (!SendPacket(transport, packet, stopToken)) {
         ReleaseAttRead();
         _attPathState.store(AttPathState::Unconfirmed);
-        Diagnostics::Recorder::Instance().Record(Diagnostics::Step::AttProbe, false, "send failed");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            _attempt.generation, Diagnostics::Step::AttProbe, false, "send failed");
         return;
     }
 
-    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::AttProbe, true, "probe sent");
+    Diagnostics::Recorder::Instance().RecordPendingForAttempt(
+        _attempt.generation, Diagnostics::Step::AttProbe, "probe sent, waiting up to 500ms");
     LOG(Info, "AAP: Sent ATT probe (read handle 0x{:02X}), waiting up to 500ms",
         Att::kLoudSoundReductionHandle);
 }
@@ -1230,7 +1318,8 @@ void Manager::ProcessAttFrame(
         if (previous != AttPathState::Confirmed && callbacks.onAttProbeResult) {
             callbacks.onAttProbeResult(AttPathState::Confirmed, attempt);
         }
-        Diagnostics::Recorder::Instance().Record(Diagnostics::Step::AttProbe, true, "confirmed");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::AttProbe, true, "confirmed");
         LOG(Info, "AAP: ATT path confirmed (read response, {} value bytes)", packet.size() - 1);
 
         auto value = Att::ParseReadResponse(packet);
@@ -1841,6 +1930,13 @@ void Manager::ReaderLoop(
         _attPathState.store(AttPathState::Unknown);
         _attProbeDeadlineMs.store(0);
     }
+
+    // Unexpected loss closes the diagnostic sequence too, so the next advertisement match is
+    // recorded for the attempt it leads to rather than for the session that just ended.
+    Diagnostics::Recorder::Instance().RecordForAttempt(
+        active.generation, Diagnostics::Step::Disconnect, true, "transport closed by device");
+    Diagnostics::Recorder::Instance().EndAttempt(active.generation);
+
     if (callback) {
         callback(active);
     }
@@ -1874,12 +1970,13 @@ bool Manager::InitializeConnection(
     // session transport directly; SendPacket would reject these pre-connected packets.
     if (!SendPacket(transport, Packets::Handshake, stopToken)) {
         LOG(Error, "AAP: Failed to send handshake");
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::Handshake, false, "send failed");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::Handshake, false, "send failed");
         return false;
     }
     LOG(Info, "AAP: Sent handshake");
-    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::Handshake, true);
+    Diagnostics::Recorder::Instance().RecordPendingForAttempt(
+        attempt.generation, Diagnostics::Step::Handshake, "send accepted, ACK unconfirmed");
 
     if (!WaitCancellable(kPacketProcessingDelay, stopToken)) {
         return false;
@@ -1904,12 +2001,13 @@ bool Manager::InitializeConnection(
     // Enable features (Conversational Awareness, Adaptive Transparency)
     if (!SendPacket(transport, Packets::EnableFeatures, stopToken)) {
         LOG(Warn, "AAP: Failed to send enable features packet");
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::FeatureFlags, false, "send failed");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::FeatureFlags, false, "send failed");
     }
     else {
         LOG(Info, "AAP: Sent enable features");
-        Diagnostics::Recorder::Instance().Record(Diagnostics::Step::FeatureFlags, true);
+        Diagnostics::Recorder::Instance().RecordPendingForAttempt(
+            attempt.generation, Diagnostics::Step::FeatureFlags, "send accepted, ACK unconfirmed");
     }
 
     if (!WaitCancellable(kPacketProcessingDelay, stopToken)) {
@@ -1919,12 +2017,14 @@ bool Manager::InitializeConnection(
     // Request notifications (battery, ear detection, noise control, etc.)
     if (!SendPacket(transport, Packets::RequestNotifications, stopToken)) {
         LOG(Error, "AAP: Failed to send request notifications");
-        Diagnostics::Recorder::Instance().Record(
-            Diagnostics::Step::NotificationSubscribe, false, "send failed");
+        Diagnostics::Recorder::Instance().RecordForAttempt(
+            attempt.generation, Diagnostics::Step::NotificationSubscribe, false, "send failed");
         return false;
     }
     LOG(Info, "AAP: Sent request notifications");
-    Diagnostics::Recorder::Instance().Record(Diagnostics::Step::NotificationSubscribe, true);
+    Diagnostics::Recorder::Instance().RecordPendingForAttempt(
+        attempt.generation, Diagnostics::Step::NotificationSubscribe,
+        "send accepted, ACK unconfirmed");
 
     // Blueprint 0.3: probe whether the firmware answers ATT frames on this
     // pipe. Fire-and-forget; the outcome lands in _attPathState and is

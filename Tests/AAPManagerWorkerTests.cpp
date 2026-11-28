@@ -42,6 +42,7 @@
 #include "Source/Core/AAPManager.h"
 #include "Source/Core/AAPMessage.h"
 #include "Source/Core/AAPTransport.h"
+#include "Source/Core/ConnectionDiagnostics.h"
 
 using AAPTestSupport::BlockingTransport;
 using AAPTestSupport::CallbackRecorder;
@@ -120,6 +121,40 @@ private slots:
         QVERIFY(!manager._transport.load());
         QVERIFY(!manager.IsConnected());
         QVERIFY(transport->IsClosed());
+    }
+
+    // Regression guard: a merge resolution dropped the production BeginAttempt/EndAttempt
+    // wiring, so every attempt-tagged diagnostic record was silently discarded and the
+    // report could never show which generation a step belonged to. Connect must open the
+    // attempt (after its own reset, so AdvertisementMatched survives), Disconnect must
+    // close it, and a failed Connect must not leave its generation open either.
+    void ConnectOpensAndClosesTheDiagnosticsAttempt()
+    {
+        using Core::Diagnostics::Recorder;
+        TransportFactory<BlockingTransport> factory{
+            [](BlockingTransport &transport) { transport.Block(BlockingTransport::Op::Receive); }};
+        Core::AAP::Manager manager;
+        manager._transportFactoryForTest = [&factory] { return factory.Build(); };
+
+        Recorder::Instance().Reset();
+        const Core::AAP::AAPAttempt attempt{42, 9};
+        QVERIFY(manager.Connect(attempt));
+        QCOMPARE(Recorder::Instance().CurrentGeneration(), attempt.generation);
+        const auto report = QString::fromStdString(Recorder::Instance().BuildReport({}));
+        QVERIFY(report.contains(QStringLiteral("advertisement_matched")));
+        QVERIFY(report.contains(QStringLiteral("transport_connect")));
+
+        ScopedRelease unblock{*factory.Last()};
+        QVERIFY(DisconnectWithin(manager, factory));
+        QCOMPARE(Recorder::Instance().CurrentGeneration(), uint64_t{0});
+
+        // A transport that never comes up must close its attempt through the phase guard.
+        Core::AAP::Manager failing;
+        failing._transportFactoryForTest = [] {
+            return std::shared_ptr<Core::AAP::AAPTransport>{};
+        };
+        QVERIFY(!failing.Connect(Core::AAP::AAPAttempt{42, 10}));
+        QCOMPARE(Recorder::Instance().CurrentGeneration(), uint64_t{0});
     }
 
     // Regression guard: the handshake and the ATT probe are written while the session is
