@@ -585,12 +585,6 @@ void ApdApplication::OnTrayQuickConnectDeviceChanged(const QString &deviceId)
     _quickConnect->SetDeviceId(deviceId);
 }
 
-void ApdApplication::OnAudioAutoConnectEnabledChanged(bool enable)
-{
-    _quickConnect->SetAudioAutoConnectEnabled(enable);
-    _playbackMonitor->SetEnabled(enable);
-}
-
 void ApdApplication::OnTaskbarBatteryChanged(Core::Settings::TaskbarStatusBehavior behavior)
 {
     emit _taskbarStatus->OnSettingsChangedSafely(behavior);
