@@ -1457,10 +1457,16 @@ private slots:
         manager._commandBroker->BeginSession(9);
         std::promise<Core::AAP::AAPCommandOutcome> settled;
         auto settledFuture = settled.get_future();
+        // Two settlements are expected here: the generation-9 TransportClosed and the
+        // generation-10 echo confirmation. A second set_value would throw out of the
+        // callback and fail-fast the whole suite.
+        std::atomic<bool> reported{false};
         Core::AAP::Callbacks callbacks;
         callbacks.onCommandSettled = [&](const Core::AAP::AAPCommandOutcome &outcome,
                                          const Core::AAP::AAPAttempt &) {
-            settled.set_value(outcome);
+            if (!reported.exchange(true)) {
+                settled.set_value(outcome);
+            }
         };
         manager.SetCallbacks(std::move(callbacks));
 
