@@ -1765,7 +1765,7 @@ private slots:
         QCOMPARE(records.size(), size_t{10});
         QCOMPARE(records.at(5), Core::AAP::Packets::Handshake);
         QCOMPARE(records.at(9).at(4), uint8_t{0x09});
-        QCOMPARE(records.at(9).at(5), uint8_t{0x39});
+        QCOMPARE(records.at(9).at(6), uint8_t{0x39});
         QCOMPARE(records.at(9).at(7), uint8_t{0x05});
         manager.Disconnect();
     }
@@ -1795,7 +1795,7 @@ private slots:
         QVERIFY(manager.Connect({0x1234, 2}));
         QCOMPARE(transport->SendCalls(), size_t{11});
         const auto records = transport->SentRecords();
-        QCOMPARE(records.at(5).at(5), uint8_t{0x39});
+        QCOMPARE(records.at(5).at(6), uint8_t{0x39});
         QCOMPARE(records.at(5).at(7), uint8_t{0x0A});
         manager.Disconnect();
     }
@@ -1914,7 +1914,7 @@ private slots:
         QVERIFY(reachedSendBarrier);
         QVERIFY(result.get());
         QCOMPARE(original->SendCalls(), size_t{1});
-        QCOMPARE(original->LastSend().at(5), uint8_t{0x0D});
+        QCOMPARE(original->LastSend().at(6), uint8_t{0x0D});
         QCOMPARE(replacement->SendCalls(), size_t{0});
         manager._connected = false;
         manager._transport.store(nullptr);
