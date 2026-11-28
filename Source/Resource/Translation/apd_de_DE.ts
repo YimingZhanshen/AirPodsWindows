@@ -299,19 +299,19 @@ Genieße es.</translation>
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>Aus</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>Geräuschunterdrückung</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>Transparenz</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>Adaptiv</translation>
     </message>
     <message>
         <source>Battery</source>
@@ -473,19 +473,19 @@ Kopple deine AirPods zuerst in den Windows Bluetooth-Einstellungen.</translation
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>Aus</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>Geräuschunterdrückung</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>Transparenz</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>Adaptiv</translation>
     </message>
     <message>
         <source>Unknown</source>

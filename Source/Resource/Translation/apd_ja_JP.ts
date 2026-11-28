@@ -299,19 +299,19 @@ Enjoy it all.</source>
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>オフ</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>ノイズキャンセリング</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>透過モード</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>アダプティブ</translation>
     </message>
     <message>
         <source>Battery</source>
@@ -473,19 +473,19 @@ You need to pair your AirPods in Windows Bluetooth Settings first.</source>
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>オフ</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>ノイズキャンセリング</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>透過モード</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>アダプティブ</translation>
     </message>
     <message>
         <source>Unknown</source>

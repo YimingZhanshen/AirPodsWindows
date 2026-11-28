@@ -140,7 +140,6 @@ inline bool OpenFileLocation(const QDir &directory)
 namespace Process {
 //
 // Retained for backward compatibility with v0.2.0 and before.
-// TODO: Remove this function in [v1.0.0]
 //
 inline bool SingleInstance(const QString &instanceName)
 {

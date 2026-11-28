@@ -78,7 +78,6 @@ bool Initialize(bool enableTrace)
     }
 }
 
-// TODO: Remove this function in [v1.0.0]
 void CleanUpOldLogFiles()
 {
     auto workspace = Utils::File::GetWorkspace();

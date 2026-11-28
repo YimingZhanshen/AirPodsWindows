@@ -32,7 +32,7 @@ Before you start contributing, make sure you already understand how Git works. Y
 
 4. Open the `.ts` translation file with *Qt Linguist* tool and complete the translation.
 
-   If you don't know how to use the tool, please read [Qt Linguist Manual: Translators](https://doc.qt.io/qt-5/linguist-translators.html).
+   If you don't know how to use the tool, please read [Qt Linguist Manual: Translators](https://doc.qt.io/qt-6/linguist-translators.html).
 
 5. If you search for comments containing "credit" in *Qt Linguist*, you will see a text for crediting translators. If you wish, you can add your name to its translation as required by the developer comment.
 

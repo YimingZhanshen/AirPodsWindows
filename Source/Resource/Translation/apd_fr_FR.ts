@@ -299,19 +299,19 @@ Profitez bien de tout ça.</translation>
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>Désactivé</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>Réduction du bruit</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>Transparence</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>Adaptatif</translation>
     </message>
     <message>
         <source>Battery</source>
@@ -473,19 +473,19 @@ Vous devez d&apos;abord appairer vos AirPods dans les paramètres Bluetooth de W
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>Désactivé</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>Réduction du bruit</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>Transparence</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>Adaptatif</translation>
     </message>
     <message>
         <source>Unknown</source>

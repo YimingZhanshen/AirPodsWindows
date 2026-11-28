@@ -638,12 +638,15 @@ void SettingsWindow::SetupDriverStatusCard()
         const auto aapConnected = _getAirPodsManager && _getAirPodsManager().IsAAPConnected();
         const auto viaDriver =
             _getAirPodsManager && _getAirPodsManager().IsAAPConnectedViaMagicAAP();
+        // The header is forensic input for tools that key on English words, so unlike the labels
+        // elsewhere in this window its values stay untranslated.
         const auto header =
             QString{"AirPodsWindows %1\nOS: %2\ndriver: %3\naap connected: %4 (via driver: %5)"}
                 .arg(
                     QStringLiteral(CONFIG_VERSION_STRING), QSysInfo::prettyProductName(),
-                    Core::AAP::Manager::IsMagicAAPDriverAvailable() ? tr("installed")
-                                                                    : tr("not installed"),
+                    Core::AAP::Manager::IsMagicAAPDriverAvailable()
+                        ? QStringLiteral("installed")
+                        : QStringLiteral("not installed"),
                     aapConnected ? QStringLiteral("yes") : QStringLiteral("no"),
                     viaDriver ? QStringLiteral("yes") : QStringLiteral("no"))
                 .toStdString();

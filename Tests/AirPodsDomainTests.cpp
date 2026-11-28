@@ -336,6 +336,10 @@ private Q_SLOTS:
     void RemembersSideAddressAcrossStateReset();
     void RejectsConflictingBatterySources();
     void RecoversFromWeakerBatterySource();
+    void AcceptsPartialReportFromSelectedSource();
+    void AcceptsPartialReplacementAfterSelectedSourceExpires();
+    void KeepsStrongerPartialReportWhenConflictingCompleteReportIsWeaker();
+    void PreservesCompatiblePeerCaseReport();
     void AcceptsAdjacentBatteryBucketsAfterAddressRotation();
     void FusesAapBatteryOverBleWithinSession();
     void FallsBackWhenAapComponentDisconnects();
@@ -1256,6 +1260,74 @@ void AirPodsDomainTests::RecoversFromWeakerBatterySource()
     QVERIFY(update->newState.pods.right.isCharging);
     QVERIFY(update->newState.caseBox.isCharging);
     QVERIFY(!manager.OnAdvReceived(Advertisement{partial}).has_value());
+}
+
+void AirPodsDomainTests::AcceptsPartialReportFromSelectedSource()
+{
+    StateManager manager;
+    manager.OnRssiMinChanged(-80);
+    manager.OnAdvReceived(
+        Advertisement{MakeAdvertisementData(0x2222, -50, Side::Right, 9, 9, 15, 0x201B)});
+    const auto update = manager.OnAdvReceived(
+        Advertisement{MakeAdvertisementData(0x2222, -50, Side::Right, 15, 8, 15, 0x201B)});
+    QVERIFY(update.has_value());
+    QVERIFY(!update->newState.pods.left.battery.Available());
+    QCOMPARE(update->newState.pods.right.battery.Value(), 80U);
+}
+
+void AirPodsDomainTests::AcceptsPartialReplacementAfterSelectedSourceExpires()
+{
+    StateManager manager;
+    manager.OnRssiMinChanged(-80);
+    manager.OnAdvReceived(
+        Advertisement{MakeAdvertisementData(0x2222, -50, Side::Right, 9, 9, 15, 0x201B)});
+    const Advertisement partial{MakeAdvertisementData(0x1111, -70, Side::Right, 15, 9, 15, 0x201B)};
+    QVERIFY(!manager.OnAdvReceived(partial).has_value());
+    QCOMPARE(manager.GetCurrentState()->pods.left.battery.Value(), 90U);
+
+    // Rejected sources must not keep the selected advertisement alive indefinitely.
+    QTest::qWait(11000);
+    const auto update = manager.OnAdvReceived(partial);
+    QVERIFY(update.has_value());
+    QVERIFY(!update->newState.pods.left.battery.Available());
+    QCOMPARE(update->newState.pods.right.battery.Value(), 90U);
+}
+
+void AirPodsDomainTests::KeepsStrongerPartialReportWhenConflictingCompleteReportIsWeaker()
+{
+    StateManager manager;
+    manager.OnRssiMinChanged(-80);
+    manager.OnAdvReceived(
+        Advertisement{MakeAdvertisementData(0x1111, -45, Side::Left, 4, 15, 15, 0x201B)});
+    QVERIFY(!manager
+                 .OnAdvReceived(Advertisement{
+                     MakeAdvertisementData(0x2222, -65, Side::Right, 9, 9, 15, 0x201B)})
+                 .has_value());
+    QCOMPARE(manager.GetCurrentState()->pods.left.battery.Value(), 40U);
+}
+
+void AirPodsDomainTests::PreservesCompatiblePeerCaseReport()
+{
+    StateManager manager;
+    manager.OnRssiMinChanged(-80);
+    auto initial = MakeAdvertisementData(0x1111, -65, Side::Left, 9, 9, 5);
+    initial.manufacturerDataMap.at(Core::AppleCP::VendorId)[7] |= 0x70;
+    manager.OnAdvReceived(Advertisement{initial});
+    const auto update = manager.OnAdvReceived(
+        Advertisement{MakeAdvertisementData(0x2222, -50, Side::Right, 9, 9, 15)});
+    QVERIFY(update.has_value());
+    QCOMPARE(update->newState.pods.left.battery.Value(), 90U);
+    QCOMPARE(update->newState.pods.right.battery.Value(), 90U);
+    QVERIFY(!update->newState.pods.left.isCharging);
+    QVERIFY(!update->newState.pods.right.isCharging);
+    QVERIFY(update->newState.caseBox.battery.Available());
+    QCOMPARE(update->newState.caseBox.battery.Value(), 50U);
+    QVERIFY(update->newState.caseBox.isCharging);
+    // Compatible peer reports must keep contributing complementary case data.
+    initial.manufacturerDataMap.at(Core::AppleCP::VendorId)[7] = 6;
+    QVERIFY(manager.OnAdvReceived(Advertisement{initial}).has_value());
+    QCOMPARE(manager.GetCurrentState()->caseBox.battery.Value(), 60U);
+    QVERIFY(!manager.GetCurrentState()->caseBox.isCharging);
 }
 
 void AirPodsDomainTests::AcceptsAdjacentBatteryBucketsAfterAddressRotation()

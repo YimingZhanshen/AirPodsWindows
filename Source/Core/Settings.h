@@ -80,9 +80,6 @@ public:
 void SetApplyObserver(ApplyObserver *observer);
 void SetRepository(std::unique_ptr<Repository> repository);
 
-// TODO: in [v1.0.0] [kFieldsAbiVersion = 2]
-//        - Rename `tray_icon_battery` to `battery_on_tray_icon`
-
 // P5: `adaptive_transparency_level` is retired. Its UI once exposed a 0-50 "adaptive
 // transparency" scale, but AAP wire control 0x38 is a PPE (hearing-protection) cap, 0-100.
 // The old key is never migrated, scaled, or reused as the new cap: `Impl::Deprecated()`

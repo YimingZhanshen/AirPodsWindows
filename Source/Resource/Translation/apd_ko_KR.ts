@@ -299,19 +299,19 @@ Enjoy it all.</source>
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>꺼짐</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>노이즈 캔슬링</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>주변음 모드</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>적응형</translation>
     </message>
     <message>
         <source>Battery</source>
@@ -473,19 +473,19 @@ Windows의 Bluetooth 설정에서 AirPods을 페어링해야 합니다.</transla
     </message>
     <message>
         <source>Off</source>
-        <translation type="unfinished"></translation>
+        <translation>꺼짐</translation>
     </message>
     <message>
         <source>Noise Cancellation</source>
-        <translation type="unfinished"></translation>
+        <translation>노이즈 캔슬링</translation>
     </message>
     <message>
         <source>Transparency</source>
-        <translation type="unfinished"></translation>
+        <translation>주변음 모드</translation>
     </message>
     <message>
         <source>Adaptive</source>
-        <translation type="unfinished"></translation>
+        <translation>적응형</translation>
     </message>
     <message>
         <source>Unknown</source>
