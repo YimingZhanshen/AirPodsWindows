@@ -1546,7 +1546,10 @@ private slots:
 
         manager._noiseControlMode = Core::AAP::NoiseControlMode::Adaptive;
         QVERIFY(manager.SubmitCommand(command).accepted);
-        QVERIFY(transport->WaitForSendWaiter(std::chrono::seconds{1}));
+        // WaitForSendWaiter observes an instantaneous gauge that FakeTransport only keeps
+        // non-zero while a send is parked; without SetBlockSend the write is long gone by
+        // the time this thread waits. Waiting for the record proves the write landed.
+        QVERIFY(transport->WaitForRecordCount(1, std::chrono::seconds{1}));
         manager.ProcessPacket({0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x2E, 65, 0x00, 0x00, 0x00});
         QVERIFY(settledFuture.wait_for(std::chrono::seconds{1}) == std::future_status::ready);
         const auto outcome = settledFuture.get();
